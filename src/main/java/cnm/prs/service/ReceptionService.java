@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.ReceptionDto;
 import cnm.prs.entity.Controleur;
+import cnm.prs.entity.Dossier;
+import cnm.prs.entity.Ppm;
 import cnm.prs.entity.Reception;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.TypeNotification;
@@ -15,6 +17,7 @@ import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.ReceptionMapper;
 import cnm.prs.repository.ControleurRepository;
 import cnm.prs.repository.DossierRepository;
+import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.security.Visibilite;
 
@@ -27,15 +30,17 @@ public class ReceptionService {
 
     private final ReceptionRepository repository;
     private final DossierRepository dossierRepository;
+    private final PpmRepository ppmRepository;
     private final ControleurRepository controleurRepository;
     private final ControleurDirectory controleurDirectory;
     private final NotificationService notificationService;
 
     public ReceptionService(ReceptionRepository repository, DossierRepository dossierRepository,
-            ControleurRepository controleurRepository, ControleurDirectory controleurDirectory,
-            NotificationService notificationService) {
+            PpmRepository ppmRepository, ControleurRepository controleurRepository,
+            ControleurDirectory controleurDirectory, NotificationService notificationService) {
         this.repository = repository;
         this.dossierRepository = dossierRepository;
+        this.ppmRepository = ppmRepository;
         this.controleurRepository = controleurRepository;
         this.controleurDirectory = controleurDirectory;
         this.notificationService = notificationService;
@@ -56,12 +61,26 @@ public class ReceptionService {
     }
 
     public ReceptionDto create(ReceptionDto dto) {
+        exigerDossierSoumis(dto.getIdDossier());
         exigerLocaliteDossier(dto.getIdDossier());
         validatePassage(dto);
         Reception entity = ReceptionMapper.toEntity(dto);
         Reception saved = repository.save(entity);
         declencherPretDispatch(saved);
         return ReceptionMapper.toDto(saved);
+    }
+
+    /**
+     * Précondition de circuit : on ne réceptionne pas un dossier encore en {@code BROUILLON}
+     * (non soumis). Cohérent avec les autres préconditions du circuit → 409.
+     */
+    private void exigerDossierSoumis(Integer idDossier) {
+        String statut = idDossier == null ? null
+                : dossierRepository.findById(idDossier).map(Dossier::getStatut).orElse(null);
+        if (StatutDossier.BROUILLON.name().equals(statut)) {
+            throw new BusinessRuleException(
+                    "Réception impossible : le dossier est en brouillon (non soumis).");
+        }
     }
 
     public ReceptionDto update(Integer id, ReceptionDto dto) {
@@ -138,14 +157,35 @@ public class ReceptionService {
 
     /**
      * Contrainte de localité (§3.3) : un contrôleur n'agit que sur des dossiers de sa
-     * localité (sauf Président/Admin). La localité du dossier est déduite de ses réceptions
-     * existantes ; si le dossier n'a pas encore de localité, aucune contrainte (la première
-     * réception l'établit).
+     * localité (sauf Président/Admin) — y compris à la <strong>première</strong> réception, dès
+     * lors que la localité du dossier est connue (cf. {@link #localiteDuDossier}). Si elle est
+     * indéterminée, aucune contrainte.
      */
     private void exigerLocaliteDossier(Integer idDossier) {
-        String localite = idDossier == null ? null
-                : repository.findLocalitesByDossier(idDossier).stream().findFirst().orElse(null);
-        Visibilite.exigerLocalite(localite);
+        Visibilite.exigerLocalite(localiteDuDossier(idDossier));
+    }
+
+    /**
+     * Localité d'un dossier (§1), par ordre de priorité : sa propre localité
+     * ({@code t_dossier.ID_LOCALITE}, estampillée à la soumission), sinon celle de son PPM
+     * ({@code Ppm.idLocalite}), sinon celle d'une réception existante (contrôleur réceptionnaire).
+     * {@code null} si aucune source ne la fournit.
+     */
+    private String localiteDuDossier(Integer idDossier) {
+        if (idDossier == null) {
+            return null;
+        }
+        String loc = dossierRepository.findById(idDossier)
+                .map(Dossier::getIdLocalite).filter(l -> l != null && !l.isBlank()).orElse(null);
+        if (loc != null) {
+            return loc;
+        }
+        loc = ppmRepository.findByIdDossier(idDossier).stream()
+                .map(Ppm::getIdLocalite).filter(l -> l != null && !l.isBlank()).findFirst().orElse(null);
+        if (loc != null) {
+            return loc;
+        }
+        return repository.findLocalitesByDossier(idDossier).stream().findFirst().orElse(null);
     }
 
     /** Valeur de TYPE_PASSAGE pour la réception initiale (§3.4). */

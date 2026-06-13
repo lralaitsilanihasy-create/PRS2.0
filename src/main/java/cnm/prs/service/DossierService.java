@@ -2,6 +2,7 @@ package cnm.prs.service;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,7 @@ import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Ppm;
 import cnm.prs.enums.ProfilUtilisateur;
+import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.TypeNotification;
 import cnm.prs.exception.BadRequestException;
 import cnm.prs.exception.BusinessRuleException;
@@ -32,13 +34,16 @@ public class DossierService {
     private final PpmRepository ppmRepository;
     private final ControleurDirectory controleurDirectory;
     private final NotificationService notificationService;
+    private final DossierIntegriteService dossierIntegrite;
 
     public DossierService(DossierRepository repository, PpmRepository ppmRepository,
-            ControleurDirectory controleurDirectory, NotificationService notificationService) {
+            ControleurDirectory controleurDirectory, NotificationService notificationService,
+            DossierIntegriteService dossierIntegrite) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.controleurDirectory = controleurDirectory;
         this.notificationService = notificationService;
+        this.dossierIntegrite = dossierIntegrite;
     }
 
     /**
@@ -107,6 +112,8 @@ public class DossierService {
         existing.setRefeDossier(dto.getRefeDossier());
         existing.setDateRef(dto.getDateRef());
         existing.setStatut(dto.getStatut());
+        existing.setIdLocalite(dto.getIdLocalite());
+        existing.setIdEntiteContract(dto.getIdEntiteContract());
         return DossierMapper.toDto(repository.save(existing));
     }
 
@@ -118,42 +125,56 @@ public class DossierService {
     }
 
     /**
-     * Soumission officielle d'un dossier par la PRMP (§3.1, Module 03). Vérifie que le dossier
-     * appartient à la PRMP courante (via son PPM), <strong>génère la référence unique</strong>
-     * {@code REFE_DOSSIER}, puis notifie le Secrétaire et le Chef de commission de la localité
-     * (résolue via {@code Ppm.idLocalite}) qu'un dossier est en attente de réception.
+     * Soumission officielle d'un dossier par la PRMP (§3.1, Module 03). <strong>Génère la
+     * référence unique</strong> {@code REFE_DOSSIER} puis notifie le Secrétaire et le Chef de
+     * commission de la localité qu'un dossier est en attente de réception.
+     *
+     * <p><strong>Localité</strong> : celle du PPM ({@code Ppm.idLocalite}) si le dossier en a un ;
+     * sinon — dossier « nu », p. ex. un {@code DAO}/{@code MAOO} sans PPM — celle de la PRMP
+     * courante (portée par le jeton). <strong>Appartenance</strong> : si le dossier est rattaché à
+     * un PPM, il doit appartenir à la PRMP courante (sinon 403) ; un dossier sans aucun PPM n'a pas
+     * de lien d'appartenance en base et est soumis par la PRMP authentifiée. L'exercice de la
+     * référence provient du PPM, ou de l'année courante à défaut.</p>
      *
      * @throws ResourceNotFoundException si le dossier n'existe pas
-     * @throws AccessDeniedException     si le dossier n'appartient pas à la PRMP courante
+     * @throws AccessDeniedException     si le dossier (rattaché à un PPM) n'appartient pas à la PRMP courante
      * @throws BusinessRuleException     si le dossier a déjà été soumis (référence déjà générée) → 409
-     * @throws BadRequestException       si aucun PPM localisé n'est rattaché au dossier → 400
+     * @throws BadRequestException       si aucune localité ne peut être déterminée (ni PPM, ni PRMP) → 400
      */
     public DossierDto soumettre(Integer idDossier) {
         Dossier dossier = repository.findById(idDossier)
                 .orElseThrow(() -> new ResourceNotFoundException("Dossier introuvable : " + idDossier));
 
-        String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank())
+        CurrentUser.ref().filter(s -> !s.isBlank())
                 .orElseThrow(() -> new AccessDeniedException("Utilisateur PRMP non identifié."));
-        if (!repository.existsVisiblePourPrmp(idDossier, idPrmp)) {
-            throw new AccessDeniedException("Ce dossier ne fait pas partie de vos dossiers (§3.1).");
-        }
-        if (dossier.getRefeDossier() != null && !dossier.getRefeDossier().isBlank()) {
+        // Propriété : seule la PRMP propriétaire (t_dossier.ID_PRMP) peut soumettre.
+        dossierIntegrite.exigerProprietaire(dossier);
+        // Cycle de vie : seul un BROUILLON est soumissible → SOUMIS (pas de re-soumission).
+        if (!StatutDossier.BROUILLON.name().equals(dossier.getStatut())) {
             throw new BusinessRuleException(
-                    "Dossier déjà soumis (référence « " + dossier.getRefeDossier() + " »).");
+                    "Dossier non soumissible : statut « " + dossier.getStatut() + " » (attendu BROUILLON).");
         }
+        // Cohérence type↔contenu (PPM ⇒ a un PPM ; DAO/MAOO ⇒ pas de PPM).
+        dossierIntegrite.validerCoherenceAvantSoumission(dossier);
 
-        Ppm ppm = ppmRepository.findByIdDossier(idDossier).stream().findFirst()
-                .orElseThrow(() -> new BadRequestException(
-                        "Rattachez un PPM au dossier avant de le soumettre (§3.1)."));
-        String localite = ppm.getIdLocalite();
+        // Localité : celle du dossier, sinon celle du PPM, sinon celle de la PRMP courante (jeton).
+        List<Ppm> ppms = ppmRepository.findByIdDossier(idDossier);
+        String localite = dossier.getIdLocalite();
         if (localite == null || localite.isBlank()) {
-            throw new BadRequestException(
-                    "Le PPM du dossier n'a pas de localité : soumission impossible (§3.1).");
+            localite = ppms.stream().map(Ppm::getIdLocalite).filter(l -> l != null && !l.isBlank()).findFirst()
+                    .orElseGet(() -> CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null));
         }
+        if (localite == null) {
+            throw new BadRequestException(
+                    "Localité indéterminée : rattachez un PPM localisé ou la PRMP doit avoir une localité (§3.1).");
+        }
+        int exercice = ppms.stream().map(Ppm::getExercice).filter(Objects::nonNull)
+                .findFirst().orElse(LocalDate.now().getYear());
 
-        String reference = "CNM-" + localite + "-" + ppm.getExercice()
-                + "-" + String.format("%06d", idDossier);
+        String reference = "CNM-" + localite + "-" + exercice + "-" + String.format("%06d", idDossier);
         dossier.setRefeDossier(reference);
+        dossier.setIdLocalite(localite);             // propage la localité (§C) → visible par le Secrétaire
+        dossier.setStatut(StatutDossier.SOUMIS.name());
         if (dossier.getDateRef() == null) {
             dossier.setDateRef(LocalDate.now());
         }

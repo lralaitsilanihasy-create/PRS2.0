@@ -36,7 +36,9 @@ Pour les ressources du circuit (`dossiers`, `receptions`, `dispatchs`, `examens`
 `verifications`, `demande-retraits`), les listes et accès directs sont **filtrés par localité** :
 - **Président** et **Administrateur** voient toutes les localités ;
 - les autres contrôleurs ne voient que **leur** localité ;
-- une **PRMP** ne voit que **ses propres** dossiers / demandes (via ses PPM / marchés) ;
+- une **PRMP** ne voit que **ses propres** dossiers / demandes : ceux dont elle est **propriétaire**
+  (`t_dossier.idPrmp`, **y compris ses brouillons** — PPM, DAO, MAOO) ou rattachés à ses PPM / marchés.
+  Elle peut donc **reprendre un brouillon** plus tard (`GET /api/dossiers`, filtrer sur `statut == "BROUILLON"`) ;
 - un accès direct (`GET /{id}`) hors périmètre renvoie **403**.
 
 ### Référentiels & administration
@@ -47,6 +49,22 @@ Pour les ressources du circuit (`dossiers`, `receptions`, `dispatchs`, `examens`
 - **Gestion des comptes / hiérarchie** (écriture `ADMINISTRATEUR`, lecture ouverte) :
   `controleurs`, `prmps`, `organigrammes`.
 - **Réservé `ADMINISTRATEUR`** (lecture comprise) : `audit-logs`, `session-utilisateurs`, `comptes-auth`.
+
+### Saisie d'un dossier & endpoints restreints
+La création d'un dossier passe par la **façade `/api/saisies`** (réservée `PRMP`), pas par les endpoints
+bruts. Récapitulatif des écritures **désormais restreintes** :
+
+| Endpoint | Avant | Maintenant |
+|---|---|---|
+| `POST /api/saisies/ppm`, `POST /api/saisies/dossier` | *(n'existaient pas)* | **`PRMP`** (façade de saisie) |
+| `POST /api/dossiers`, `PUT /api/dossiers/{id}` | authentifié | **`ADMINISTRATEUR`** |
+| `POST /api/ppms`, `DELETE /api/ppms/{id}` | authentifié | **`ADMINISTRATEUR`** |
+| `PUT /api/ppms/{id}` | authentifié | **`PRMP`** ou `ADMINISTRATEUR` |
+| `POST`/`PUT`/`DELETE /api/marches` | authentifié | **`PRMP`** (édition d'un brouillon PPM) |
+| `POST /api/dossiers/{id}/soumettre` | `PRMP` | `PRMP` **propriétaire**, `BROUILLON → SOUMIS` |
+
+Garde-fous appliqués dans un service partagé (toutes voies) : **propriété** (`t_dossier.idPrmp`), **statut
+BROUILLON** pour l'édition, **cohérence type↔contenu** (PPM ⇒ a un PPM ; DAO/MAOO ⇒ pas de PPM).
 
 ### Codes de statut
 | Code | Signification |
@@ -666,12 +684,12 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 ## Dossiers
 **Ressource** `/api/dossiers` — Écriture : tout utilisateur authentifié. Lecture **filtrée par localité** (voir conventions) ; accès hors périmètre → 403.
 
-> **Visibilité d'un dossier soumis (avant réception).** Un dossier est rattaché à une localité
-> soit par sa **réception** (`Reception → Contrôleur.idLocalite`), soit — s'il n'est pas encore
-> réceptionné — par son **PPM** (`Ppm.idLocalite`). Ainsi un dossier soumis par la PRMP (avec un
-> PPM portant une localité) apparaît dans la liste et est consultable par les contrôleurs de cette
-> localité (dont le Secrétaire) **avant** toute réception. Un dossier sans réception **ni** PPM
-> localisé n'est visible que du Président/Administrateur. (La PRMP, elle, voit ses dossiers via `Ppm.idPrmp`.)
+> **Visibilité d'un dossier par localité.** Un dossier appartient à une localité par **l'une** de ces
+> 3 sources : sa propre **`idLocalite`** (`t_dossier.ID_LOCALITE`, estampillée à la soumission), sa
+> **réception** (`Reception → Contrôleur.idLocalite`), ou son **PPM** (`Ppm.idLocalite`). Ainsi un
+> dossier soumis — **même sans PPM** (DAO, MAOO) — apparaît dans la liste et est consultable par les
+> contrôleurs de sa localité (dont le Secrétaire) **avant** toute réception. Un dossier sans aucune de
+> ces 3 sources n'est visible que du Président/Administrateur. (La PRMP, elle, voit ses dossiers via `Ppm.idPrmp`.)
 
 **Champs `DossierDto`**
 
@@ -682,35 +700,88 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 | idDossierParent | number | Non | |
 | refeDossier | string | Non | max 100 — **référence officielle, générée par `…/soumettre`** ; laisser vide à la création |
 | dateRef | string (date) | Non | renseignée à la soumission si vide |
-| statut | string | Non | max 20 — ex. `PRET_DISPATCH`, `CLOTURE`, `RETIRE` (texte libre ; seuls ces 3 sont posés par le système) |
+| statut | string | Non | max 20 — cycle : `BROUILLON` → `SOUMIS` → `PRET_DISPATCH` → … → `CLOTURE`/`RETIRE` (posé par le système ; **lecture seule** côté PRMP) |
+| idLocalite | string | Non | max 5 — localité (FK `tr_localite`) ; **dérivée de l'entité** du dossier (lecture seule à la saisie) |
+| idPrmp | string | Non | max 10 — PRMP **propriétaire** (FK `t_prmp`) ; posée à la saisie ; seule elle édite/soumet |
+| idEntiteContract | number | Non | entité contractante (FK `tr_entite_contract`) ; **choisie à la saisie**, fixe la localité |
+
+> **Cycle de vie & saisie.** On **ne crée pas** un dossier brut : la **façade `/api/saisies`** (réservée PRMP)
+> crée le dossier (statut **`BROUILLON`**) et son contenu. Un brouillon est **invisible des contrôleurs** ;
+> il le devient (`SOUMIS`) via `…/soumettre`. Les endpoints bruts `POST`/`PUT /api/dossiers` sont **réservés
+> `ADMINISTRATEUR`** (cf. *Saisies*).
 
 **Endpoints**
 
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
-| GET | /api/dossiers | — | `DossierDto[]` | 200 | Authentifié (filtré) |
+| GET | /api/dossiers | — | `DossierDto[]` | 200 | Authentifié (filtré, hors BROUILLON) |
 | GET | /api/dossiers/{id} | — | `DossierDto` | 200, 403, 404 | Authentifié (filtré) |
-| POST | /api/dossiers | `DossierDto` | `DossierDto` | 201, 400 | Authentifié |
-| PUT | /api/dossiers/{id} | `DossierDto` | `DossierDto` | 200, 400, 404 | Authentifié |
+| POST | /api/dossiers | `DossierDto` | `DossierDto` | 201, 400, 403 | **ADMINISTRATEUR** |
+| PUT | /api/dossiers/{id} | `DossierDto` | `DossierDto` | 200, 400, 403, 404 | **ADMINISTRATEUR** |
 | DELETE | /api/dossiers/{id} | — | — | 204, 404 | Authentifié |
 | POST | /api/dossiers/{id}/soumettre | — | `DossierDto` | 200, 400, 403, 404, 409 | **PRMP** |
 
 `{id}` = idDossier (number).
 
-> **Soumission officielle (§3.1, Module 03).** `POST /api/dossiers/{id}/soumettre` (réservé **PRMP**) :
-> le dossier doit appartenir à la PRMP courante via son PPM (sinon **403**) et ne pas être déjà soumis
-> (sinon **409**) ; un **PPM avec localité** doit être rattaché (sinon **400**). L'action **génère la
-> référence unique** `refeDossier` (format `CNM-{localité}-{exercice}-{idDossier}`) et **notifie** le
-> Secrétaire et le Chef de commission de la localité (`DOSSIER_SOUMIS`). Le dossier devient alors
-> visible/réceptionnable par le Secrétaire (cf. visibilité par PPM ci-dessus).
+> **Soumission (§3.1, Module 03).** `POST /api/dossiers/{id}/soumettre` (réservé **PRMP propriétaire**) :
+> passe le dossier de **`BROUILLON` → `SOUMIS`** (statut autre → **409**), vérifie la **cohérence
+> type↔contenu** (PPM ⇒ a un PPM ; DAO/MAOO ⇒ pas de PPM, sinon **409**), propage la **localité** (du PPM,
+> sinon de la PRMP ; **400** si indéterminable), **génère la référence** `refeDossier`
+> (`CNM-{localité}-{exercice}-{idDossier}`) et **notifie** le Secrétaire + CC (`DOSSIER_SOUMIS`).
+> Propriété non respectée → **403**.
 
-**Exemple — requête (création : pas de `refeDossier`, généré à la soumission)**
+**Exemple — réponse après `…/soumettre`** (statut SOUMIS, référence générée)
 ```json
-{ "idDossier": 1023, "idTypeDossier": "DAO", "idDossierParent": null, "dateRef": "2026-03-10", "statut": "RECU" }
+{ "idDossier": 1023, "idTypeDossier": "DAO", "refeDossier": "CNM-ANT-2026-001023", "dateRef": "2026-03-10", "statut": "SOUMIS", "idLocalite": "ANT", "idPrmp": "PRMP001" }
 ```
-**Exemple — réponse après `…/soumettre`** (référence générée)
+
+---
+
+## Saisies (façade de création)
+**Ressource** `/api/saisies` — Réservée au profil **`PRMP`**. « Saisir un PPM/DAO/MAOO » **EST** créer le
+dossier à soumettre : la façade crée le `t_dossier` (statut **`BROUILLON`**, propriété de la PRMP courante)
+et son contenu **en une transaction** (rollback si une étape échoue). Remplace la création brute de
+dossier/PPM (désormais réservée Admin).
+
+**Endpoints**
+
+| Méthode | URL | Corps | Réponse | Statuts | Rôle |
+|---|---|---|---|---|---|
+| POST | /api/saisies/ppm | `SaisiePpmRequest` | `DossierDto` (le dossier créé) | 201, 400, 403 | **PRMP** |
+| POST | /api/saisies/dossier | `SaisieDossierRequest` | `DossierDto` | 201, 400, 403, 409 | **PRMP** |
+
+**`SaisiePpmRequest`** — crée dossier (type PPM) + PPM + lignes de marché (mode **auto**) :
+
+| Champ | Type | Obligatoire |
+|---|---|---|
+| idDossier | number | Oui |
+| **idEntiteContract** | number | **Oui** — entité contractante concernée |
+| idPpm | number | Oui |
+| exercice | number | Oui |
+| signataire | string | Oui (max 50) |
+| dateSignature | string (date) | Oui |
+| reference | string | Oui (max 100) |
+| marches | `SaisieMarcheLigne[]` | Non |
+
+**`SaisieMarcheLigne`** : `idDetail` (oui), `designationMarche`, `numCompte`, `montEstim`, `financement`, `statut`, `idSituation`, `idNature`. `idDossier`/`idPpm`/`idMode` sont renseignés par le service (mode déterminé automatiquement, §3.1 M02).
+
+**`SaisieDossierRequest`** (DAO/MAOO, sans contenu) : `idDossier` (oui), `idTypeDossier` (oui, ≠ `PPM` sinon **409**), **`idEntiteContract` (oui)**.
+
+> **Localité dérivée de l'ENTITÉ.** Le champ `idLocalite` n'est **pas** saisi : la PRMP **choisit une
+> entité contractante** parmi **ses** entités actives (`t_prmp_entite`), et la **localité du dossier en
+> est dérivée** (`tr_entite_contract.idLocalite`). Une même PRMP liée à des entités de localités
+> différentes peut donc déposer dans plusieurs localités. Erreurs : entité **non rattachée** à la PRMP
+> → **403** ; entité **sans localité** → **400**. L'`idPrmp` propriétaire est **forcé** à l'utilisateur
+> courant. Le dossier reste **BROUILLON** (invisible des contrôleurs) jusqu'à
+> `POST /api/dossiers/{id}/soumettre`.
+
+**Exemple — requête `POST /api/saisies/ppm`** (`idEntiteContract` fixe la localité, pas de `idLocalite`)
 ```json
-{ "idDossier": 1023, "idTypeDossier": "DAO", "idDossierParent": null, "refeDossier": "CNM-ANT-2026-001023", "dateRef": "2026-03-10", "statut": "RECU" }
+{
+  "idDossier": 70, "idEntiteContract": 1, "idPpm": 70, "exercice": 2026,
+  "signataire": "RABE Hery", "dateSignature": "2026-01-10", "reference": "PPM-2026-ANT-001",
+  "marches": [ { "idDetail": 700, "designationMarche": "Travaux X", "montEstim": 500000000, "idNature": 1, "idSituation": 1, "statut": "PREVU" } ]
+}
 ```
 
 ---
@@ -764,6 +835,7 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 | idOrganigramme | number | Oui | @NotNull |
 | idEntiteParent | number | Non | |
 | niveauHierarchique | number | Non | |
+| idLocalite | string | Non | max 5 — **localité de l'entité** (FK `tr_localite`) ; détermine la localité des dossiers la concernant |
 
 **Endpoints**
 
@@ -779,7 +851,7 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 
 **Exemple — requête**
 ```json
-{ "idEntiteContract": 7, "libelleEntite": "Direction Générale des Marchés", "adresse": "Antananarivo", "categorieEntite": "MINISTERE", "idOrganigramme": 2, "idEntiteParent": 1, "niveauHierarchique": 2 }
+{ "idEntiteContract": 7, "libelleEntite": "Direction Générale des Marchés", "adresse": "Antananarivo", "categorieEntite": "MINISTERE", "idOrganigramme": 2, "idEntiteParent": 1, "niveauHierarchique": 2, "idLocalite": "ANT" }
 ```
 
 ---
@@ -1102,7 +1174,7 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 ---
 
 ## Marchés
-**Ressource** `/api/marches` — Lecture / écriture : tout utilisateur authentifié.
+**Ressource** `/api/marches` — Lecture : ouverte. **Écriture (POST/PUT/DELETE) réservée `PRMP`** : édition des lignes d'un dossier **PPM en BROUILLON** dont elle est propriétaire (sinon 403/409). Le **mode** est déterminé automatiquement (cf. note ci-dessous).
 
 **Champs `MarcheDto`**
 
@@ -1536,7 +1608,7 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 ---
 
 ## PPM
-**Ressource** `/api/ppms` — Lecture / écriture : tout utilisateur authentifié.
+**Ressource** `/api/ppms` — Lecture : ouverte. **`POST` réservé `ADMINISTRATEUR`** (la saisie passe par `/api/saisies/ppm`) ; **`PUT` réservé `PRMP`/`ADMINISTRATEUR`** (édition de l'en-tête d'un brouillon) ; `DELETE` réservé `ADMINISTRATEUR`. Un PPM ne se rattache qu'à un dossier de **type PPM, en BROUILLON, propriété de la PRMP** (sinon **409**/**403**).
 
 **Champs `PpmDto`**
 
@@ -1780,6 +1852,15 @@ GET /api/rapports/dossiers?from=2026-01-01&to=2026-12-31
 
 ## Réceptions
 **Ressource** `/api/receptions` — POST/PUT : profil `SECRETAIRE` (titulaire ou délégué) ; DELETE : `ADMINISTRATEUR`. Écriture limitée à sa localité (dossier hors localité → 403, sauf Président). Lecture filtrée par localité.
+
+> **Garde de localité dès la 1ʳᵉ réception.** La localité du dossier est résolue par ordre :
+> `t_dossier.idLocalite` → PPM (`Ppm.idLocalite`) → réception existante. Si elle est connue, un
+> contrôleur d'une **autre** localité ne peut pas réceptionner (→ **403**), **y compris au premier
+> passage** ; Président/Administrateur ne sont pas contraints. Si aucune localité n'est déterminable,
+> aucune contrainte (la réception l'établit).
+>
+> **Pas de réception d'un brouillon** : si le dossier est au statut `BROUILLON` (non soumis), la réception
+> est refusée (→ **409**).
 
 > **Règles (sinon 409)** : `numPassage` ≥ 1 ; `numPassage = 1` ⟺ `typePassage = "INITIAL"`.
 > **Effet `[Auto]`** : si `complet = true`, le dossier passe au statut `PRET_DISPATCH`.

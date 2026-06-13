@@ -22,6 +22,9 @@ public final class DossierMapper {
         dto.setRefeDossier(entity.getRefeDossier());
         dto.setDateRef(entity.getDateRef());
         dto.setStatut(entity.getStatut());
+        dto.setIdLocalite(entity.getIdLocalite());
+        dto.setIdPrmp(entity.getIdPrmp());
+        dto.setIdEntiteContract(entity.getIdEntiteContract());
         return dto;
     }
 
@@ -36,6 +39,9 @@ public final class DossierMapper {
         entity.setRefeDossier(dto.getRefeDossier());
         entity.setDateRef(dto.getDateRef());
         entity.setStatut(dto.getStatut());
+        entity.setIdLocalite(dto.getIdLocalite());
+        entity.setIdPrmp(dto.getIdPrmp());
+        entity.setIdEntiteContract(dto.getIdEntiteContract());
         return entity;
     }
 }

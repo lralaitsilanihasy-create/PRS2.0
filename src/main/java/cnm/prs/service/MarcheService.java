@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.MarcheDto;
+import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Marche;
 import cnm.prs.entity.Ppm;
 import cnm.prs.entity.Prmp;
@@ -19,6 +20,7 @@ import cnm.prs.enums.TypeNotification;
 import cnm.prs.exception.BadRequestException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.MarcheMapper;
+import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
@@ -51,17 +53,22 @@ public class MarcheService {
     private final MarcheRepository repository;
     private final PpmRepository ppmRepository;
     private final PrmpRepository prmpRepository;
+    private final DossierRepository dossierRepository;
     private final ReglePassationService reglePassationService;
     private final NotificationService notificationService;
+    private final DossierIntegriteService dossierIntegrite;
 
     public MarcheService(MarcheRepository repository, PpmRepository ppmRepository,
-            PrmpRepository prmpRepository, ReglePassationService reglePassationService,
-            NotificationService notificationService) {
+            PrmpRepository prmpRepository, DossierRepository dossierRepository,
+            ReglePassationService reglePassationService,
+            NotificationService notificationService, DossierIntegriteService dossierIntegrite) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.prmpRepository = prmpRepository;
+        this.dossierRepository = dossierRepository;
         this.reglePassationService = reglePassationService;
         this.notificationService = notificationService;
+        this.dossierIntegrite = dossierIntegrite;
     }
 
     @Transactional(readOnly = true)
@@ -77,6 +84,9 @@ public class MarcheService {
     }
 
     public MarcheDto create(MarcheDto dto) {
+        // Une ligne de marché s'ajoute uniquement à un dossier PPM, en brouillon, propriété de la PRMP courante.
+        dossierIntegrite.exigerBrouillonModifiable(dto.getIdDossier());
+        dossierIntegrite.exigerTypePpm(dto.getIdDossier());
         Marche entity = MarcheMapper.toEntity(dto);
         // Le mode est toujours imposé par le calcul automatique (le client ne le choisit pas).
         appliquerModeAutomatique(entity);
@@ -86,6 +96,7 @@ public class MarcheService {
     public MarcheDto update(Integer id, MarcheDto dto) {
         Marche existing = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Marche introuvable : " + id));
+        dossierIntegrite.exigerBrouillonModifiable(existing.getIdDossier());
 
         boolean recalcul = !Objects.equals(existing.getIdNature(), dto.getIdNature())
                 || !Objects.equals(existing.getIdSituation(), dto.getIdSituation())
@@ -124,7 +135,7 @@ public class MarcheService {
      * @throws BadRequestException si la localité de la PRMP ne peut être résolue (refus, §point 3)
      */
     private void appliquerModeAutomatique(Marche marche) {
-        String localite = resoudreLocalitePrmp(marche);
+        String localite = resoudreLocaliteDossier(marche);
         Optional<Integer> mode = reglePassationService
                 .determinerRegle(marche.getIdSituation(), marche.getMontEstim(),
                         marche.getIdNature(), localite)
@@ -139,22 +150,15 @@ public class MarcheService {
         }
     }
 
-    /** Résout la localité via {@code marché → PPM → PRMP.ID_LOCALITE} ; refuse si introuvable. */
-    private String resoudreLocalitePrmp(Marche marche) {
-        Ppm ppm = ppmRepository.findById(marche.getIdPpm())
+    /** Résout la localité du marché = celle de son <strong>dossier</strong> (dérivée de l'entité). */
+    private String resoudreLocaliteDossier(Marche marche) {
+        Dossier dossier = dossierRepository.findById(marche.getIdDossier())
                 .orElseThrow(() -> new BadRequestException(
-                        "PPM introuvable (id " + marche.getIdPpm() + ") — mode de passation indéterminable."));
-        if (ppm.getIdPrmp() == null) {
-            throw new BadRequestException(
-                    "Le PPM " + ppm.getIdPpm() + " n'a pas de PRMP — localité indéterminable, mode non déterminable.");
-        }
-        Prmp prmp = prmpRepository.findById(ppm.getIdPrmp())
-                .orElseThrow(() -> new BadRequestException(
-                        "PRMP " + ppm.getIdPrmp() + " introuvable — localité indéterminable, mode non déterminable."));
-        String localite = prmp.getIdLocalite();
+                        "Dossier introuvable (id " + marche.getIdDossier() + ") — mode de passation indéterminable."));
+        String localite = dossier.getIdLocalite();
         if (localite == null || localite.isBlank()) {
             throw new BadRequestException(
-                    "La PRMP " + prmp.getIdPrmp() + " n'a pas de localité — mode de passation non déterminable.");
+                    "Le dossier " + marche.getIdDossier() + " n'a pas de localité — mode de passation non déterminable.");
         }
         return localite;
     }

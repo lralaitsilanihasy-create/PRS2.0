@@ -34,4 +34,7 @@ public class EntiteContractDto {
     private Integer idEntiteParent;
 
     private Integer niveauHierarchique;
+
+    @Size(max = 5)
+    private String idLocalite;
 }

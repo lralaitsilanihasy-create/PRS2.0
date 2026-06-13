@@ -28,4 +28,12 @@ public class DossierDto {
 
     @Size(max = 20)
     private String statut;
+
+    @Size(max = 5)
+    private String idLocalite;
+
+    @Size(max = 10)
+    private String idPrmp;
+
+    private Integer idEntiteContract;
 }

@@ -19,9 +19,11 @@ import cnm.prs.repository.PpmRepository;
 public class PpmService {
 
     private final PpmRepository repository;
+    private final DossierIntegriteService dossierIntegrite;
 
-    public PpmService(PpmRepository repository) {
+    public PpmService(PpmRepository repository, DossierIntegriteService dossierIntegrite) {
         this.repository = repository;
+        this.dossierIntegrite = dossierIntegrite;
     }
 
     @Transactional(readOnly = true)
@@ -37,6 +39,9 @@ public class PpmService {
     }
 
     public PpmDto create(PpmDto dto) {
+        // Le PPM ne se rattache qu'à un dossier de type PPM, en brouillon, et propriété de la PRMP courante.
+        dossierIntegrite.exigerBrouillonModifiable(dto.getIdDossier());
+        dossierIntegrite.exigerTypePpm(dto.getIdDossier());
         Ppm entity = PpmMapper.toEntity(dto);
         return PpmMapper.toDto(repository.save(entity));
     }
@@ -44,6 +49,7 @@ public class PpmService {
     public PpmDto update(Integer id, PpmDto dto) {
         Ppm existing = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Ppm introuvable : " + id));
+        dossierIntegrite.exigerBrouillonModifiable(existing.getIdDossier());
         existing.setIdDossier(dto.getIdDossier());
         existing.setExercice(dto.getExercice());
         existing.setSignataire(dto.getSignataire());

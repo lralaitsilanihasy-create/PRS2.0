@@ -47,7 +47,12 @@ import cnm.prs.entity.Profile;
 import cnm.prs.entity.Reception;
 import cnm.prs.entity.ReglePassation;
 import cnm.prs.entity.Seuil;
+import cnm.prs.entity.EntiteContract;
+import cnm.prs.entity.Ministere;
+import cnm.prs.entity.Organigramme;
+import cnm.prs.entity.PrmpEntite;
 import cnm.prs.entity.Situation;
+import cnm.prs.entity.TypeDossier;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.TypeActeur;
 import cnm.prs.repository.AvisRepository;
@@ -67,7 +72,12 @@ import cnm.prs.repository.ProfileRepository;
 import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.repository.ReglePassationRepository;
 import cnm.prs.repository.SeuilRepository;
+import cnm.prs.repository.EntiteContractRepository;
+import cnm.prs.repository.MinistereRepository;
+import cnm.prs.repository.OrganigrammeRepository;
+import cnm.prs.repository.PrmpEntiteRepository;
 import cnm.prs.repository.SituationRepository;
+import cnm.prs.repository.TypeDossierRepository;
 import cnm.prs.security.TokenService;
 
 /**
@@ -103,6 +113,11 @@ class CnmWorkflowIntegrationTest {
     @Autowired private ModePassationRepository modePassationRepository;
     @Autowired private SeuilRepository seuilRepository;
     @Autowired private ReglePassationRepository reglePassationRepository;
+    @Autowired private TypeDossierRepository typeDossierRepository;
+    @Autowired private MinistereRepository ministereRepository;
+    @Autowired private OrganigrammeRepository organigrammeRepository;
+    @Autowired private EntiteContractRepository entiteContractRepository;
+    @Autowired private PrmpEntiteRepository prmpEntiteRepository;
 
     private String tokenPresident;
     private String tokenCc;
@@ -114,6 +129,8 @@ class CnmWorkflowIntegrationTest {
     @BeforeEach
     void seed() {
         localiteRepository.save(localite("ANT", "Antananarivo"));
+        typeDossierRepository.save(new TypeDossier("PPM", "Plan de passation des marchés"));
+        typeDossierRepository.save(new TypeDossier("DAO", "Dossier d'appel d'offres"));
 
         profileRepository.save(profile(1, "PRMP"));
         profileRepository.save(profile(2, "Président"));
@@ -166,6 +183,15 @@ class CnmWorkflowIntegrationTest {
         // Une demande de retrait de PRMP001 sur le dossier 1 (localité ANT).
         demandeRetraitRepository.save(demandeRetrait(1, 1, "PRMP001"));
 
+        // Entités contractantes localisées + affectations de PRMP001 (entité 1 = ANT, entité 2 = TMS).
+        // La localité d'un dossier saisi est dérivée de l'entité choisie.
+        ministereRepository.save(ministere(1));
+        organigrammeRepository.save(organigramme(1, 1));
+        entiteContractRepository.save(entite(1, 1, "ANT"));
+        entiteContractRepository.save(entite(2, 1, "TMS"));
+        prmpEntiteRepository.save(prmpEntite(1, "PRMP001", 1, true));
+        prmpEntiteRepository.save(prmpEntite(2, "PRMP001", 2, true));
+
         tokenPresident = bearer("CTRPRE", ProfilUtilisateur.PRESIDENT, TypeActeur.CONTROLEUR, "CTRPRE", null);
         tokenCc = bearer("CTRCC1", ProfilUtilisateur.CHEF_COMMISSION, TypeActeur.CONTROLEUR, "CTRCC1", "ANT");
         tokenMembre = bearer("CTRMEM", ProfilUtilisateur.MEMBRE, TypeActeur.CONTROLEUR, "CTRMEM", "ANT");
@@ -195,26 +221,33 @@ class CnmWorkflowIntegrationTest {
         reglePassationRepository.save(regle(908, 2, 902, 3)); // urgence, 200M–1Md → Gré à gré
         reglePassationRepository.save(regle(903, 1, 903, 1)); // normale, >1Md → AOO
 
-        String tok = tokenPresident;
+        // Brouillon PPM propriété de PRMP001 + son PPM (les lignes de marché sont saisies par la PRMP).
+        Dossier dPpm = dossier(50, "BROUILLON");
+        dPpm.setIdTypeDossier("PPM");
+        dPpm.setIdPrmp("PRMP001");
+        dPpm.setIdLocalite("ANT");
+        dossierRepository.save(dPpm);
+        ppmRepository.save(ppm(50, 50, "PRMP001"));   // idPrmp PRMP001 → localité ANT pour le mode
+
+        String tok = tokenPrmp;
 
         // 1) Création : mode imposé = 2 (AOR). Le idMode=99 envoyé par le client est ignoré.
-        //    Localité résolue via PPM 1 → PRMP001 → ANT.
         mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDetail\":7001,\"idDossier\":1,\"idPpm\":1,\"montEstim\":500000000,"
+                .content("{\"idDetail\":7001,\"idDossier\":50,\"idPpm\":50,\"montEstim\":500000000,"
                         + "\"idNature\":1,\"idSituation\":1,\"idMode\":99,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.idMode").value(2));
 
         // 2) Situation = urgence → mode 3 (Gré à gré), même nature/montant/localité.
         mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDetail\":7002,\"idDossier\":1,\"idPpm\":1,\"montEstim\":500000000,"
+                .content("{\"idDetail\":7002,\"idDossier\":50,\"idPpm\":50,\"montEstim\":500000000,"
                         + "\"idNature\":1,\"idSituation\":2,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.idMode").value(3));
 
         // 3) Montant hors de toute tranche → aucune règle → idMode null + alerte MODE_NON_DETERMINE.
         mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDetail\":7003,\"idDossier\":1,\"idPpm\":1,\"montEstim\":100000000,"
+                .content("{\"idDetail\":7003,\"idDossier\":50,\"idPpm\":50,\"montEstim\":100000000,"
                         + "\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.idMode").value(nullValue()));
@@ -223,22 +256,20 @@ class CnmWorkflowIntegrationTest {
 
         // 4) Mise à jour : le montant passe à 1,5 Md → recalcul → mode 1 (AOO).
         mvc.perform(put("/api/marches/7001").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDossier\":1,\"idPpm\":1,\"montEstim\":1500000000,"
+                .content("{\"idDossier\":50,\"idPpm\":50,\"montEstim\":1500000000,"
                         + "\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.idMode").value(1));
 
-        // 5) PPM sans PRMP → localité indéterminable → refus 400.
-        Ppm sansPrmp = new Ppm();
-        sansPrmp.setIdPpm(990);
-        sansPrmp.setIdDossier(1);
-        sansPrmp.setExercice(2026);
-        sansPrmp.setSignataire("TEST");
-        sansPrmp.setDateSignature(LocalDate.parse("2026-01-01"));
-        sansPrmp.setReference("PPM-TEST-SANS-PRMP");
-        ppmRepository.save(sansPrmp);
+        // 5) Dossier sans localité → mode indéterminable → refus 400.
+        Dossier sansLoc = dossier(51, "BROUILLON");
+        sansLoc.setIdTypeDossier("PPM");
+        sansLoc.setIdPrmp("PRMP001");
+        sansLoc.setIdLocalite(null);
+        dossierRepository.save(sansLoc);
+        ppmRepository.save(ppm(51, 51, "PRMP001"));
         mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDetail\":7004,\"idDossier\":1,\"idPpm\":990,\"montEstim\":500000000,"
+                .content("{\"idDetail\":7004,\"idDossier\":51,\"idPpm\":51,\"montEstim\":500000000,"
                         + "\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isBadRequest());
     }
@@ -940,18 +971,21 @@ class CnmWorkflowIntegrationTest {
     @Test
     @DisplayName("Soumission dossier (§3.1, Option C) : la PRMP soumet → référence générée + Secrétaire/CC notifiés ; re-soumission → 409")
     void soumissionDossier_ok() throws Exception {
-        // Dossier de la PRMP courante (PPM avec idPrmp = PRMP001) localisé à ANT.
-        // refeDossier vide : la référence est générée par la soumission.
-        Dossier d = dossier(3, "RECU");
+        // Brouillon PPM de la PRMP courante (PRMP001), localisé ANT, avec son PPM.
+        Dossier d = dossier(3, "BROUILLON");
         d.setRefeDossier(null);
+        d.setIdTypeDossier("PPM");
+        d.setIdPrmp("PRMP001");
+        d.setIdLocalite("ANT");
         dossierRepository.save(d);
         Ppm ppm = ppmLocalise(30, 3, "ANT");
         ppm.setIdPrmp("PRMP001");
         ppmRepository.save(ppm);
 
-        // Soumission par la PRMP → 200 + référence unique générée.
+        // Soumission par la PRMP → 200, statut SOUMIS, référence unique générée.
         mvc.perform(post("/api/dossiers/3/soumettre").header("Authorization", tokenPrmp))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("SOUMIS"))
                 .andExpect(jsonPath("$.refeDossier", startsWith("CNM-ANT-2026-")));
 
         // Le Secrétaire et le CC de la localité sont notifiés.
@@ -959,32 +993,83 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.typeNotif=='DOSSIER_SOUMIS')].destinataireIm", hasItem("CTRSEC")))
                 .andExpect(jsonPath("$[?(@.typeNotif=='DOSSIER_SOUMIS')].destinataireIm", hasItem("CTRCC1")));
 
-        // Re-soumission → 409 (référence déjà générée).
+        // Re-soumission → 409 (le dossier n'est plus BROUILLON).
         mvc.perform(post("/api/dossiers/3/soumettre").header("Authorization", tokenPrmp))
                 .andExpect(status().isConflict());
     }
 
     @Test
-    @DisplayName("Soumission dossier (§3.1) refus : dossier d'une autre PRMP → 403, PPM sans localité → 400, non-PRMP → 403")
+    @DisplayName("Soumission dossier (§3.1) refus : dossier d'une autre PRMP → 403, localité indéterminable → 400, non-PRMP → 403")
     void soumissionDossier_refus() throws Exception {
-        // Dossier NON rattaché à PRMP001 (PPM sans idPrmp), localisé ANT.
-        dossierRepository.save(dossier(4, "RECU"));
-        ppmRepository.save(ppmLocalise(40, 4, "ANT"));
-        // Dossier de PRMP001 mais PPM sans localité ; refeDossier vide pour atteindre le contrôle de localité.
-        Dossier d5 = dossier(5, "RECU");
+        // Jeton PRMP SANS localité (pour forcer l'échec de résolution de localité).
+        String tokenPrmpSansLoc = bearer("PRMP001", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMP001", null);
+        // Une autre PRMP propriétaire.
+        prmpRepository.save(prmp("PRMPXX", "ANT"));
+        // (4) Brouillon DAO appartenant à une AUTRE PRMP.
+        Dossier d4 = dossier(4, "BROUILLON");
+        d4.setIdTypeDossier("DAO");
+        d4.setIdPrmp("PRMPXX");
+        dossierRepository.save(d4);
+        // (5) Brouillon DAO de PRMP001, sans localité ni PPM.
+        Dossier d5 = dossier(5, "BROUILLON");
         d5.setRefeDossier(null);
+        d5.setIdTypeDossier("DAO");
+        d5.setIdPrmp("PRMP001");
         dossierRepository.save(d5);
-        ppmRepository.save(ppm(50, 5, "PRMP001"));
 
-        // (a) Pas son dossier → 403.
+        // (a) Dossier d'une autre PRMP → 403.
         mvc.perform(post("/api/dossiers/4/soumettre").header("Authorization", tokenPrmp))
                 .andExpect(status().isForbidden());
-        // (b) PPM sans localité → 400.
-        mvc.perform(post("/api/dossiers/5/soumettre").header("Authorization", tokenPrmp))
+        // (b) Dossier nu + PRMP sans localité → aucune localité résoluble → 400.
+        mvc.perform(post("/api/dossiers/5/soumettre").header("Authorization", tokenPrmpSansLoc))
                 .andExpect(status().isBadRequest());
         // (c) Un non-PRMP ne peut pas soumettre → 403.
         mvc.perform(post("/api/dossiers/5/soumettre").header("Authorization", tokenMembre))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Soumission dossier SANS PPM (DAO/MAOO) : localité reprise de la PRMP → référence + ID_LOCALITE estampillé + Secrétaire notifié et le voit")
+    void soumissionDossier_sansPpm() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        // Brouillon DAO « nu » (aucun PPM), de PRMP001, sans localité initiale.
+        Dossier d = dossier(6, "BROUILLON");
+        d.setRefeDossier(null);
+        d.setIdTypeDossier("DAO");
+        d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+
+        // PRMP001 (jeton localité ANT) soumet → localité = ANT (repli PRMP), SOUMIS, référence + ID_LOCALITE.
+        mvc.perform(post("/api/dossiers/6/soumettre").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("SOUMIS"))
+                .andExpect(jsonPath("$.refeDossier", startsWith("CNM-ANT-")))
+                .andExpect(jsonPath("$.idLocalite").value("ANT"));
+        // Le Secrétaire de la localité (ANT) est notifié.
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='DOSSIER_SOUMIS')].destinataireIm", hasItem("CTRSEC")));
+        // Et le dossier est désormais visible par le Secrétaire AVANT toute réception (via ID_LOCALITE).
+        mvc.perform(get("/api/dossiers/6").header("Authorization", tokenSec))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Visibilité dossier via ID_LOCALITE : dossier localisé (sans PPM ni réception) visible par sa localité, pas une autre")
+    void visibiliteDossierViaIdLocalite() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        // Dossiers estampillés, sans PPM ni réception.
+        Dossier dAnt = dossier(7, "RECU");
+        dAnt.setIdLocalite("ANT");
+        dossierRepository.save(dAnt);
+        Dossier dTms = dossier(8, "RECU");
+        dTms.setIdLocalite("TMS");
+        dossierRepository.save(dTms);
+
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenSec))
+                .andExpect(jsonPath("$[?(@.idDossier==7)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==8)]", hasSize(0)));
+        mvc.perform(get("/api/dossiers/7").header("Authorization", tokenSec)).andExpect(status().isOk());
+        mvc.perform(get("/api/dossiers/8").header("Authorization", tokenSec)).andExpect(status().isForbidden());
     }
 
     @Test
@@ -1009,6 +1094,194 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/dossiers/4").header("Authorization", tokenSec))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Garde réception : la 1ʳᵉ réception doit se faire dans la localité du dossier (via ID_LOCALITE)")
+    void receptionDansLocaliteDuDossier() throws Exception {
+        // Dossier estampillé TMS, aucune réception préalable.
+        Dossier d = dossier(9, "RECU");
+        d.setIdLocalite("TMS");
+        dossierRepository.save(d);
+
+        // Le Président (toutes localités) peut réceptionner (succès d'abord → pas de rollback-only).
+        mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":91,\"idDossier\":9,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":false}"))
+                .andExpect(status().isCreated());
+        // Un contrôleur d'ANT (CC, délégué Secrétaire) ne peut pas réceptionner un dossier TMS → 403.
+        mvc.perform(post("/api/receptions").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":92,\"idDossier\":9,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRCC1\",\"complet\":false}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Façade saisie PPM : dossier BROUILLON + PPM + marché (mode auto), invisible des contrôleurs puis visible après soumission")
+    void saisiePpm_facade() throws Exception {
+        natureRepository.save(new Nature(1, "Travaux", null));
+        situationRepository.save(new Situation(1, "Normale", null));
+        modePassationRepository.save(new ModePassation(2, "AOR", null, null, null, null));
+        seuilRepository.save(seuil(902, "ANT", 1, "200000001", "1000000000"));
+        reglePassationRepository.save(regle(902, 1, 902, 2));
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+
+        // Localité dérivée de l'entité 1 (= ANT) ; pas de idLocalite dans le corps.
+        String body = "{\"idDossier\":60,\"idEntiteContract\":1,\"idPpm\":60,\"exercice\":2026,"
+                + "\"signataire\":\"RABE\",\"dateSignature\":\"2026-01-10\",\"reference\":\"PPM-60\","
+                + "\"marches\":[{\"idDetail\":600,\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.statut").value("BROUILLON"))
+                .andExpect(jsonPath("$.idTypeDossier").value("PPM"))
+                .andExpect(jsonPath("$.idLocalite").value("ANT"))
+                .andExpect(jsonPath("$.idPrmp").value("PRMP001"));
+        // La ligne de marché a son mode déterminé automatiquement (AOR = 2).
+        mvc.perform(get("/api/marches/600").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.idMode").value(2));
+        // Le brouillon est invisible du Secrétaire.
+        mvc.perform(get("/api/dossiers/60").header("Authorization", tokenSec))
+                .andExpect(status().isForbidden());
+        // Soumission → SOUMIS → devient visible.
+        mvc.perform(post("/api/dossiers/60/soumettre").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("SOUMIS"));
+        mvc.perform(get("/api/dossiers/60").header("Authorization", tokenSec))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Façade saisie DAO : dossier DAO BROUILLON ; type PPM refusé")
+    void saisieDossier_dao() throws Exception {
+        mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":61,\"idTypeDossier\":\"DAO\",\"idEntiteContract\":1}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.statut").value("BROUILLON"))
+                .andExpect(jsonPath("$.idTypeDossier").value("DAO"))
+                .andExpect(jsonPath("$.idLocalite").value("ANT"))      // dérivée de l'entité 1
+                .andExpect(jsonPath("$.idEntiteContract").value(1));
+        // Le type PPM est refusé par cette façade (utiliser /api/saisies/ppm).
+        mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":62,\"idTypeDossier\":\"PPM\",\"idEntiteContract\":1}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Intégrité type↔contenu : PPM sans t_ppm → soumission 409 ; PPM attaché à un dossier DAO → 409")
+    void integrite_typeContenu() throws Exception {
+        // Brouillon PPM sans aucun t_ppm rattaché → soumission refusée.
+        Dossier dPpmVide = dossier(63, "BROUILLON");
+        dPpmVide.setIdTypeDossier("PPM");
+        dPpmVide.setIdPrmp("PRMP001");
+        dPpmVide.setIdLocalite("ANT");
+        dossierRepository.save(dPpmVide);
+        mvc.perform(post("/api/dossiers/63/soumettre").header("Authorization", tokenPrmp))
+                .andExpect(status().isConflict());
+
+        // Brouillon DAO (sans propriétaire) ; y attacher un PPM via l'endpoint Admin → 409.
+        Dossier dDao = dossier(64, "BROUILLON");
+        dDao.setIdTypeDossier("DAO");
+        dossierRepository.save(dDao);
+        mvc.perform(post("/api/ppms").header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPpm\":64,\"idDossier\":64,\"exercice\":2026,\"signataire\":\"X\","
+                        + "\"dateSignature\":\"2026-01-10\",\"reference\":\"P64\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Endpoints bruts restreints : POST /api/dossiers et /api/ppms réservés Admin ; façade réservée PRMP")
+    void endpointsBruts_restreints() throws Exception {
+        String dossierBody = "{\"idDossier\":65,\"statut\":\"BROUILLON\"}";
+        // PRMP ne peut pas créer un dossier brut → 403 ; Admin → 201.
+        mvc.perform(post("/api/dossiers").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(dossierBody))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/dossiers").header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON).content(dossierBody))
+                .andExpect(status().isCreated());
+        // PRMP ne peut pas créer un PPM brut → 403.
+        mvc.perform(post("/api/ppms").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPpm\":65,\"idDossier\":65,\"exercice\":2026,\"signataire\":\"X\","
+                        + "\"dateSignature\":\"2026-01-10\",\"reference\":\"P65\"}"))
+                .andExpect(status().isForbidden());
+        // La façade de saisie est réservée PRMP : un Membre → 403.
+        mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":66,\"idTypeDossier\":\"DAO\",\"idEntiteContract\":1}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Reprise brouillon PRMP : la PRMP voit/rouvre son brouillon DAO (via t_dossier.idPrmp), pas une autre PRMP")
+    void brouillonDao_visiblePourSaProprePrmp() throws Exception {
+        String tokenAutrePrmp = bearer("PRMPYY", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMPYY", "ANT");
+        // Brouillon DAO de PRMP001 (aucun PPM).
+        Dossier d = dossier(80, "BROUILLON");
+        d.setIdTypeDossier("DAO");
+        d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+
+        // PRMP001 voit son brouillon dans sa liste et peut l'ouvrir.
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==80)]", hasSize(1)));
+        mvc.perform(get("/api/dossiers/80").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("BROUILLON"));
+        // Une autre PRMP ne le voit pas.
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenAutrePrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==80)]", hasSize(0)));
+        mvc.perform(get("/api/dossiers/80").header("Authorization", tokenAutrePrmp))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Saisie : la localité vient de l'ENTITÉ choisie (même PRMP, 2 localités) ; entité hors PRMP → 403 ; entité sans localité → 400")
+    void saisieLocalite_deLEntite() throws Exception {
+        // Entité 9 existe mais non affectée à PRMP001 ; entité 10 affectée mais sans localité.
+        entiteContractRepository.save(entite(9, 1, "ANT"));
+        entiteContractRepository.save(entite(10, 1, null));
+        prmpEntiteRepository.save(prmpEntite(10, "PRMP001", 10, true));
+
+        // Même PRMP (PRMP001), 2 entités de localités différentes → 2 dossiers de localités différentes.
+        mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":82,\"idTypeDossier\":\"DAO\",\"idEntiteContract\":1}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idLocalite").value("ANT"));
+        mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":83,\"idTypeDossier\":\"DAO\",\"idEntiteContract\":2}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idLocalite").value("TMS"));
+        // Entité non rattachée à la PRMP → 403.
+        mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":84,\"idTypeDossier\":\"DAO\",\"idEntiteContract\":9}"))
+                .andExpect(status().isForbidden());
+        // Entité rattachée mais sans localité → 400.
+        mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":85,\"idTypeDossier\":\"DAO\",\"idEntiteContract\":10}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Réception interdite si le dossier est en BROUILLON → 409")
+    void receptionBrouillon_interdite() throws Exception {
+        Dossier d = dossier(67, "BROUILLON");
+        d.setIdLocalite("ANT");
+        d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":670,\"idDossier\":67,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":false}"))
+                .andExpect(status().isConflict());
     }
 
     @Test
@@ -1173,6 +1446,42 @@ class CnmWorkflowIntegrationTest {
         p.setReference("PPM-REF-" + id);
         p.setIdLocalite(localite);
         return p;
+    }
+
+    private Ministere ministere(int id) {
+        Ministere m = new Ministere();
+        m.setIdMinistere(id);
+        m.setLibelleMinistere("Ministere " + id);
+        return m;
+    }
+
+    private Organigramme organigramme(int id, int ministere) {
+        Organigramme o = new Organigramme();
+        o.setIdOrganigramme(id);
+        o.setActif(true);
+        o.setIdMinistere(ministere);
+        o.setLibelle("Organigramme " + id);
+        return o;
+    }
+
+    private EntiteContract entite(int id, int organigramme, String localite) {
+        EntiteContract e = new EntiteContract();
+        e.setIdEntiteContract(id);
+        e.setLibelleEntite("Entite " + id);
+        e.setAdresse("Adresse");
+        e.setIdOrganigramme(organigramme);
+        e.setNiveauHierarchique(1);
+        e.setIdLocalite(localite);
+        return e;
+    }
+
+    private PrmpEntite prmpEntite(int id, String prmp, int entite, boolean actif) {
+        PrmpEntite pe = new PrmpEntite();
+        pe.setIdPrmpEntite(id);
+        pe.setIdPrmp(prmp);
+        pe.setIdEntiteContract(entite);
+        pe.setActif(actif);
+        return pe;
     }
 
     private Avis avis(String id, String libelle) {

@@ -42,11 +42,14 @@ public class DossierController {
         return service.findById(id);
     }
 
+    // Création/édition brutes verrouillées : la saisie passe par la façade /api/saisies (PRMP) ; ici réservé Admin.
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
     @PostMapping
     public ResponseEntity<DossierDto> create(@Valid @RequestBody DossierDto dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(dto));
     }
 
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
     @PutMapping("/{id}")
     public DossierDto update(@PathVariable Integer id, @Valid @RequestBody DossierDto dto) {
         return service.update(id, dto);

@@ -12,6 +12,12 @@ package cnm.prs.enums;
  */
 public enum StatutDossier {
 
+    /** Saisie en cours par la PRMP (façade), pas encore soumise — invisible des contrôleurs. */
+    BROUILLON,
+
+    /** Soumis par la PRMP (action {@code …/soumettre}), entré dans le circuit. */
+    SOUMIS,
+
     /** §2.2 — déclenché automatiquement dès {@code COMPLET = true}. */
     PRET_DISPATCH,
 

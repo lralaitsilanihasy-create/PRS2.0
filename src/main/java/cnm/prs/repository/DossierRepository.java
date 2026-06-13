@@ -40,17 +40,26 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
      */
     @Query("""
             select d from Dossier d where
-                exists (select 1 from Reception r
+                (d.statut is null or d.statut <> 'BROUILLON')
+            and (
+                d.idLocalite = :localite
+             or exists (select 1 from Reception r
                         where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :localite)
              or exists (select 1 from Ppm p
-                        where p.idDossier = d.idDossier and p.idLocalite = :localite)
+                        where p.idDossier = d.idDossier and p.idLocalite = :localite))
             """)
     List<Dossier> findVisiblesParLocalite(@Param("localite") String localite);
 
-    /** Vrai si le dossier est rattaché à la localité donnée, via sa réception ou son PPM (Option A). */
+    /**
+     * Vrai si le dossier est visible dans la localité donnée — via sa propre localité, sa réception
+     * ou son PPM — et qu'il n'est pas un brouillon (les brouillons sont masqués aux contrôleurs).
+     */
     @Query("""
-            select (count(d) > 0) from Dossier d where d.idDossier = :idDossier and (
-                exists (select 1 from Reception r
+            select (count(d) > 0) from Dossier d where d.idDossier = :idDossier
+            and (d.statut is null or d.statut <> 'BROUILLON')
+            and (
+                d.idLocalite = :localite
+             or exists (select 1 from Reception r
                         where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :localite)
              or exists (select 1 from Ppm p
                         where p.idDossier = d.idDossier and p.idLocalite = :localite))
@@ -58,21 +67,24 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
     boolean existsDansLocalite(@Param("idDossier") Integer idDossier, @Param("localite") String localite);
 
     /**
-     * Dossiers d'une PRMP (§3.1) : ses PPM ({@code t_ppm.ID_PRMP}) et les marchés
-     * rattachés à ses PPM ({@code t_marche → t_ppm}).
+     * Dossiers d'une PRMP (§3.1) : ceux dont elle est <strong>propriétaire</strong>
+     * ({@code t_dossier.ID_PRMP}, posé à la saisie — y compris les brouillons DAO/MAOO sans PPM),
+     * ses PPM ({@code t_ppm.ID_PRMP}) et les marchés rattachés à ses PPM.
      */
     @Query("""
             select d from Dossier d where
-               exists (select 1 from Ppm p where p.idDossier = d.idDossier and p.idPrmp = :idPrmp)
+               d.idPrmp = :idPrmp
+               or exists (select 1 from Ppm p where p.idDossier = d.idDossier and p.idPrmp = :idPrmp)
                or exists (select 1 from Marche m, Ppm p2
                           where m.idDossier = d.idDossier and m.idPpm = p2.idPpm and p2.idPrmp = :idPrmp)
             """)
     List<Dossier> findVisiblesPourPrmp(@Param("idPrmp") String idPrmp);
 
-    /** Vrai si le dossier appartient à la PRMP (via PPM ou marché). */
+    /** Vrai si le dossier appartient à la PRMP (propriétaire {@code t_dossier.ID_PRMP}, ou via PPM/marché). */
     @Query("""
             select (count(d) > 0) from Dossier d where d.idDossier = :idDossier and (
-               exists (select 1 from Ppm p where p.idDossier = d.idDossier and p.idPrmp = :idPrmp)
+               d.idPrmp = :idPrmp
+               or exists (select 1 from Ppm p where p.idDossier = d.idDossier and p.idPrmp = :idPrmp)
                or exists (select 1 from Marche m, Ppm p2
                           where m.idDossier = d.idDossier and m.idPpm = p2.idPpm and p2.idPrmp = :idPrmp))
             """)

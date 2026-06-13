@@ -43,13 +43,42 @@ public class Dossier {
     @Column(name = "STATUT", length = 20)
     private String statut;
 
+    /** Localité du dossier (§1). Renseignée à la soumission ; rend le dossier visible/réceptionnable
+     *  par les contrôleurs de cette localité même sans PPM ni réception. */
+    @Column(name = "ID_LOCALITE", length = 5)
+    private String idLocalite;
+
+    /** PRMP propriétaire du dossier (§3.1). Posée à la saisie ; seule elle peut éditer/soumettre. */
+    @Column(name = "ID_PRMP", length = 10)
+    private String idPrmp;
+
+    /** Entité contractante concernée par le dossier (§1) — choisie à la saisie parmi les entités de la
+     *  PRMP ; c'est elle qui détermine la localité ({@code idLocalite} en est dérivé). */
+    @Column(name = "ID_ENTITE_CONTRACT")
+    private Integer idEntiteContract;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_TYPE_DOSSIER", insertable = false, updatable = false)
     @JsonIgnore
     private TypeDossier typeDossier;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_LOCALITE", insertable = false, updatable = false)
+    @JsonIgnore
+    private Localite localite;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_DOSSIER_PARENT", insertable = false, updatable = false)
     @JsonIgnore
     private Dossier dossierParent;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_PRMP", insertable = false, updatable = false)
+    @JsonIgnore
+    private Prmp prmp;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_ENTITE_CONTRACT", insertable = false, updatable = false)
+    @JsonIgnore
+    private EntiteContract entiteContract;
 }

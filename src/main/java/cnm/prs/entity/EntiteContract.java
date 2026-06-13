@@ -45,6 +45,15 @@ public class EntiteContract {
     @Column(name = "NIVEAU_HIERARCHIQUE")
     private Integer niveauHierarchique;
 
+    /** Localité de l'entité contractante (§1). C'est elle qui fixe la localité d'un dossier la concernant. */
+    @Column(name = "ID_LOCALITE", length = 5)
+    private String idLocalite;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_LOCALITE", insertable = false, updatable = false)
+    @JsonIgnore
+    private Localite localite;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_ORGANIGRAMME", insertable = false, updatable = false)
     @JsonIgnore
