@@ -1,0 +1,24 @@
+package cnm.prs.repository;
+
+import java.util.List;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import cnm.prs.entity.Verification;
+
+@Repository
+public interface VerificationRepository extends JpaRepository<Verification, Integer> {
+
+    @Query("select v from Verification v where v.reception.ctrlRecept.idLocalite = :loc")
+    List<Verification> findVisiblesParLocalite(@Param("loc") String loc);
+
+    @Query("select (count(v) > 0) from Verification v where v.idVerification = :id and v.reception.ctrlRecept.idLocalite = :loc")
+    boolean existsDansLocalite(@Param("id") Integer id, @Param("loc") String loc);
+
+    /** Nombre de dossiers conformes : ayant une vérification avec OBS_LEVEES = true (§3.2). */
+    @Query("select count(distinct v.reception.idDossier) from Verification v where v.obsLevees = true")
+    long compterDossiersConformes();
+}

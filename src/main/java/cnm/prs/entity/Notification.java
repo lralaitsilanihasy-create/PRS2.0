@@ -1,0 +1,70 @@
+package cnm.prs.entity;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * Entité JPA mappée sur la table {@code t_notification}.
+ * Générée à partir du MLD (db_ppm110626.pgerd).
+ */
+@Entity
+@Table(name = "t_notification")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class Notification {
+
+    @Id
+    @Column(name = "ID_NOTIFICATION", nullable = false)
+    private Integer idNotification;
+
+    @Column(name = "ID_DOSSIER")
+    private Integer idDossier;
+
+    @Column(name = "TYPE_NOTIF", nullable = false, length = 30)
+    private String typeNotif;
+
+    @Column(name = "DESTINATAIRE_IM", length = 7)
+    private String destinataireIm;
+
+    @Column(name = "DESTINATAIRE_EMAIL", length = 100)
+    private String destinataireEmail;
+
+    @Column(name = "TITRE", length = 200)
+    private String titre;
+
+    @Column(name = "CORPS", columnDefinition = "text")
+    private String corps;
+
+    @Column(name = "DATE_ENVOI")
+    private LocalDateTime dateEnvoi;
+
+    @Column(name = "LU")
+    private Boolean lu;
+
+    @Column(name = "DATE_LECTURE")
+    private LocalDateTime dateLecture;
+
+    @Column(name = "CANAL", length = 20)
+    private String canal;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "DESTINATAIRE_IM", insertable = false, updatable = false)
+    @JsonIgnore
+    private Controleur destinataire;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_DOSSIER", insertable = false, updatable = false)
+    @JsonIgnore
+    private Dossier dossier;
+}

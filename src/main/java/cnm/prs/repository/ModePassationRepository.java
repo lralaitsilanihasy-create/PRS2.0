@@ -1,0 +1,10 @@
+package cnm.prs.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import cnm.prs.entity.ModePassation;
+
+@Repository
+public interface ModePassationRepository extends JpaRepository<ModePassation, Integer> {
+}
