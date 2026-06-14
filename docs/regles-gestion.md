@@ -41,6 +41,13 @@ Flux complet d'un dossier, avec navette du projet de PV :
 
 > Statuts de navette du PV : `PROJET_PV_SOUMIS`, `PROJET_PV_RETOUR`, `PROJET_PV_ACCEPTE`, puis `SIGNE`.
 
+> ⚠️ **Règle ajoutée (non issue de la brochure d'origine) — statut `DISPATCHE`.** La brochure ne nomme
+> aucun statut de dossier entre `PRET_DISPATCH` et `CLOTURE`. Pour matérialiser l'étape **Dispatch (3)**
+> dans le pipeline, le backend ajoute le statut **`DISPATCHE`** (« dispatché, en attente d'examen ») :
+> à la **création d'un dispatch**, le dossier passe **`PRET_DISPATCH` → `DISPATCHE`** (transactionnel).
+> L'**examen (4)** exige désormais que le dossier soit **`DISPATCHE`** (et non plus `PRET_DISPATCH`).
+> Portée : étape Dispatch → Examen uniquement. Le frontend doit s'aligner sur ce statut.
+
 ---
 
 ## 3. Fonctionnalités et règles par profil

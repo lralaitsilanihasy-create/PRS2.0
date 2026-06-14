@@ -50,22 +50,22 @@ public class ExamenService {
 
     public ExamenDto create(ExamenDto dto) {
         Visibilite.exigerLocalite(dispatchRepository.findLocaliteById(dto.getIdDispatch()));
-        exigerDossierPretDispatch(dto.getIdDispatch());
+        exigerDossierDispatche(dto.getIdDispatch());
         Examen entity = ExamenMapper.toEntity(dto);
         return ExamenMapper.toDto(repository.save(entity));
     }
 
     /**
-     * Précondition du circuit (§2.3 → §2.4) : on n'examine qu'un dossier encore dans le circuit
-     * actif (statut {@link StatutDossier#PRET_DISPATCH}), donc déjà reçu/dispatché et non
-     * clôturé/retiré.
+     * Précondition du circuit (§2.3 → §2.4) : on n'examine qu'un dossier <strong>déjà dispatché</strong>
+     * (statut {@link StatutDossier#DISPATCHE}). Le dispatch précède l'examen et fait passer le dossier
+     * de PRET_DISPATCH à DISPATCHE ; un dossier non dispatché (ou clôturé/retiré) est refusé.
      */
-    private void exigerDossierPretDispatch(Integer idDispatch) {
+    private void exigerDossierDispatche(Integer idDispatch) {
         String statut = idDispatch == null ? null
                 : dossierRepository.findStatutByDispatch(idDispatch).orElse(null);
-        if (!StatutDossier.PRET_DISPATCH.name().equals(statut)) {
+        if (!StatutDossier.DISPATCHE.name().equals(statut)) {
             throw new BusinessRuleException(
-                    "Examen impossible : le dossier doit être dans le circuit actif (PRET_DISPATCH) (§2.4), "
+                    "Examen impossible : le dossier doit avoir été dispatché (statut DISPATCHE) (§2.4), "
                             + "statut actuel « " + statut + " ».");
         }
     }

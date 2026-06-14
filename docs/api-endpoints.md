@@ -587,6 +587,8 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 
 > **Précondition de circuit (création) → 409** : le dossier rattaché à la réception doit être au statut **`PRET_DISPATCH`** (§2.2/§2.3), et **aucun dispatch ne doit déjà exister** pour cette réception (anti-doublon, §3.2 ; corriger via `PUT`).
 
+> ⚠️ **Transition de statut (règle ajoutée).** À la **création** d'un dispatch, le dossier passe **`PRET_DISPATCH` → `DISPATCHE`** dans la **même transaction** que le dispatch. C'est ce statut `DISPATCHE` qui conditionne l'étape suivante (l'examen l'exige).
+
 > **Règle `interimDispatch`** (sinon **409**) : Président → `false` ; CC dans sa localité → `false` ; CC hors de sa localité → `true` obligatoire.
 
 **Champs `DispatchDto`**
@@ -910,7 +912,7 @@ dossier/PPM (désormais réservée Admin).
 ## Examens
 **Ressource** `/api/examens` — POST/PUT : profil `MEMBRE` (titulaire ou délégué) ; DELETE : `ADMINISTRATEUR`. Écriture limitée à sa localité (dossier hors localité → 403, sauf Président). Lecture filtrée par localité.
 
-> **Précondition de circuit (création) → 409** : le dossier (via `dispatch → réception`) doit être dans le circuit actif, statut **`PRET_DISPATCH`** (§2.4) — ni `RETIRE` ni `CLOTURE`.
+> **Précondition de circuit (création) → 409** : le dossier (via `dispatch → réception`) doit avoir été **dispatché**, statut **`DISPATCHE`** (§2.4). ⚠️ *Changé* : l'examen n'accepte plus `PRET_DISPATCH` — il faut d'abord créer le dispatch (qui pose `DISPATCHE`).
 
 **Champs `ExamenDto`**
 

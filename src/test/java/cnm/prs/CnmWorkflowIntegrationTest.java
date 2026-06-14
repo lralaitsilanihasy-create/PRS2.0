@@ -1000,6 +1000,9 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idDispatch\":3,\"idReception\":3,\"imCtrlDispatch\":\"CTRCC1\",\"imCtrlCc\":\"CTRCC1\","
                         + "\"imCtrlMembre\":\"CTRMEM\",\"interimDispatch\":false}"))
                 .andExpect(status().isCreated());
+        // Le dispatch fait avancer le dossier à DISPATCHE (règle ajoutée).
+        mvc.perform(get("/api/dossiers/3").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$.statut").value("DISPATCHE"));
 
         // 3) Examen par le Membre.
         mvc.perform(post("/api/examens").header("Authorization", tokenMembre)
@@ -1087,7 +1090,7 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idDispatch\":42,\"idReception\":24,\"interimDispatch\":false}"))
                 .andExpect(status().isConflict());
 
-        // (c) Examen d'un dossier non PRET_DISPATCH (dispatch 1 → dossier 1 = EN_EXAMEN) → 409.
+        // (c) Examen d'un dossier non dispatché (dispatch 1 → dossier 1 = EN_EXAMEN, pas DISPATCHE) → 409.
         mvc.perform(post("/api/examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idExamen\":40,\"idDispatch\":1,\"imCtrlMembre\":\"CTRMEM\"}"))
                 .andExpect(status().isConflict());
@@ -1101,6 +1104,31 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idVerification\":40,\"idReception\":1,\"idPv\":5,\"imCtrlVerif\":\"CTRCC1\","
                         + "\"obsLevees\":true}"))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Dispatch → dossier DISPATCHE ; examen refusé tant que le dossier n'est pas dispatché")
+    void dispatch_avanceDossierADispatche() throws Exception {
+        // A) Dossier PRET_DISPATCH avec un dispatch SEEDÉ en direct (le dossier reste PRET_DISPATCH) :
+        //    l'examen est refusé car le dossier n'est pas DISPATCHE.
+        dossierRepository.save(dossier(15, "PRET_DISPATCH"));
+        receptionRepository.save(reception(25, 15, "CTRSEC", true));
+        dispatchRepository.save(dispatch(45, 25, "CTRCC1", "CTRMEM"));
+        mvc.perform(post("/api/examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":45,\"idDispatch\":45,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isConflict());
+
+        // B) Dispatch VIA L'API → le dossier passe à DISPATCHE, et l'examen devient alors permis.
+        dossierRepository.save(dossier(16, "PRET_DISPATCH"));
+        receptionRepository.save(reception(26, 16, "CTRSEC", true));
+        mvc.perform(post("/api/dispatchs").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDispatch\":46,\"idReception\":26,\"interimDispatch\":false}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/dossiers/16").header("Authorization", tokenPresident))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("DISPATCHE"));
+        mvc.perform(post("/api/examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":46,\"idDispatch\":46,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isCreated());
     }
 
     @Test

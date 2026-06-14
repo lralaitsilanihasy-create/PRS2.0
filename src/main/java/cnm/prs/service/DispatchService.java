@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.DispatchDto;
 import cnm.prs.entity.Dispatch;
+import cnm.prs.entity.Reception;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.exception.BusinessRuleException;
@@ -58,7 +59,33 @@ public class DispatchService {
         interdireDoublonDispatch(dto.getIdReception());
         validerInterimDispatch(dto);
         Dispatch entity = DispatchMapper.toEntity(dto);
-        return DispatchMapper.toDto(repository.save(entity));
+        Dispatch saved = repository.save(entity);
+        // [Auto] Le dossier avance PRET_DISPATCH → DISPATCHE, dans la même transaction que le dispatch.
+        avancerDossierVersDispatche(dto.getIdReception());
+        return DispatchMapper.toDto(saved);
+    }
+
+    /**
+     * [Auto] ⚠️ Règle ajoutée : à la création d'un dispatch, le dossier passe de
+     * {@link StatutDossier#PRET_DISPATCH} à {@link StatutDossier#DISPATCHE} (même transaction).
+     * La précondition {@link #exigerDossierPretDispatch} garantit l'état de départ ; on ne réécrit
+     * que si le dossier est bien PRET_DISPATCH (jamais un dossier déjà clôturé/retiré).
+     */
+    private void avancerDossierVersDispatche(Integer idReception) {
+        if (idReception == null) {
+            return;
+        }
+        Integer idDossier = receptionRepository.findById(idReception)
+                .map(Reception::getIdDossier).orElse(null);
+        if (idDossier == null) {
+            return;
+        }
+        dossierRepository.findById(idDossier).ifPresent(d -> {
+            if (StatutDossier.PRET_DISPATCH.name().equals(d.getStatut())) {
+                d.setStatut(StatutDossier.DISPATCHE.name());
+                dossierRepository.save(d);
+            }
+        });
     }
 
     /**

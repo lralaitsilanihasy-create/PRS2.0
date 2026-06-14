@@ -21,6 +21,12 @@ public enum StatutDossier {
     /** §2.2 — déclenché automatiquement dès {@code COMPLET = true}. */
     PRET_DISPATCH,
 
+    /**
+     * ⚠️ Règle ajoutée (non issue de la brochure) — dossier <strong>dispatché</strong> vers un Membre,
+     * en attente d'examen (§2.3 → §2.4). Posé automatiquement à la création d'un dispatch.
+     */
+    DISPATCHE,
+
     /** §3.3 — retrait approuvé par le Chef de commission. */
     RETIRE,
 
