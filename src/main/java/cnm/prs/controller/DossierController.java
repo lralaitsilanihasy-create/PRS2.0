@@ -37,6 +37,13 @@ public class DossierController {
         return service.findAll();
     }
 
+    /** File « à réceptionner » du Secrétaire (§3.4) : dossiers SOUMIS de sa localité sans réception. */
+    @PreAuthorize("@perm.peutExercer('SECRETAIRE') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/a-receptionner")
+    public List<DossierDto> aReceptionner() {
+        return service.aReceptionner();
+    }
+
     @GetMapping("/{id}")
     public DossierDto findById(@PathVariable Integer id) {
         return service.findById(id);

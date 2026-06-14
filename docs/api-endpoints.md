@@ -715,6 +715,7 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
 | GET | /api/dossiers | — | `DossierDto[]` | 200 | Authentifié (filtré, hors BROUILLON) |
+| GET | /api/dossiers/a-receptionner | — | `DossierDto[]` | 200, 403 | `SECRETAIRE` (titulaire/délégué) ou `ADMINISTRATEUR` |
 | GET | /api/dossiers/{id} | — | `DossierDto` | 200, 403, 404 | Authentifié (filtré) |
 | POST | /api/dossiers | `DossierDto` | `DossierDto` | 201, 400, 403 | **ADMINISTRATEUR** |
 | PUT | /api/dossiers/{id} | `DossierDto` | `DossierDto` | 200, 400, 403, 404 | **ADMINISTRATEUR** |
@@ -722,6 +723,10 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 | POST | /api/dossiers/{id}/soumettre | — | `DossierDto` | 200, 400, 403, 404, 409 | **PRMP** |
 
 `{id}` = idDossier (number).
+
+> **File « à réceptionner » (§3.4).** `GET /api/dossiers/a-receptionner` retourne les dossiers
+> **`SOUMIS`** **sans réception** de la **localité** du contrôleur (Président/Administrateur : toutes
+> localités). C'est la file de travail du Secrétaire ; un dossier en sort dès qu'une réception est créée.
 
 > **Soumission (§3.1, Module 03).** `POST /api/dossiers/{id}/soumettre` (réservé **PRMP propriétaire**) :
 > passe le dossier de **`BROUILLON` → `SOUMIS`** (statut autre → **409**), vérifie la **cohérence
@@ -749,6 +754,7 @@ dossier/PPM (désormais réservée Admin).
 |---|---|---|---|---|---|
 | POST | /api/saisies/ppm | `SaisiePpmRequest` | `DossierDto` (le dossier créé) | 201, 400, 403 | **PRMP** |
 | POST | /api/saisies/dossier | `SaisieDossierRequest` | `DossierDto` | 201, 400, 403, 409 | **PRMP** |
+| PUT | /api/saisies/ppm/{idDossier} | `EditionPpmRequest` | `DossierDto` | 200, 400, 403, 404, 409 | **PRMP** |
 
 **`SaisiePpmRequest`** — crée dossier (type PPM) + PPM + lignes de marché (mode **auto**) :
 
@@ -766,6 +772,9 @@ dossier/PPM (désormais réservée Admin).
 **`SaisieMarcheLigne`** : `idDetail` (oui), `designationMarche`, `numCompte`, `montEstim`, `financement`, `statut`, `idSituation`, `idNature`. `idDossier`/`idPpm`/`idMode` sont renseignés par le service (mode déterminé automatiquement, §3.1 M02).
 
 **`SaisieDossierRequest`** (DAO/MAOO, sans contenu) : `idDossier` (oui), `idTypeDossier` (oui, ≠ `PPM` sinon **409**), **`idEntiteContract` (oui)**.
+
+**`EditionPpmRequest`** (`PUT /api/saisies/ppm/{idDossier}`) — édite un **brouillon** PPM en une transaction :
+`exercice`, `signataire`, `dateSignature`, `reference` (en-tête, tous obligatoires) + `marches` (liste désirée). Les lignes sont **réconciliées par `idDetail`** : ajout des nouvelles, mise à jour des existantes (mode **recalculé**), **retrait** des absentes. La localité/le type/le propriétaire/l'entité ne changent pas. Dossier non BROUILLON → **409** ; non-propriétaire → **403**.
 
 > **Localité dérivée de l'ENTITÉ.** Le champ `idLocalite` n'est **pas** saisi : la PRMP **choisit une
 > entité contractante** parmi **ses** entités actives (`t_prmp_entite`), et la **localité du dossier en
@@ -1067,14 +1076,19 @@ dossier/PPM (désormais réservée Admin).
 ---
 
 ## KPIs / Tableau de bord
-**Ressource** `/api/kpis` — Réservé à `PRESIDENT` et `ADMINISTRATEUR`. Lecture seule, pas de CRUD.
+**Ressource** `/api/kpis` — `GET /api/kpis/tableau-bord` réservé à `PRESIDENT`, `ADMINISTRATEUR` et
+`CHEF_COMMISSION`. Lecture seule.
+
+> **Périmètre selon le profil (§3.3).** Président/Administrateur → **toutes localités** (global) ;
+> **Chef de commission** → KPIs **filtrés sur sa localité** (pipeline, conformité et non-conformité du
+> périmètre de sa localité ; CC sans localité → tableau vide). Aucun paramètre : le périmètre découle du profil.
 
 **Champs `TableauBordDto`** (réponse)
 
 | Champ (JSON) | Type | Description |
 |---|---|---|
 | pipelineParStatut | object (`Map<string, number>`) | nombre de dossiers par statut |
-| nbDossiersSoumis | number | total des dossiers |
+| nbDossiersSoumis | number | dossiers **soumis** (statut ≠ `BROUILLON`) du périmètre — dénominateur du taux ; les brouillons restent visibles dans `pipelineParStatut` |
 | nbDossiersConformes | number | dossiers conformes (observations levées) |
 | tauxConformitePct | number | conformes / soumis × 100 |
 | topNonConformite | `PointNonConformiteDto[]` | top 5 des points de contrôle non conformes |

@@ -122,9 +122,10 @@ public class MarcheService {
     }
 
     public void delete(Integer id) {
-        if (!repository.existsById(id)) {
-            throw new ResourceNotFoundException("Marche introuvable : " + id);
-        }
+        Marche existing = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Marche introuvable : " + id));
+        // Une ligne ne se retire que d'un dossier en brouillon, propriété de la PRMP courante.
+        dossierIntegrite.exigerBrouillonModifiable(existing.getIdDossier());
         repository.deleteById(id);
     }
 

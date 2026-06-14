@@ -9,7 +9,8 @@ import cnm.prs.dto.TableauBordDto;
 import cnm.prs.service.KpiService;
 
 /**
- * Tableau de bord & KPIs (§3.2, §3.8) — vue globale réservée au Président et à l'Administrateur.
+ * Tableau de bord & KPIs (§3.2, §3.8) : vue globale pour le Président/Administrateur,
+ * vue filtrée sur sa localité pour le Chef de commission (§3.3).
  */
 @RestController
 @RequestMapping("/api/kpis")
@@ -21,7 +22,7 @@ public class KpiController {
         this.kpiService = kpiService;
     }
 
-    @PreAuthorize("hasAnyRole('PRESIDENT','ADMINISTRATEUR')")
+    @PreAuthorize("hasAnyRole('PRESIDENT','ADMINISTRATEUR','CHEF_COMMISSION')")
     @GetMapping("/tableau-bord")
     public TableauBordDto tableauBord() {
         return kpiService.tableauBord();

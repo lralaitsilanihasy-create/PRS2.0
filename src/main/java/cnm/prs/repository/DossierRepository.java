@@ -21,6 +21,35 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
     @Query("select d.statut, count(d) from Dossier d group by d.statut")
     List<Object[]> compterParStatut();
 
+    /** Pipeline par statut filtré sur une localité (tableau de bord du CC, §3.3). */
+    @Query("select d.statut, count(d) from Dossier d where d.idLocalite = :localite group by d.statut")
+    List<Object[]> compterParStatutParLocalite(@Param("localite") String localite);
+
+    /** Nombre de dossiers <strong>soumis</strong> (statut ≠ BROUILLON) — dénominateur du taux de conformité. */
+    @Query("select count(d) from Dossier d where d.statut is null or d.statut <> 'BROUILLON'")
+    long compterSoumis();
+
+    /** Idem, pour une localité (tableau de bord du CC, §3.3). */
+    @Query("""
+            select count(d) from Dossier d
+            where d.idLocalite = :localite and (d.statut is null or d.statut <> 'BROUILLON')
+            """)
+    long compterSoumisParLocalite(@Param("localite") String localite);
+
+    /** Dossiers <strong>à réceptionner</strong> : soumis ({@code SOUMIS}) et sans réception (toutes localités). */
+    @Query("""
+            select d from Dossier d where d.statut = 'SOUMIS'
+              and not exists (select 1 from Reception r where r.idDossier = d.idDossier)
+            """)
+    List<Dossier> findAReceptionner();
+
+    /** Dossiers à réceptionner d'une localité (file du Secrétaire, §3.4). */
+    @Query("""
+            select d from Dossier d where d.statut = 'SOUMIS' and d.idLocalite = :localite
+              and not exists (select 1 from Reception r where r.idDossier = d.idDossier)
+            """)
+    List<Dossier> findAReceptionnerParLocalite(@Param("localite") String localite);
+
     /** Statut du dossier rattaché à une réception (précondition du dispatch, §2.2/§2.3). */
     @Query("select d.statut from Dossier d, Reception r where r.idReception = :idReception and d.idDossier = r.idDossier")
     Optional<String> findStatutByReception(@Param("idReception") Integer idReception);

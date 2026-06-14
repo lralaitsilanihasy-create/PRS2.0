@@ -10,9 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.PointNonConformiteDto;
 import cnm.prs.dto.TableauBordDto;
+import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenDetailRepository;
 import cnm.prs.repository.VerificationRepository;
+import cnm.prs.security.CurrentUser;
 
 /**
  * Calcul des KPIs du tableau de bord (§3.2, §3.7, §3.8) à partir des tables opérationnelles :
@@ -33,18 +35,45 @@ public class KpiService {
         this.examenDetailRepository = examenDetailRepository;
     }
 
+    /**
+     * Tableau de bord du contrôleur courant : <strong>global</strong> pour le Président et
+     * l'Administrateur ; <strong>filtré sur sa localité</strong> pour le Chef de commission (§3.3).
+     */
     public TableauBordDto tableauBord() {
+        ProfilUtilisateur profil = CurrentUser.profil().orElse(null);
+        if (profil == ProfilUtilisateur.CHEF_COMMISSION) {
+            String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+            if (localite == null) {
+                return new TableauBordDto(new LinkedHashMap<>(), 0, 0, 0.0, List.of());
+            }
+            return calculer(localite);
+        }
+        return calculer(null); // Président / Administrateur : toutes localités
+    }
+
+    /** Calcule le tableau de bord, global si {@code localite == null}, sinon limité à cette localité. */
+    private TableauBordDto calculer(String localite) {
+        List<Object[]> statuts = localite == null
+                ? dossierRepository.compterParStatut()
+                : dossierRepository.compterParStatutParLocalite(localite);
         Map<String, Long> pipeline = new LinkedHashMap<>();
-        for (Object[] ligne : dossierRepository.compterParStatut()) {
+        for (Object[] ligne : statuts) {
             String statut = ligne[0] != null ? (String) ligne[0] : "(non défini)";
             pipeline.put(statut, ((Number) ligne[1]).longValue());
         }
 
-        long nbSoumis = dossierRepository.count();
-        long nbConformes = verificationRepository.compterDossiersConformes();
+        long nbSoumis = localite == null
+                ? dossierRepository.compterSoumis()
+                : dossierRepository.compterSoumisParLocalite(localite);
+        long nbConformes = localite == null
+                ? verificationRepository.compterDossiersConformes()
+                : verificationRepository.compterDossiersConformesParLocalite(localite);
         double tauxConformite = nbSoumis == 0 ? 0.0 : arrondi(nbConformes * 100.0 / nbSoumis);
 
-        List<PointNonConformiteDto> topNonConformite = examenDetailRepository.statsNonConformiteParPoint().stream()
+        List<Object[]> stats = localite == null
+                ? examenDetailRepository.statsNonConformiteParPoint()
+                : examenDetailRepository.statsNonConformiteParPointParLocalite(localite);
+        List<PointNonConformiteDto> topNonConformite = stats.stream()
                 .map(this::versPointNonConformite)
                 .sorted(Comparator.comparingDouble(PointNonConformiteDto::tauxNonConformitePct).reversed())
                 .limit(5)

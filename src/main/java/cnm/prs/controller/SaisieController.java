@@ -3,7 +3,9 @@ package cnm.prs.controller;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
 
 import cnm.prs.dto.DossierDto;
+import cnm.prs.dto.EditionPpmRequest;
 import cnm.prs.dto.SaisieDossierRequest;
 import cnm.prs.dto.SaisiePpmRequest;
 import cnm.prs.service.SaisieService;
@@ -41,5 +44,12 @@ public class SaisieController {
     @PostMapping("/dossier")
     public ResponseEntity<DossierDto> saisirDossier(@Valid @RequestBody SaisieDossierRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.saisirDossier(req));
+    }
+
+    /** Édition d'un brouillon PPM : en-tête + réconciliation des lignes de marché, en une transaction. */
+    @PreAuthorize("hasRole('PRMP')")
+    @PutMapping("/ppm/{idDossier}")
+    public DossierDto editerPpm(@PathVariable Integer idDossier, @Valid @RequestBody EditionPpmRequest req) {
+        return service.editerPpm(idDossier, req);
     }
 }

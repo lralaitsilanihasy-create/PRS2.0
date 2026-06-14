@@ -1271,6 +1271,102 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Édition d'un brouillon PPM : en-tête mis à jour + lignes réconciliées (maj/ajout/retrait), mode recalculé")
+    void editionPpm_facade() throws Exception {
+        natureRepository.save(new Nature(1, "Travaux", null));
+        situationRepository.save(new Situation(1, "Normale", null));
+        modePassationRepository.save(new ModePassation(1, "AOO", null, null, null, null));
+        modePassationRepository.save(new ModePassation(2, "AOR", null, null, null, null));
+        modePassationRepository.save(new ModePassation(4, "Cotation", null, null, null, null));
+        seuilRepository.save(seuil(901, "ANT", 1, "0", "200000000"));
+        seuilRepository.save(seuil(902, "ANT", 1, "200000001", "1000000000"));
+        seuilRepository.save(seuil(903, "ANT", 1, "1000000001", null));
+        reglePassationRepository.save(regle(901, 1, 901, 4));
+        reglePassationRepository.save(regle(902, 1, 902, 2));
+        reglePassationRepository.save(regle(903, 1, 903, 1));
+
+        // Saisie initiale : 700 (150M → 4), 701 (500M → 2), entité 1 (ANT).
+        String creation = "{\"idDossier\":120,\"idEntiteContract\":1,\"idPpm\":120,\"exercice\":2026,"
+                + "\"signataire\":\"RABE\",\"dateSignature\":\"2026-01-10\",\"reference\":\"PPM-120-v1\","
+                + "\"marches\":[{\"idDetail\":700,\"montEstim\":150000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"},"
+                + "{\"idDetail\":701,\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(creation))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/marches/700").header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(4));
+        mvc.perform(get("/api/marches/701").header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(2));
+
+        // Édition : en-tête + 700→1,5 Md (mode 1), 701 retiré, 702 ajouté (500M → 2).
+        String edition = "{\"exercice\":2027,\"signataire\":\"RABE Maj\",\"dateSignature\":\"2026-02-01\",\"reference\":\"PPM-120-v2\","
+                + "\"marches\":[{\"idDetail\":700,\"montEstim\":1500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"},"
+                + "{\"idDetail\":702,\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+        mvc.perform(put("/api/saisies/ppm/120").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(edition))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("BROUILLON"));
+        // En-tête mis à jour, lignes réconciliées (700 recalculé→1, 702 créé→2, 701 supprimé→404 en dernier).
+        mvc.perform(get("/api/ppms/120").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.reference").value("PPM-120-v2"))
+                .andExpect(jsonPath("$.exercice").value(2027));
+        mvc.perform(get("/api/marches/700").header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(1));
+        mvc.perform(get("/api/marches/702").header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(2));
+        mvc.perform(get("/api/marches/701").header("Authorization", tokenPrmp)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Édition de brouillon : gardes — dossier soumis → 409 ; non-propriétaire → 403")
+    void editionPpm_gardes() throws Exception {
+        String tokenAutrePrmp = bearer("PRMPZZ", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMPZZ", "ANT");
+        String edition = "{\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R\",\"marches\":[]}";
+        // 2 brouillons PPM (sans lignes) de PRMP001, entité 1.
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":121,\"idEntiteContract\":1,\"idPpm\":121,\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R121\"}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":122,\"idEntiteContract\":1,\"idPpm\":122,\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R122\"}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/dossiers/122/soumettre").header("Authorization", tokenPrmp)).andExpect(status().isOk());
+        // Dossier soumis → non éditable.
+        mvc.perform(put("/api/saisies/ppm/122").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(edition))
+                .andExpect(status().isConflict());
+        // Brouillon d'une autre PRMP → 403.
+        mvc.perform(put("/api/saisies/ppm/121").header("Authorization", tokenAutrePrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(edition))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("File à réceptionner : dossiers SOUMIS de la localité sans réception (Secrétaire) ; cloisonnement et exclusions")
+    void fileAReceptionner() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        // SOUMIS ANT sans réception → à réceptionner.
+        Dossier a = dossier(110, "SOUMIS"); a.setIdLocalite("ANT"); dossierRepository.save(a);
+        // BROUILLON ANT → exclu.
+        Dossier b = dossier(111, "BROUILLON"); b.setIdLocalite("ANT"); dossierRepository.save(b);
+        // SOUMIS TMS → pas pour le Secrétaire d'ANT.
+        Dossier c = dossier(112, "SOUMIS"); c.setIdLocalite("TMS"); dossierRepository.save(c);
+        // SOUMIS ANT déjà réceptionné → exclu.
+        Dossier d = dossier(113, "SOUMIS"); d.setIdLocalite("ANT"); dossierRepository.save(d);
+        receptionRepository.save(reception(113, 113, "CTRSEC", false));
+
+        // Secrétaire d'ANT : seul le 110.
+        mvc.perform(get("/api/dossiers/a-receptionner").header("Authorization", tokenSec))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==110)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==111)]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.idDossier==112)]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.idDossier==113)]", hasSize(0)));
+        // Le Président voit toutes les localités (110 ANT + 112 TMS).
+        mvc.perform(get("/api/dossiers/a-receptionner").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$[?(@.idDossier==110)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==112)]", hasSize(1)));
+        // Un Membre n'y a pas accès → 403.
+        mvc.perform(get("/api/dossiers/a-receptionner").header("Authorization", tokenMembre))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     @DisplayName("Réception interdite si le dossier est en BROUILLON → 409")
     void receptionBrouillon_interdite() throws Exception {
         Dossier d = dossier(67, "BROUILLON");
@@ -1282,6 +1378,27 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idReception\":670,\"idDossier\":67,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":false}"))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("KPIs par localité : le CC ne voit que sa localité ; le Président voit tout")
+    void kpisParLocalite() throws Exception {
+        Dossier a = dossier(140, "SOUMIS"); a.setIdLocalite("ANT"); dossierRepository.save(a);
+        Dossier b = dossier(141, "PRET_DISPATCH"); b.setIdLocalite("ANT"); dossierRepository.save(b);
+        Dossier c = dossier(142, "SOUMIS"); c.setIdLocalite("TMS"); dossierRepository.save(c);
+        Dossier e = dossier(143, "BROUILLON"); e.setIdLocalite("ANT"); dossierRepository.save(e);
+
+        // CC d'ANT : pipeline ANT (SOUMIS, PRET_DISPATCH, BROUILLON), mais nbDossiersSoumis exclut le BROUILLON.
+        mvc.perform(get("/api/kpis/tableau-bord").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nbDossiersSoumis").value(2))   // 140, 141 ; le BROUILLON 143 exclu
+                .andExpect(jsonPath("$.pipelineParStatut.SOUMIS").value(1))
+                .andExpect(jsonPath("$.pipelineParStatut.PRET_DISPATCH").value(1))
+                .andExpect(jsonPath("$.pipelineParStatut.BROUILLON").value(1));
+        // Président : global → SOUMIS = 2 (140 ANT + 142 TMS).
+        mvc.perform(get("/api/kpis/tableau-bord").header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pipelineParStatut.SOUMIS").value(2));
     }
 
     @Test

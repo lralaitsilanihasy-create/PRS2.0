@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import cnm.prs.entity.ExamenDetail;
@@ -22,4 +23,17 @@ public interface ExamenDetailRepository extends JpaRepository<ExamenDetail, Inte
             group by ed.idPtControle, ed.ptControle.libelPointCtrl
             """)
     List<Object[]> statsNonConformiteParPoint();
+
+    /** Idem, filtré sur la localité du dossier (examen → dispatch → réception → dossier), §3.3. */
+    @Query("""
+            select ed.idPtControle, ed.ptControle.libelPointCtrl, count(ed),
+                   sum(case when ed.conforme = false then 1L else 0L end)
+            from ExamenDetail ed
+            where exists (select 1 from Examen e, Dispatch di, Reception r, Dossier d
+                          where e.idExamen = ed.idExamen and di.idDispatch = e.idDispatch
+                            and r.idReception = di.idReception and d.idDossier = r.idDossier
+                            and d.idLocalite = :loc)
+            group by ed.idPtControle, ed.ptControle.libelPointCtrl
+            """)
+    List<Object[]> statsNonConformiteParPointParLocalite(@Param("loc") String loc);
 }

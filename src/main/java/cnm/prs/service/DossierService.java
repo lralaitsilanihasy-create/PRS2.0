@@ -80,6 +80,23 @@ public class DossierService {
         return DossierMapper.toDto(entity);
     }
 
+    /**
+     * File « à réceptionner » (§3.4) : dossiers soumis ({@code SOUMIS}) et sans réception, de la
+     * localité du contrôleur. Président/Administrateur voient toutes les localités.
+     */
+    @Transactional(readOnly = true)
+    public List<DossierDto> aReceptionner() {
+        ProfilUtilisateur profil = CurrentUser.profil().orElse(null);
+        if (profil == ProfilUtilisateur.PRESIDENT || profil == ProfilUtilisateur.ADMINISTRATEUR) {
+            return repository.findAReceptionner().stream().map(DossierMapper::toDto).toList();
+        }
+        String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+        if (localite == null) {
+            return List.of();
+        }
+        return repository.findAReceptionnerParLocalite(localite).stream().map(DossierMapper::toDto).toList();
+    }
+
     /** Vérifie que le dossier est dans le périmètre de visibilité de l'utilisateur (§1). */
     private void controlerVisibilite(Integer idDossier) {
         ProfilUtilisateur profil = CurrentUser.profil().orElse(null);

@@ -21,4 +21,13 @@ public interface VerificationRepository extends JpaRepository<Verification, Inte
     /** Nombre de dossiers conformes : ayant une vérification avec OBS_LEVEES = true (§3.2). */
     @Query("select count(distinct v.reception.idDossier) from Verification v where v.obsLevees = true")
     long compterDossiersConformes();
+
+    /** Nombre de dossiers conformes d'une localité (tableau de bord du CC, §3.3). */
+    @Query("""
+            select count(distinct v.reception.idDossier) from Verification v
+            where v.obsLevees = true
+              and exists (select 1 from Dossier d
+                          where d.idDossier = v.reception.idDossier and d.idLocalite = :loc)
+            """)
+    long compterDossiersConformesParLocalite(@Param("loc") String loc);
 }
