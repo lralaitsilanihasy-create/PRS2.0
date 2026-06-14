@@ -714,7 +714,7 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
-| GET | /api/dossiers | — | `DossierDto[]` | 200 | Authentifié (filtré, hors BROUILLON) |
+| GET | /api/dossiers | — | `DossierDto[]` | 200, 400 | Authentifié (filtré, hors BROUILLON) |
 | GET | /api/dossiers/a-receptionner | — | `DossierDto[]` | 200, 403 | `SECRETAIRE` (titulaire/délégué) ou `ADMINISTRATEUR` |
 | GET | /api/dossiers/{id} | — | `DossierDto` | 200, 403, 404 | Authentifié (filtré) |
 | POST | /api/dossiers | `DossierDto` | `DossierDto` | 201, 400, 403 | **ADMINISTRATEUR** |
@@ -723,6 +723,12 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 | POST | /api/dossiers/{id}/soumettre | — | `DossierDto` | 200, 400, 403, 404, 409 | **PRMP** |
 
 `{id}` = idDossier (number).
+
+> **Filtre serveur `?statut=` (nouveau).** `GET /api/dossiers?statut=SOUMIS` restreint la liste à ce
+> statut **côté serveur**, en **conservant le périmètre** (localité / PRMP). Statut inconnu → **400**.
+> Valeurs : `BROUILLON`, `SOUMIS`, `PRET_DISPATCH`, `RETIRE`, `CLOTURE`. **Ne pas** l'utiliser pour la
+> worklist du Secrétaire : un dossier réceptionné **mais incomplet** reste `SOUMIS` ; utiliser
+> `GET /api/dossiers/a-receptionner` (filtre serveur « `SOUMIS` + sans réception », sans N+1).
 
 > **File « à réceptionner » (§3.4).** `GET /api/dossiers/a-receptionner` retourne les dossiers
 > **`SOUMIS`** **sans réception** de la **localité** du contrôleur (Président/Administrateur : toutes
@@ -1188,7 +1194,12 @@ dossier/PPM (désormais réservée Admin).
 ---
 
 ## Marchés
-**Ressource** `/api/marches` — Lecture : ouverte. **Écriture (POST/PUT/DELETE) réservée `PRMP`** : édition des lignes d'un dossier **PPM en BROUILLON** dont elle est propriétaire (sinon 403/409). Le **mode** est déterminé automatiquement (cf. note ci-dessous).
+**Ressource** `/api/marches` — Lecture **scopée au périmètre de l'appelant** (⚠️ changement de portée, voir note). **Écriture (POST/PUT/DELETE) réservée `PRMP`** : édition des lignes d'un dossier **PPM en BROUILLON** dont elle est propriétaire (sinon 403/409). Le **mode** est déterminé automatiquement (cf. note ci-dessous).
+
+> **⚠️ Scoping serveur (changement de portée, §1/§3.1).** `GET /api/marches` ne renvoie **plus toute
+> la table** : Président/Administrateur → tout ; **PRMP → ses marchés** (ceux de ses PPM) ; contrôleur
+> → ceux de **sa localité** (dossier non brouillon) ; autre profil → liste vide. `GET /api/marches/{id}`
+> hors périmètre → **403**. Le front n'a plus à filtrer côté client (corrige la fuite inter‑PRMP/localité).
 
 **Champs `MarcheDto`**
 
@@ -1212,8 +1223,8 @@ dossier/PPM (désormais réservée Admin).
 
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
-| GET | /api/marches | — | `MarcheDto[]` | 200 | Authentifié |
-| GET | /api/marches/{id} | — | `MarcheDto` | 200, 404 | Authentifié |
+| GET | /api/marches | — | `MarcheDto[]` (scopé) | 200 | Authentifié |
+| GET | /api/marches/{id} | — | `MarcheDto` | 200, 403, 404 | Authentifié (dans son périmètre) |
 | POST | /api/marches | `MarcheDto` | `MarcheDto` | 201, 400 | Authentifié |
 | PUT | /api/marches/{id} | `MarcheDto` | `MarcheDto` | 200, 400, 404 | Authentifié |
 | DELETE | /api/marches/{id} | — | — | 204, 404 | Authentifié |
@@ -1622,7 +1633,12 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 ---
 
 ## PPM
-**Ressource** `/api/ppms` — Lecture : ouverte. **`POST` réservé `ADMINISTRATEUR`** (la saisie passe par `/api/saisies/ppm`) ; **`PUT` réservé `PRMP`/`ADMINISTRATEUR`** (édition de l'en-tête d'un brouillon) ; `DELETE` réservé `ADMINISTRATEUR`. Un PPM ne se rattache qu'à un dossier de **type PPM, en BROUILLON, propriété de la PRMP** (sinon **409**/**403**).
+**Ressource** `/api/ppms` — Lecture **scopée au périmètre de l'appelant** (⚠️ changement de portée, voir note). **`POST` réservé `ADMINISTRATEUR`** (la saisie passe par `/api/saisies/ppm`) ; **`PUT` réservé `PRMP`/`ADMINISTRATEUR`** (édition de l'en-tête d'un brouillon) ; `DELETE` réservé `ADMINISTRATEUR`. Un PPM ne se rattache qu'à un dossier de **type PPM, en BROUILLON, propriété de la PRMP** (sinon **409**/**403**).
+
+> **⚠️ Scoping serveur (changement de portée, §1/§3.1).** `GET /api/ppms` ne renvoie **plus toute la
+> table** : Président/Administrateur → tout ; **PRMP → les siens** (`t_ppm.ID_PRMP`, brouillons compris) ;
+> contrôleur → ceux de **sa localité** (dossier non brouillon) ; autre profil → liste vide.
+> `GET /api/ppms/{id}` hors périmètre → **403**. Corrige la fuite inter‑PRMP/localité (plus de filtrage côté client).
 
 **Champs `PpmDto`**
 
@@ -1650,8 +1666,8 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
-| GET | /api/ppms | — | `PpmDto[]` | 200 | Authentifié |
-| GET | /api/ppms/{id} | — | `PpmDto` | 200, 404 | Authentifié |
+| GET | /api/ppms | — | `PpmDto[]` (scopé) | 200 | Authentifié |
+| GET | /api/ppms/{id} | — | `PpmDto` | 200, 403, 404 | Authentifié (dans son périmètre) |
 | POST | /api/ppms | `PpmDto` | `PpmDto` | 201, 400 | Authentifié |
 | PUT | /api/ppms/{id} | `PpmDto` | `PpmDto` | 200, 400, 404 | Authentifié |
 | DELETE | /api/ppms/{id} | — | — | 204, 404 | Authentifié |
@@ -1845,21 +1861,28 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 ---
 
 ## Rapports
-**Ressource** `/api/rapports` — Réservé à `PRESIDENT` et `ADMINISTRATEUR`. **Réponses binaires** (téléchargement), pas de JSON. Côté Angular : `responseType: 'blob'`.
+**Ressource** `/api/rapports` — Ouvert à `PRESIDENT`, `ADMINISTRATEUR` et `CHEF_COMMISSION`. **Réponses binaires** (téléchargement), pas de JSON. Côté Angular : `responseType: 'blob'`.
 
 **Endpoints**
 
 | Méthode | URL | Paramètres (query) | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
-| GET | /api/rapports/dossiers | `from`, `to` (date `yyyy-MM-dd`, facultatifs) | `application/pdf` (`rapport-dossiers.pdf`) | 200, 403 | PRESIDENT / ADMINISTRATEUR |
-| GET | /api/rapports/dossiers/excel | `from`, `to` (date `yyyy-MM-dd`, facultatifs) | `.xlsx` (`...spreadsheetml.sheet`) | 200, 403 | PRESIDENT / ADMINISTRATEUR |
+| GET | /api/rapports/dossiers | `from`, `to` (date `yyyy-MM-dd`), `localite` (facultatifs) | `application/pdf` (`rapport-dossiers.pdf`) | 200, 403 | PRESIDENT / ADMINISTRATEUR / CHEF_COMMISSION |
+| GET | /api/rapports/dossiers/excel | `from`, `to` (date `yyyy-MM-dd`), `localite` (facultatifs) | `.xlsx` (`...spreadsheetml.sheet`) | 200, 403 | PRESIDENT / ADMINISTRATEUR / CHEF_COMMISSION |
 
 `from`/`to` bornent la période (sur `DATE_REF`) ; absents → tous les dossiers.
 
-**Exemple**
+**Portée par localité (§3.3).** Le contenu (et la colonne **Localité** des deux formats) est filtré selon le profil :
+- **Chef de commission** : rapport **toujours forcé sur sa propre localité** ; le paramètre `localite` est **ignoré**. Si le CC n'a aucune localité associée → **403**.
+- **Président / Administrateur** : **toutes commissions** par défaut ; peuvent cibler une commission précise via `?localite=ANT`.
+
+**Exemples**
 ```
 GET /api/rapports/dossiers?from=2026-01-01&to=2026-12-31
-→ 200 OK, Content-Type: application/pdf, Content-Disposition: attachment; filename="rapport-dossiers.pdf"
+→ 200 OK, application/pdf, attachment; filename="rapport-dossiers.pdf"  (toutes localités si Président)
+
+GET /api/rapports/dossiers?localite=TMS            (Président : cible la commission TMS)
+GET /api/rapports/dossiers/excel                   (Chef de commission : forcé sur sa localité)
 ```
 
 ---
@@ -1898,12 +1921,21 @@ GET /api/rapports/dossiers?from=2026-01-01&to=2026-12-31
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
 | GET | /api/receptions | — | `ReceptionDto[]` | 200 | Authentifié (filtré) |
-| GET | /api/receptions/{id} | — | `ReceptionDto` | 200, 404 | Authentifié (filtré) |
+| GET | /api/receptions?idDossier={n} | — | `ReceptionDto[]` | 200 | Authentifié (filtré) |
+| GET | /api/receptions/dossier/{idDossier}/existe | — | `ReceptionExisteDto` | 200 | Authentifié (filtré) |
+| GET | /api/receptions/{id} | — | `ReceptionDto` | 200, 403, 404 | Authentifié (filtré) |
 | POST | /api/receptions | `ReceptionDto` | `ReceptionDto` | 201, 400, 403, 409 | SECRETAIRE (titulaire/délégué) |
 | PUT | /api/receptions/{id} | `ReceptionDto` | `ReceptionDto` | 200, 400, 403, 404, 409 | SECRETAIRE (titulaire/délégué) |
 | DELETE | /api/receptions/{id} | — | — | 204, 404 | ADMINISTRATEUR |
 
 `{id}` = idReception (number).
+
+> **Ne charger que l'utile (anti sur‑fetch).** `?idDossier={n}` restreint la liste aux réceptions de
+> ce dossier (filtre serveur, dans le périmètre). `…/dossier/{idDossier}/existe` → `{ "idDossier": n,
+> "recu": true|false }` : test **léger** « déjà réceptionné ? » avant d'enregistrer une réception, sans
+> charger l'historique. La PRMP (ressource interne) obtient liste vide / `recu=false`. **Pour la worklist
+> du Secrétaire, utiliser `GET /api/dossiers/a-receptionner`** (et non un `…/existe` par dossier — ce
+> serait un N+1).
 
 **Exemple — requête**
 ```json

@@ -26,4 +26,10 @@ public interface ReceptionRepository extends JpaRepository<Reception, Integer> {
     @Query("select r.ctrlRecept.idLocalite from Reception r "
             + "where r.idDossier = :idDossier and r.ctrlRecept.idLocalite is not null order by r.numPassage")
     List<String> findLocalitesByDossier(@Param("idDossier") Integer idDossier);
+
+    /** Réceptions d'un dossier (filtre serveur {@code ?idDossier=} — ne charge que l'utile). */
+    List<Reception> findByIdDossier(Integer idDossier);
+
+    /** Vrai si le dossier a déjà au moins une réception (test « déjà réceptionné » sans charger l'historique). */
+    boolean existsByIdDossier(Integer idDossier);
 }

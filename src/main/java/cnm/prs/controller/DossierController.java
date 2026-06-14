@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.access.prepost.PreAuthorize;
 
@@ -32,9 +33,14 @@ public class DossierController {
         this.service = service;
     }
 
+    /**
+     * Dossiers visibles dans le périmètre de l'appelant (§1), filtrables par statut côté serveur
+     * via {@code ?statut=SOUMIS} (statut inconnu → 400). Pour la file « à réceptionner » du
+     * Secrétaire, préférer {@code /api/dossiers/a-receptionner} (SOUMIS + sans réception, sans N+1).
+     */
     @GetMapping
-    public List<DossierDto> findAll() {
-        return service.findAll();
+    public List<DossierDto> findAll(@RequestParam(required = false) String statut) {
+        return service.findAll(statut);
     }
 
     /** File « à réceptionner » du Secrétaire (§3.4) : dossiers SOUMIS de sa localité sans réception. */

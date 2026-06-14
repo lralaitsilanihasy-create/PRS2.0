@@ -17,6 +17,16 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
     /** Dossiers dont la date de référence est dans la période (pour les rapports périodiques). */
     List<Dossier> findByDateRefBetween(LocalDate debut, LocalDate fin);
 
+    /** Dossiers d'une localité dont la date de référence est dans la période (rapport périodique du CC, §3.3). */
+    List<Dossier> findByDateRefBetweenAndIdLocalite(LocalDate debut, LocalDate fin, String idLocalite);
+
+    /** Dossiers d'une localité, sans bornage de période (rapport « tous les dossiers » du CC). */
+    List<Dossier> findByIdLocalite(String idLocalite);
+
+    /** Tous les dossiers, filtrés par statut si fourni (Président/Admin). {@code statut=null} → tous. */
+    @Query("select d from Dossier d where (:statut is null or d.statut = :statut)")
+    List<Dossier> findParStatut(@Param("statut") String statut);
+
     /** Comptage des dossiers par statut (pipeline du tableau de bord, §3.2). [statut, nombre] */
     @Query("select d.statut, count(d) from Dossier d group by d.statut")
     List<Object[]> compterParStatut();
@@ -79,6 +89,21 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             """)
     List<Dossier> findVisiblesParLocalite(@Param("localite") String localite);
 
+    /** Idem {@link #findVisiblesParLocalite}, en filtrant aussi par statut si fourni ({@code null} → tous). */
+    @Query("""
+            select d from Dossier d where
+                (d.statut is null or d.statut <> 'BROUILLON')
+            and (:statut is null or d.statut = :statut)
+            and (
+                d.idLocalite = :localite
+             or exists (select 1 from Reception r
+                        where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :localite)
+             or exists (select 1 from Ppm p
+                        where p.idDossier = d.idDossier and p.idLocalite = :localite))
+            """)
+    List<Dossier> findVisiblesParLocaliteEtStatut(@Param("localite") String localite,
+            @Param("statut") String statut);
+
     /**
      * Vrai si le dossier est visible dans la localité donnée — via sa propre localité, sa réception
      * ou son PPM — et qu'il n'est pas un brouillon (les brouillons sont masqués aux contrôleurs).
@@ -108,6 +133,19 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
                           where m.idDossier = d.idDossier and m.idPpm = p2.idPpm and p2.idPrmp = :idPrmp)
             """)
     List<Dossier> findVisiblesPourPrmp(@Param("idPrmp") String idPrmp);
+
+    /** Idem {@link #findVisiblesPourPrmp}, en filtrant aussi par statut si fourni ({@code null} → tous). */
+    @Query("""
+            select d from Dossier d where
+               (:statut is null or d.statut = :statut)
+            and (
+               d.idPrmp = :idPrmp
+               or exists (select 1 from Ppm p where p.idDossier = d.idDossier and p.idPrmp = :idPrmp)
+               or exists (select 1 from Marche m, Ppm p2
+                          where m.idDossier = d.idDossier and m.idPpm = p2.idPpm and p2.idPrmp = :idPrmp))
+            """)
+    List<Dossier> findVisiblesPourPrmpEtStatut(@Param("idPrmp") String idPrmp,
+            @Param("statut") String statut);
 
     /** Vrai si le dossier appartient à la PRMP (propriétaire {@code t_dossier.ID_PRMP}, ou via PPM/marché). */
     @Query("""

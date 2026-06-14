@@ -11,12 +11,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import jakarta.validation.Valid;
 
 import cnm.prs.dto.ReceptionDto;
+import cnm.prs.dto.ReceptionExisteDto;
 import cnm.prs.service.ReceptionService;
 
 /**
@@ -32,9 +34,23 @@ public class ReceptionController {
         this.service = service;
     }
 
+    /**
+     * Réceptions visibles. Avec {@code ?idDossier=}, ne renvoie que celles du dossier indiqué
+     * (filtre serveur — évite de charger tout l'historique). Toujours scopé au périmètre de l'appelant.
+     */
     @GetMapping
-    public List<ReceptionDto> findAll() {
-        return service.findAll();
+    public List<ReceptionDto> findAll(@RequestParam(required = false) Integer idDossier) {
+        return idDossier != null ? service.findByDossier(idDossier) : service.findAll();
+    }
+
+    /**
+     * Test léger « ce dossier est-il déjà réceptionné ? » — à utiliser avant d'enregistrer une
+     * réception. Ne charge pas l'historique. (Pour lister les dossiers à réceptionner, utiliser
+     * plutôt {@code GET /api/dossiers/a-receptionner}.)
+     */
+    @GetMapping("/dossier/{idDossier}/existe")
+    public ReceptionExisteDto existe(@PathVariable Integer idDossier) {
+        return new ReceptionExisteDto(idDossier, service.dejaReceptionne(idDossier));
     }
 
     @GetMapping("/{id}")

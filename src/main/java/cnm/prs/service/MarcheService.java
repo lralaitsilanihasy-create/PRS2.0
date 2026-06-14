@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ import cnm.prs.entity.Marche;
 import cnm.prs.entity.Ppm;
 import cnm.prs.entity.Prmp;
 import cnm.prs.entity.ReglePassation;
+import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.TypeNotification;
 import cnm.prs.exception.BadRequestException;
 import cnm.prs.exception.ResourceNotFoundException;
@@ -24,6 +26,8 @@ import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
+import cnm.prs.security.CurrentUser;
+import cnm.prs.security.Visibilite;
 
 /**
  * Logique métier pour {@link Marche}.
@@ -71,16 +75,52 @@ public class MarcheService {
         this.dossierIntegrite = dossierIntegrite;
     }
 
+    /**
+     * Liste des marchés <strong>scopée au périmètre de l'appelant</strong> (§1, §3.1) — jamais la
+     * table entière : Président/Administrateur voient tout ; la PRMP ne voit que <strong>les
+     * siens</strong> (marchés de ses PPM) ; les contrôleurs ne voient que ceux de <strong>leur
+     * localité</strong> (dossier non brouillon) ; tout autre profil (ou sans localité) → liste vide.
+     */
     @Transactional(readOnly = true)
     public List<MarcheDto> findAll() {
-        return repository.findAll().stream().map(MarcheMapper::toDto).toList();
+        if (Visibilite.voitTout()) {
+            return repository.findAll().stream().map(MarcheMapper::toDto).toList();
+        }
+        if (Visibilite.estPrmp()) {
+            String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+            return idPrmp == null ? List.of()
+                    : repository.findVisiblesPourPrmp(idPrmp).stream().map(MarcheMapper::toDto).toList();
+        }
+        return Visibilite.localite()
+                .map(loc -> repository.findVisiblesParLocalite(loc).stream().map(MarcheMapper::toDto).toList())
+                .orElseGet(List::of);
     }
 
     @Transactional(readOnly = true)
     public MarcheDto findById(Integer id) {
         Marche entity = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Marche introuvable : " + id));
+        controlerVisibilite(entity);
         return MarcheMapper.toDto(entity);
+    }
+
+    /** Vérifie que le marché est dans le périmètre de l'appelant (§1, §3.1) — sinon 403. */
+    private void controlerVisibilite(Marche marche) {
+        if (Visibilite.voitTout()) {
+            return;
+        }
+        if (CurrentUser.profil().orElse(null) == ProfilUtilisateur.PRMP) {
+            String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+            if (idPrmp != null && repository.existsVisiblePourPrmp(marche.getIdDetail(), idPrmp)) {
+                return;
+            }
+            throw new AccessDeniedException("Marché hors de votre périmètre (§3.1).");
+        }
+        boolean ok = Visibilite.localite()
+                .map(loc -> repository.existsVisibleParLocalite(marche.getIdDetail(), loc)).orElse(false);
+        if (!ok) {
+            throw new AccessDeniedException("Marché hors de votre périmètre de visibilité (§1).");
+        }
     }
 
     public MarcheDto create(MarcheDto dto) {

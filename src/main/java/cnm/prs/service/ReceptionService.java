@@ -52,6 +52,54 @@ public class ReceptionService {
                 .stream().map(ReceptionMapper::toDto).toList();
     }
 
+    /**
+     * Réceptions d'un <strong>seul dossier</strong> (filtre serveur {@code ?idDossier=}) — ne charge
+     * que l'utile, dans le périmètre de l'appelant. Hors périmètre ou PRMP → liste vide (les
+     * réceptions sont une ressource interne au circuit).
+     */
+    @Transactional(readOnly = true)
+    public List<ReceptionDto> findByDossier(Integer idDossier) {
+        if (idDossier == null) {
+            return findAll();
+        }
+        if (Visibilite.estPrmp()) {
+            return List.of();
+        }
+        if (!Visibilite.voitTout()) {
+            String localite = Visibilite.localite().orElse(null);
+            // Hors localité : aucune réception de ce dossier n'est visible.
+            if (localite == null || !receptionsDansLocalite(idDossier, localite)) {
+                return List.of();
+            }
+        }
+        return repository.findByIdDossier(idDossier).stream().map(ReceptionMapper::toDto).toList();
+    }
+
+    /**
+     * Test léger « ce dossier est-il déjà réceptionné ? » (avant d'enregistrer une réception) —
+     * sans charger l'historique. Renvoie {@code false} si le dossier est hors périmètre.
+     */
+    @Transactional(readOnly = true)
+    public boolean dejaReceptionne(Integer idDossier) {
+        if (idDossier == null || Visibilite.estPrmp()) {
+            return false;
+        }
+        if (!Visibilite.voitTout()) {
+            String localite = Visibilite.localite().orElse(null);
+            if (localite == null || !receptionsDansLocalite(idDossier, localite)) {
+                // Hors localité : on ne révèle pas l'état → traité comme « pas réceptionnable par vous ».
+                return false;
+            }
+        }
+        return repository.existsByIdDossier(idDossier);
+    }
+
+    /** Vrai si les réceptions du dossier (s'il en a) relèvent de la localité — ou s'il n'en a aucune. */
+    private boolean receptionsDansLocalite(Integer idDossier, String localite) {
+        List<String> locs = repository.findLocalitesByDossier(idDossier);
+        return locs.isEmpty() || locs.contains(localite);
+    }
+
     @Transactional(readOnly = true)
     public ReceptionDto findById(Integer id) {
         Reception entity = repository.findById(id)

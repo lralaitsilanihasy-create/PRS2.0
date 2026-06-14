@@ -5,6 +5,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -18,7 +19,10 @@ import lombok.NoArgsConstructor;
  * Générée à partir du MLD (db_ppm110626.pgerd).
  */
 @Entity
-@Table(name = "t_marche")
+@Table(name = "t_marche", indexes = {
+        @Index(name = "idx_marche_dossier", columnList = "ID_DOSSIER"),
+        @Index(name = "idx_marche_ppm", columnList = "ID_PPM")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

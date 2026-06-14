@@ -39,6 +39,7 @@ import cnm.prs.entity.Dispatch;
 import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Examen;
 import cnm.prs.entity.Localite;
+import cnm.prs.entity.Marche;
 import cnm.prs.entity.ModePassation;
 import cnm.prs.entity.Nature;
 import cnm.prs.entity.Ppm;
@@ -64,6 +65,7 @@ import cnm.prs.repository.DispatchRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenRepository;
 import cnm.prs.repository.LocaliteRepository;
+import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.ModePassationRepository;
 import cnm.prs.repository.NatureRepository;
 import cnm.prs.repository.PpmRepository;
@@ -106,6 +108,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private DispatchRepository dispatchRepository;
     @Autowired private ExamenRepository examenRepository;
     @Autowired private PpmRepository ppmRepository;
+    @Autowired private MarcheRepository marcheRepository;
     @Autowired private DemandeRetraitRepository demandeRetraitRepository;
     @Autowired private DelegationProfilRepository delegationProfilRepository;
     @Autowired private NatureRepository natureRepository;
@@ -545,6 +548,28 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Rapport par localité : CC autorisé (forcé sur sa localité), Président peut cibler une localité")
+    void rapport_parLocalite() throws Exception {
+        // Le Chef de commission peut désormais générer le rapport : il est forcé sur sa propre localité (ANT).
+        byte[] pdfCc = mvc.perform(get("/api/rapports/dossiers").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF))
+                .andReturn().getResponse().getContentAsByteArray();
+        assertTrue(new String(pdfCc, 0, 4, StandardCharsets.US_ASCII).equals("%PDF"), "en-tête PDF attendu");
+
+        // Idem en Excel.
+        byte[] xlsxCc = mvc.perform(get("/api/rapports/dossiers/excel").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        assertTrue(xlsxCc[0] == 'P' && xlsxCc[1] == 'K', "signature ZIP/xlsx attendue (PK)");
+
+        // Le Président peut cibler explicitement une localité via ?localite=.
+        mvc.perform(get("/api/rapports/dossiers").header("Authorization", tokenPresident).param("localite", "ANT"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF));
+    }
+
+    @Test
     @DisplayName("Messagerie : envoi, réception, marquage lu et confidentialité")
     void messagerie_envoiReceptionLu() throws Exception {
         // Le Membre envoie un message au CC.
@@ -696,6 +721,116 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
         // La PRMP n'accède pas aux ressources internes.
         mvc.perform(get("/api/receptions").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    @DisplayName("Scoping PPM/Marché : PRMP voit les siens, CC sa localité (hors brouillon), Président tout ; hors périmètre → 403")
+    void scoping_ppmEtMarche() throws Exception {
+        String tokenPrmp2 = bearer("PRMP002", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMP002", "ANT");
+        prmpRepository.save(prmp("PRMP002", "ANT")); // FK t_dossier/t_ppm.ID_PRMP
+
+        // Dossiers SOUMIS (estampillés localité) avec PPM/marché de PRMP différentes / localités différentes.
+        dossierRepository.save(dossierLoc(200, "SOUMIS", "ANT", "PRMP001"));
+        dossierRepository.save(dossierLoc(201, "SOUMIS", "ANT", "PRMP002"));
+        dossierRepository.save(dossierLoc(202, "SOUMIS", "TMS", "PRMP001"));
+        dossierRepository.save(dossierLoc(203, "BROUILLON", "ANT", "PRMP001")); // brouillon → invisible des contrôleurs
+        ppmRepository.save(ppm(200, 200, "PRMP001"));
+        ppmRepository.save(ppm(201, 201, "PRMP002"));
+        ppmRepository.save(ppm(202, 202, "PRMP001"));
+        ppmRepository.save(ppm(203, 203, "PRMP001"));
+        marcheRepository.save(marche(800, 200, 200));
+        marcheRepository.save(marche(801, 201, 201));
+        marcheRepository.save(marche(802, 202, 202));
+
+        // PRMP001 ne voit QUE ses PPM (200, 202, 203 — y compris son brouillon), pas ceux de PRMP002 (201).
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idPpm==200)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==203)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==201)]", hasSize(0)));
+        // PRMP002 ne voit que le sien (201).
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp2))
+                .andExpect(jsonPath("$[?(@.idPpm==201)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==200)]", hasSize(0)));
+        // CC ANT voit les PPM ANT non brouillon (200, 201), pas TMS (202) ni le brouillon (203).
+        mvc.perform(get("/api/ppms").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$[?(@.idPpm==200)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==201)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==202)]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.idPpm==203)]", hasSize(0)));
+        // Président voit tout, y compris TMS (202).
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$[?(@.idPpm==202)]", hasSize(1)));
+
+        // GET /{id} hors périmètre → 403 : PRMP001 sur le PPM de PRMP002 ; CC sur un brouillon.
+        mvc.perform(get("/api/ppms/201").header("Authorization", tokenPrmp))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/ppms/203").header("Authorization", tokenCc))
+                .andExpect(status().isForbidden());
+
+        // Marchés : même scoping. PRMP001 voit 800/802 mais pas 801 ; CC ANT voit 800 mais pas 802 (TMS).
+        mvc.perform(get("/api/marches").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDetail==800)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDetail==801)]", hasSize(0)));
+        mvc.perform(get("/api/marches").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$[?(@.idDetail==800)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDetail==802)]", hasSize(0)));
+        // GET /{id} : marché de PRMP002 → 403 pour PRMP001 ; marché ANT visible au Membre d'ANT.
+        mvc.perform(get("/api/marches/801").header("Authorization", tokenPrmp))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/marches/800").header("Authorization", tokenMembre))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Filtre serveur ?statut sur /api/dossiers : scoping conservé, statut inconnu → 400")
+    void dossiers_filtreStatut() throws Exception {
+        dossierRepository.save(dossierLoc(210, "SOUMIS", "ANT", "PRMP001"));
+        dossierRepository.save(dossierLoc(211, "BROUILLON", "ANT", "PRMP001"));
+        dossierRepository.save(dossierLoc(212, "CLOTURE", "ANT", "PRMP001"));
+
+        // PRMP001 : ?statut=SOUMIS ne renvoie que 210 (pas 211 brouillon ni 212 clôturé).
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp).param("statut", "SOUMIS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==210)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==211)]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.idDossier==212)]", hasSize(0)));
+        // ?statut=BROUILLON renvoie 211 (la PRMP voit ses brouillons).
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp).param("statut", "BROUILLON"))
+                .andExpect(jsonPath("$[?(@.idDossier==211)]", hasSize(1)));
+        // Sans filtre : 210, 211 et 212 présents.
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==210)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==212)]", hasSize(1)));
+        // Scoping conservé : le CC ANT avec ?statut=SOUMIS voit 210, jamais le brouillon 211.
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenCc).param("statut", "SOUMIS"))
+                .andExpect(jsonPath("$[?(@.idDossier==210)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==211)]", hasSize(0)));
+        // Statut inconnu → 400.
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp).param("statut", "NIMPORTEQUOI"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Réceptions : filtre ?idDossier scopé et test /existe (déjà réceptionné) sans charger l'historique")
+    void receptions_parDossierEtExiste() throws Exception {
+        // Dossier ANT déjà réceptionné = dossier 1 (réception 1, CTRCC1). Dossier ANT sans réception = 220.
+        dossierRepository.save(dossierLoc(220, "SOUMIS", "ANT", "PRMP001"));
+
+        // CC ANT : ?idDossier=1 ne renvoie que la réception du dossier 1.
+        mvc.perform(get("/api/receptions").header("Authorization", tokenCc).param("idDossier", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        // /existe : dossier 1 → reçu ; dossier 220 (aucune réception) → non reçu.
+        mvc.perform(get("/api/receptions/dossier/1/existe").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$.recu").value(true));
+        mvc.perform(get("/api/receptions/dossier/220/existe").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$.recu").value(false));
+        // Isolation localité : CC ANT n'obtient pas les réceptions du dossier 2 (TMS).
+        mvc.perform(get("/api/receptions").header("Authorization", tokenCc).param("idDossier", "2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        // La PRMP (ressource interne) → liste vide même par dossier.
+        mvc.perform(get("/api/receptions").header("Authorization", tokenPrmp).param("idDossier", "1"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
     }
 
@@ -1565,6 +1700,16 @@ class CnmWorkflowIntegrationTest {
         return p;
     }
 
+    private Marche marche(int idDetail, int dossier, int ppm) {
+        Marche m = new Marche();
+        m.setIdDetail(idDetail);
+        m.setIdDossier(dossier);
+        m.setIdPpm(ppm);
+        m.setDesignationMarche("Marche " + idDetail);
+        m.setStatut("PREVU");
+        return m;
+    }
+
     private Ministere ministere(int id) {
         Ministere m = new Ministere();
         m.setIdMinistere(id);
@@ -1614,6 +1759,13 @@ class CnmWorkflowIntegrationTest {
         d.setRefeDossier("DOS-" + id);
         d.setDateRef(LocalDate.of(2026, 6, 1));
         d.setStatut(statut);
+        return d;
+    }
+
+    private Dossier dossierLoc(int id, String statut, String localite, String idPrmp) {
+        Dossier d = dossier(id, statut);
+        d.setIdLocalite(localite);
+        d.setIdPrmp(idPrmp);
         return d;
     }
 

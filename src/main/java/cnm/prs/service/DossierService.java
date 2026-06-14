@@ -47,29 +47,46 @@ public class DossierService {
     }
 
     /**
-     * Liste des dossiers filtrée par le périmètre de visibilité de l'utilisateur (§1) :
+     * Liste des dossiers filtrée par le périmètre de visibilité de l'utilisateur (§1), et
+     * <strong>optionnellement par statut</strong> ({@code ?statut=SOUMIS}, filtré côté serveur) :
      * Président / Administrateur voient tout ; les autres profils ne voient que les dossiers
-     * de leur localité. La PRMP ne passe pas par ce périmètre (visibilité « ses propres
-     * dossiers », non couverte par ce filtre localité).
+     * de leur localité. La PRMP voit ses propres dossiers ({@code t_dossier.ID_PRMP} / PPM / marché).
+     *
+     * @param statut filtre serveur sur {@code t_dossier.STATUT} ; {@code null}/vide = tous statuts
+     * @throws BadRequestException si {@code statut} est fourni mais n'est pas un statut connu (→ 400)
      */
     @Transactional(readOnly = true)
-    public List<DossierDto> findAll() {
+    public List<DossierDto> findAll(String statut) {
+        String filtre = normaliserStatut(statut);
         ProfilUtilisateur profil = CurrentUser.profil().orElse(null);
         if (profil == ProfilUtilisateur.PRESIDENT || profil == ProfilUtilisateur.ADMINISTRATEUR) {
-            return repository.findAll().stream().map(DossierMapper::toDto).toList();
+            return repository.findParStatut(filtre).stream().map(DossierMapper::toDto).toList();
         }
         if (profil == ProfilUtilisateur.PRMP) {
             String idPrmp = CurrentUser.ref().orElse(null);
             if (idPrmp == null || idPrmp.isBlank()) {
                 return List.of();
             }
-            return repository.findVisiblesPourPrmp(idPrmp).stream().map(DossierMapper::toDto).toList();
+            return repository.findVisiblesPourPrmpEtStatut(idPrmp, filtre).stream().map(DossierMapper::toDto).toList();
         }
         String localite = CurrentUser.localite().orElse(null);
         if (localite == null || localite.isBlank()) {
             return List.of();
         }
-        return repository.findVisiblesParLocalite(localite).stream().map(DossierMapper::toDto).toList();
+        return repository.findVisiblesParLocaliteEtStatut(localite, filtre).stream().map(DossierMapper::toDto).toList();
+    }
+
+    /** Valide le filtre statut : {@code null}/vide accepté (= tous), sinon doit être un {@link StatutDossier}. */
+    private String normaliserStatut(String statut) {
+        if (statut == null || statut.isBlank()) {
+            return null;
+        }
+        try {
+            return StatutDossier.valueOf(statut).name();
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Statut inconnu : « " + statut + " ». Valeurs admises : "
+                    + java.util.Arrays.toString(StatutDossier.values()) + ".");
+        }
     }
 
     @Transactional(readOnly = true)
