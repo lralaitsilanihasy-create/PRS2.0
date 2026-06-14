@@ -12,6 +12,7 @@ import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.EntiteContractRepository;
+import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpEntiteRepository;
 import cnm.prs.security.CurrentUser;
@@ -36,13 +37,16 @@ public class DossierIntegriteService {
 
     private final DossierRepository dossierRepository;
     private final PpmRepository ppmRepository;
+    private final MarcheRepository marcheRepository;
     private final EntiteContractRepository entiteContractRepository;
     private final PrmpEntiteRepository prmpEntiteRepository;
 
     public DossierIntegriteService(DossierRepository dossierRepository, PpmRepository ppmRepository,
-            EntiteContractRepository entiteContractRepository, PrmpEntiteRepository prmpEntiteRepository) {
+            MarcheRepository marcheRepository, EntiteContractRepository entiteContractRepository,
+            PrmpEntiteRepository prmpEntiteRepository) {
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
+        this.marcheRepository = marcheRepository;
         this.entiteContractRepository = entiteContractRepository;
         this.prmpEntiteRepository = prmpEntiteRepository;
     }
@@ -105,7 +109,17 @@ public class DossierIntegriteService {
         }
     }
 
-    /** Cohérence type↔contenu vérifiée à la soumission. */
+    /**
+     * Cohérence type↔contenu vérifiée à la soumission :
+     * <ul>
+     *   <li>un dossier {@code PPM} doit porter un {@code t_ppm} ;</li>
+     *   <li>un dossier {@code PPM} doit comporter <strong>au moins une ligne de marché</strong>
+     *       (⚠️ règle ajoutée, non littérale dans {@code regles-gestion.md} — un PPM est un plan de
+     *       passation de marchés ; un PPM vide n'a rien à contrôler) ;</li>
+     *   <li>un {@code DAO}/{@code MAOO} ne doit pas porter de {@code t_ppm} (et n'est pas concerné par
+     *       la règle des marchés).</li>
+     * </ul>
+     */
     public void validerCoherenceAvantSoumission(Dossier dossier) {
         boolean aPpm = ppmRepository.existsByIdDossier(dossier.getIdDossier());
         boolean estPpm = TYPE_PPM.equals(dossier.getIdTypeDossier());
@@ -116,6 +130,11 @@ public class DossierIntegriteService {
         if (!estPpm && aPpm) {
             throw new BusinessRuleException(
                     "Dossier de type « " + dossier.getIdTypeDossier() + " » ne doit pas porter de PPM.");
+        }
+        // ⚠️ Règle ajoutée : un PPM doit comporter au moins un marché avant soumission.
+        if (estPpm && !marcheRepository.existsByIdDossier(dossier.getIdDossier())) {
+            throw new BusinessRuleException(
+                    "Un PPM doit comporter au moins un marché avant soumission.");
         }
     }
 

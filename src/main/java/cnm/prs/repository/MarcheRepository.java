@@ -15,6 +15,9 @@ public interface MarcheRepository extends JpaRepository<Marche, Integer> {
     /** Lignes de marché d'un dossier (réconciliation à l'édition d'un brouillon). */
     List<Marche> findByIdDossier(Integer idDossier);
 
+    /** Vrai si le dossier porte au moins une ligne de marché (précondition de soumission d'un PPM). */
+    boolean existsByIdDossier(Integer idDossier);
+
     /** Marchés d'une PRMP (§3.1) : ceux dont le PPM lui appartient — son périmètre propre. */
     @Query("select m from Marche m where exists "
             + "(select 1 from Ppm p where p.idPpm = m.idPpm and p.idPrmp = :idPrmp)")

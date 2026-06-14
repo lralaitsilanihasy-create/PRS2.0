@@ -63,6 +63,11 @@ Acteur externe qui soumet ses PPM et marchés à la CNM. Suit l'avancement jusqu
 
 - Soumission du dossier [Action]
   - Envoi officiel avec génération de la référence unique.
+  - ⚠️ **Règle ajoutée (non issue de la brochure d'origine)** : **un PPM doit comporter au moins
+    un marché avant soumission**. La soumission d'un dossier de type **PPM** sans aucune ligne de
+    marché est **refusée (HTTP 409)**. Ne s'applique **qu'au type PPM** — les **DAO/MAOO** ne sont
+    pas concernés. Justification : un PPM est un plan de passation de marchés ; un PPM vide n'a rien
+    à soumettre au contrôle. Le frontend doit s'aligner sur cette précondition.
 - Suivi de l'état de réception [Lecture]
   - Accès à réception, date, secrétaire — en temps réel.
 - Consultation du PV d'examen [Lecture]

@@ -740,6 +740,10 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 > sinon de la PRMP ; **400** si indéterminable), **génère la référence** `refeDossier`
 > (`CNM-{localité}-{exercice}-{idDossier}`) et **notifie** le Secrétaire + CC (`DOSSIER_SOUMIS`).
 > Propriété non respectée → **403**.
+>
+> ⚠️ **Précondition « PPM ⇒ ≥ 1 marché » (règle ajoutée, cf. `regles-gestion.md` §3.1 Module 03).** Un
+> dossier de type **PPM** sans aucune ligne de marché ne peut être soumis → **409** (« *Un PPM doit
+> comporter au moins un marché avant soumission.* »). **DAO/MAOO non concernés.**
 
 **Exemple — réponse après `…/soumettre`** (statut SOUMIS, référence générée)
 ```json

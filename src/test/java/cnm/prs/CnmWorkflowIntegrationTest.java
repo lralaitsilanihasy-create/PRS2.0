@@ -1116,6 +1116,7 @@ class CnmWorkflowIntegrationTest {
         Ppm ppm = ppmLocalise(30, 3, "ANT");
         ppm.setIdPrmp("PRMP001");
         ppmRepository.save(ppm);
+        marcheRepository.save(marche(31, 3, 30)); // un PPM doit comporter au moins un marché (règle ajoutée)
 
         // Soumission par la PRMP → 200, statut SOUMIS, référence unique générée.
         mvc.perform(post("/api/dossiers/3/soumettre").header("Authorization", tokenPrmp))
@@ -1329,6 +1330,26 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Soumission PPM : un PPM sans marché → 409 ; avec au moins un marché → OK (⚠️ règle ajoutée)")
+    void soumission_ppmSansMarche() throws Exception {
+        // Brouillon PPM de PRMP001 avec son t_ppm mais AUCUN marché → soumission refusée (409).
+        Dossier d = dossier(90, "BROUILLON");
+        d.setIdTypeDossier("PPM");
+        d.setIdPrmp("PRMP001");
+        d.setIdLocalite("ANT");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(90, 90, "PRMP001"));
+        mvc.perform(post("/api/dossiers/90/soumettre").header("Authorization", tokenPrmp))
+                .andExpect(status().isConflict());
+
+        // Ajout d'au moins une ligne de marché → la soumission passe (SOUMIS).
+        marcheRepository.save(marche(900, 90, 90));
+        mvc.perform(post("/api/dossiers/90/soumettre").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("SOUMIS"));
+    }
+
+    @Test
     @DisplayName("Endpoints bruts restreints : POST /api/dossiers et /api/ppms réservés Admin ; façade réservée PRMP")
     void endpointsBruts_restreints() throws Exception {
         String dossierBody = "{\"idDossier\":65,\"statut\":\"BROUILLON\"}";
@@ -1460,6 +1481,7 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idDossier\":122,\"idEntiteContract\":1,\"idPpm\":122,\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R122\"}"))
                 .andExpect(status().isCreated());
+        marcheRepository.save(marche(1220, 122, 122)); // un PPM doit comporter au moins un marché avant soumission
         mvc.perform(post("/api/dossiers/122/soumettre").header("Authorization", tokenPrmp)).andExpect(status().isOk());
         // Dossier soumis → non éditable.
         mvc.perform(put("/api/saisies/ppm/122").header("Authorization", tokenPrmp)
