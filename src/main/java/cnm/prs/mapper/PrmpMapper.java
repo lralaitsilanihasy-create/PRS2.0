@@ -27,7 +27,6 @@ public final class PrmpMapper {
         dto.setLieuCin(entity.getLieuCin());
         dto.setEmailPrmp(entity.getEmailPrmp());
         dto.setTelPrmp(entity.getTelPrmp());
-        dto.setIdLocalite(entity.getIdLocalite());
         return dto;
     }
 
@@ -47,7 +46,6 @@ public final class PrmpMapper {
         entity.setLieuCin(dto.getLieuCin());
         entity.setEmailPrmp(dto.getEmailPrmp());
         entity.setTelPrmp(dto.getTelPrmp());
-        entity.setIdLocalite(dto.getIdLocalite());
         return entity;
     }
 }

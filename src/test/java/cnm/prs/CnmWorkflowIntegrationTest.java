@@ -1753,7 +1753,6 @@ class CnmWorkflowIntegrationTest {
         p.setLieuCin("Antananarivo");
         p.setEmailPrmp("prmp@min.mg");
         p.setTelPrmp("0330000001");
-        p.setIdLocalite(localite);
         return p;
     }
 

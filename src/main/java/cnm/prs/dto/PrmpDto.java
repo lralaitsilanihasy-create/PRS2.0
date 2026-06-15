@@ -55,8 +55,4 @@ public class PrmpDto {
     @NotBlank
     @Size(max = 20)
     private String telPrmp;
-
-    @NotBlank
-    @Size(max = 5)
-    private String idLocalite;
 }

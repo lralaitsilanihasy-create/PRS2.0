@@ -16,7 +16,8 @@ ALTER TABLE t_prmp ALTER COLUMN "ID_LOCALITE" DROP NOT NULL;
 
 -- =====================================================================
 -- E.2 — Suppression définitive de la colonne (DESTRUCTIF, difficilement réversible).
---       NE PAS exécuter avant l'audit confirmant qu'aucun code ne lit ID_LOCALITE
---       ET la validation explicite. Laissé en commentaire jusque-là.
+--       APPLIQUÉE le 2026-06-15 après audit (aucun code/requête/vue ne référence
+--       plus ID_LOCALITE) et validation. Le code (Prmp, PrmpDto, PrmpMapper,
+--       PrmpService) ne mappe plus la colonne ; la suite de tests est verte.
 -- =====================================================================
--- ALTER TABLE t_prmp DROP COLUMN "ID_LOCALITE";
+ALTER TABLE t_prmp DROP COLUMN "ID_LOCALITE";

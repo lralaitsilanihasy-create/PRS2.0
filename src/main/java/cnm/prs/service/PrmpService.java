@@ -54,7 +54,6 @@ public class PrmpService {
         existing.setLieuCin(dto.getLieuCin());
         existing.setEmailPrmp(dto.getEmailPrmp());
         existing.setTelPrmp(dto.getTelPrmp());
-        existing.setIdLocalite(dto.getIdLocalite());
         return PrmpMapper.toDto(repository.save(existing));
     }
 

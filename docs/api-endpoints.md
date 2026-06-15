@@ -1745,7 +1745,9 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | lieuCin | string | Oui | @NotBlank, max 50 |
 | emailPrmp | string | Oui | @NotBlank, max 100 |
 | telPrmp | string | Oui | @NotBlank, max 20 |
-| idLocalite | string | Oui | @NotBlank, max 5 |
+
+> La PRMP n'a **pas de localité propre** : `PrmpDto` ne porte plus de champ `idLocalite` (la
+> localité d'un dossier vient de l'entité contractante choisie à la saisie).
 
 **Endpoints**
 
