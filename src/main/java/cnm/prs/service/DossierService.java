@@ -163,9 +163,9 @@ public class DossierService {
      * référence unique</strong> {@code REFE_DOSSIER} puis notifie le Secrétaire et le Chef de
      * commission de la localité qu'un dossier est en attente de réception.
      *
-     * <p><strong>Localité</strong> : celle du PPM ({@code Ppm.idLocalite}) si le dossier en a un ;
-     * sinon — dossier « nu », p. ex. un {@code DAO}/{@code MAOO} sans PPM — celle de la PRMP
-     * courante (portée par le jeton). <strong>Appartenance</strong> : si le dossier est rattaché à
+     * <p><strong>Localité</strong> : celle du dossier (dérivée de l'entité contractante choisie à la
+     * saisie, §1), sinon celle de son PPM ({@code Ppm.idLocalite}) ; il n'y a plus de repli sur une
+     * localité « propre » de la PRMP (la PRMP n'en a pas). <strong>Appartenance</strong> : si le dossier est rattaché à
      * un PPM, il doit appartenir à la PRMP courante (sinon 403) ; un dossier sans aucun PPM n'a pas
      * de lien d'appartenance en base et est soumis par la PRMP authentifiée. L'exercice de la
      * référence provient du PPM, ou de l'année courante à défaut.</p>
@@ -173,7 +173,7 @@ public class DossierService {
      * @throws ResourceNotFoundException si le dossier n'existe pas
      * @throws AccessDeniedException     si le dossier (rattaché à un PPM) n'appartient pas à la PRMP courante
      * @throws BusinessRuleException     si le dossier a déjà été soumis (référence déjà générée) → 409
-     * @throws BadRequestException       si aucune localité ne peut être déterminée (ni PPM, ni PRMP) → 400
+     * @throws BadRequestException       si aucune localité ne peut être déterminée (ni dossier, ni PPM) → 400
      */
     public DossierDto soumettre(Integer idDossier) {
         Dossier dossier = repository.findById(idDossier)
@@ -191,16 +191,16 @@ public class DossierService {
         // Cohérence type↔contenu (PPM ⇒ a un PPM ; DAO/MAOO ⇒ pas de PPM).
         dossierIntegrite.validerCoherenceAvantSoumission(dossier);
 
-        // Localité : celle du dossier, sinon celle du PPM, sinon celle de la PRMP courante (jeton).
+        // Localité : celle du dossier (dérivée de l'entité à la saisie), sinon celle du PPM. Plus de repli PRMP.
         List<Ppm> ppms = ppmRepository.findByIdDossier(idDossier);
         String localite = dossier.getIdLocalite();
         if (localite == null || localite.isBlank()) {
             localite = ppms.stream().map(Ppm::getIdLocalite).filter(l -> l != null && !l.isBlank()).findFirst()
-                    .orElseGet(() -> CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null));
+                    .orElse(null);
         }
         if (localite == null) {
             throw new BadRequestException(
-                    "Localité indéterminée : rattachez un PPM localisé ou la PRMP doit avoir une localité (§3.1).");
+                    "Localité indéterminée : elle provient de l'entité contractante choisie à la saisie (§1, §3.1).");
         }
         int exercice = ppms.stream().map(Ppm::getExercice).filter(Objects::nonNull)
                 .findFirst().orElse(LocalDate.now().getYear());

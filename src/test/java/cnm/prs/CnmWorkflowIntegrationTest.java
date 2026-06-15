@@ -362,7 +362,7 @@ class CnmWorkflowIntegrationTest {
                 + "\"nomPrmp\":\"Rakoto\",\"prenomsPrmp\":\"Nouvelle\",\"imPrmp\":\"IM7777\","
                 + "\"arreteNomin\":\"ARR-2026-777\",\"dateNomin\":\"2026-01-01\",\"cin\":\"101010101010\","
                 + "\"dateCin\":\"2010-01-01\",\"lieuCin\":\"Antananarivo\",\"emailPrmp\":\"new@prmp.mg\","
-                + "\"telPrmp\":\"0340000000\",\"idLocalite\":\"ANT\"}";
+                + "\"telPrmp\":\"0340000000\"}";
 
         // Inscription publique (sans jeton) → 201, compte inactif.
         mvc.perform(post("/api/auth/register/prmp").contentType(MediaType.APPLICATION_JSON).content(inscription))
@@ -412,6 +412,13 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"login\":\"CTRPRE\",\"motDePasse\":\"pw\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("PRESIDENT"))
+                .andExpect(jsonPath("$.localite").doesNotExist());
+
+        // La PRMP n'a plus de localité propre : la claim localite est absente de sa réponse de connexion.
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"login\":\"PRMP001\",\"motDePasse\":\"pw\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("PRMP"))
                 .andExpect(jsonPath("$.localite").doesNotExist());
     }
 
@@ -1193,17 +1200,18 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Soumission dossier SANS PPM (DAO/MAOO) : localité reprise de la PRMP → référence + ID_LOCALITE estampillé + Secrétaire notifié et le voit")
+    @DisplayName("Soumission dossier SANS PPM (DAO/MAOO) : la localité du dossier (dérivée de l'entité à la saisie) → référence + ID_LOCALITE estampillé + Secrétaire notifié et le voit")
     void soumissionDossier_sansPpm() throws Exception {
         String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
-        // Brouillon DAO « nu » (aucun PPM), de PRMP001, sans localité initiale.
+        // Brouillon DAO sans PPM, de PRMP001, dont la localité (ANT) a été dérivée de l'entité à la saisie.
         Dossier d = dossier(6, "BROUILLON");
         d.setRefeDossier(null);
         d.setIdTypeDossier("DAO");
         d.setIdPrmp("PRMP001");
+        d.setIdLocalite("ANT");
         dossierRepository.save(d);
 
-        // PRMP001 (jeton localité ANT) soumet → localité = ANT (repli PRMP), SOUMIS, référence + ID_LOCALITE.
+        // PRMP001 soumet → localité = ANT (celle du dossier), SOUMIS, référence + ID_LOCALITE (plus de repli PRMP).
         mvc.perform(post("/api/dossiers/6/soumettre").header("Authorization", tokenPrmp))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statut").value("SOUMIS"))
@@ -1215,6 +1223,49 @@ class CnmWorkflowIntegrationTest {
         // Et le dossier est désormais visible par le Secrétaire AVANT toute réception (via ID_LOCALITE).
         mvc.perform(get("/api/dossiers/6").header("Authorization", tokenSec))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Affectations PRMP↔entité (§3.1) : lecture scopée, unicité une PRMP active par entité (409), écriture Admin only")
+    void prmpEntites_scopeUniciteEtAutorisation() throws Exception {
+        // Lecture scopée : l'Administrateur voit toutes les affectations (les 2 seedées de PRMP001).
+        mvc.perform(get("/api/prmp-entites").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idPrmp=='PRMP001')]", hasSize(2)));
+        // La PRMP ne voit que les siennes.
+        mvc.perform(get("/api/prmp-entites").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.idPrmp=='PRMP001')]", hasSize(2)));
+        // Une autre PRMP (sans affectation) ne voit rien.
+        String tokenPrmp2 = bearer("PRMP002", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMP002", null);
+        mvc.perform(get("/api/prmp-entites").header("Authorization", tokenPrmp2))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        // Un contrôleur (ni Admin ni PRMP) → liste vide.
+        mvc.perform(get("/api/prmp-entites").header("Authorization", tokenMembre))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+
+        // Unicité : l'entité 1 est déjà rattachée à PRMP001 → tentative pour une autre PRMP → 409.
+        prmpRepository.save(prmp("PRMP002", "ANT"));
+        mvc.perform(post("/api/prmp-entites").header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPrmp\":\"PRMP002\",\"idEntiteContract\":1,\"actif\":true}"))
+                .andExpect(status().isConflict());
+
+        // Écriture réservée à l'Admin : une PRMP ne peut pas créer d'affectation → 403.
+        entiteContractRepository.save(entite(3, 1, "ANT"));
+        mvc.perform(post("/api/prmp-entites").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPrmp\":\"PRMP001\",\"idEntiteContract\":3,\"actif\":true}"))
+                .andExpect(status().isForbidden());
+
+        // L'Admin affecte une entité libre (3) à PRMP001 → 201, active.
+        mvc.perform(post("/api/prmp-entites").header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPrmp\":\"PRMP001\",\"idEntiteContract\":3,\"actif\":true}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idEntiteContract").value(3))
+                .andExpect(jsonPath("$.actif").value(true));
     }
 
     @Test

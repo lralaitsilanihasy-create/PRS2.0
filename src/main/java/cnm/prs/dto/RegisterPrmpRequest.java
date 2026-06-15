@@ -28,6 +28,5 @@ public record RegisterPrmpRequest(
         @NotNull LocalDate dateCin,
         @NotBlank @Size(max = 50) String lieuCin,
         @NotBlank @Size(max = 100) String emailPrmp,
-        @NotBlank @Size(max = 20) String telPrmp,
-        @NotBlank @Size(max = 5) String idLocalite) {
+        @NotBlank @Size(max = 20) String telPrmp) {
 }

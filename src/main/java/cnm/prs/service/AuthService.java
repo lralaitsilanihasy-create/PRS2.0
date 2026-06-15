@@ -77,10 +77,12 @@ public class AuthService {
             role = resoudreRoleControleur(controleur);
             localite = controleur.getIdLocalite(); // NULL pour le Président → toutes localités (§1.1)
         } else {
-            Prmp prmp = prmpRepository.findById(compte.getRefActeur())
+            prmpRepository.findById(compte.getRefActeur())
                     .orElseThrow(() -> new BadCredentialsException("PRMP introuvable pour ce compte."));
             role = ProfilUtilisateur.PRMP.name();
-            localite = prmp.getIdLocalite();
+            // La PRMP n'a pas de localité propre : son périmètre est la propriété (ID_PRMP), pas la
+            // localité (§1, §3.1). Le jeton ne porte donc pas de claim « localite » pour une PRMP.
+            localite = null;
         }
 
         String token = tokenService.generer(compte.getLogin(), role, type, compte.getRefActeur(), localite);
@@ -115,7 +117,6 @@ public class AuthService {
         prmp.setLieuCin(req.lieuCin());
         prmp.setEmailPrmp(req.emailPrmp());
         prmp.setTelPrmp(req.telPrmp());
-        prmp.setIdLocalite(req.idLocalite());
         prmpRepository.save(prmp);
 
         CompteAuth compte = new CompteAuth(req.login(), passwordEncoder.encode(req.motDePasse()),
@@ -132,7 +133,7 @@ public class AuthService {
     private void notifierAdministrateurs(Prmp prmp) {
         String titre = "Nouvelle inscription PRMP à valider";
         String corps = "La PRMP " + prmp.getNomPrmp() + " " + prmp.getPrenomsPrmp()
-                + " (id " + prmp.getIdPrmp() + ", localité " + prmp.getIdLocalite()
+                + " (id " + prmp.getIdPrmp()
                 + ") s'est inscrite et attend la validation de son compte.";
         for (Controleur admin : controleurDirectory.administrateurs()) {
             notificationService.emettre(null, TypeNotification.NOUVELLE_INSCRIPTION,

@@ -54,6 +54,9 @@ public class Prmp {
     @Column(name = "TEL_PRMP", nullable = false, length = 20)
     private String telPrmp;
 
-    @Column(name = "ID_LOCALITE", nullable = false, length = 5)
+    // Déprécié : la PRMP n'a plus de localité propre (son périmètre est la propriété des dossiers,
+    // et la localité d'un dossier vient de l'entité contractante). Colonne rendue nullable avant
+    // suppression définitive (cf. migration ID_LOCALITE). N'est plus écrite ni lue par la logique métier.
+    @Column(name = "ID_LOCALITE", length = 5)
     private String idLocalite;
 }
