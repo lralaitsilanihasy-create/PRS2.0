@@ -72,6 +72,27 @@ Acteur externe qui soumet ses PPM et marchés à la CNM. Suit l'avancement jusqu
 - Le périmètre de visibilité de la PRMP est donc la **propriété** de ses dossiers
   (`t_dossier.ID_PRMP`), pas une localité.
 
+**Inscription et validation du compte**
+
+- **Auto-inscription** (route publique, `multipart/form-data`) : la PRMP renseigne son identité,
+  **déclare ses entités contractantes** — choisies dans le référentiel public et/ou **proposées**
+  si « non listées » — et joint son **arrêté de nomination** et sa **CIN** (obligatoires) plus une
+  **photo** (optionnelle). Le compte est créé au statut **`EN_ATTENTE`** et ne peut pas se connecter.
+- **Vérification humaine** : l'**Administrateur** consulte l'inscription, **télécharge et vérifie
+  l'arrêté de nomination**, puis décide (la vérification n'est pas automatique).
+- **Validation (partielle)** : chaque entité déclarée **disponible** est rattachée (affectation
+  active `t_prmp_entite`) ; une entité déjà rattachée à une autre PRMP active est **signalée en
+  conflit** (non bloquant) ; une entité **proposée** acceptée est **créée** dans le référentiel par
+  l'Administrateur. Le compte passe **`ACTIF`** dès qu'**au moins une** entité est rattachée ; si
+  aucune ne l'est (tous conflits), il **reste `EN_ATTENTE`** avec le récapitulatif.
+- **Refus** : l'Administrateur refuse avec un **motif** ; le compte passe **`REFUSE`** (non
+  connectable) et la PRMP est **notifiée** du motif.
+- **Pièces jointes** : stockées en base (`t_piece_jointe`), une pièce active par type (re-dépôt =
+  remplacement) ; téléchargement réservé à l'**Administrateur ou au propriétaire** de l'inscription.
+- **Prérequis** : le référentiel `tr_entite_contract` doit être **pré-alimenté** par l'Administrateur
+  pour que les PRMP y choisissent leurs entités ; à défaut, elles passent par le canal « entité non
+  listée » (proposition créée à la validation).
+
 **Module 02 — Saisie & gestion PPM**
 
 - Création et mise à jour du PPM [Écriture]
