@@ -1,0 +1,250 @@
+package cnm.prs.service;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import cnm.prs.dto.DeclarationEntiteDto;
+import cnm.prs.dto.InscriptionEnAttenteDto;
+import cnm.prs.dto.PieceJointeMetaDto;
+import cnm.prs.dto.ValidationInscriptionRequest;
+import cnm.prs.dto.ValidationInscriptionRequest.DecisionEntiteProposee;
+import cnm.prs.dto.ValidationInscriptionResponse;
+import cnm.prs.dto.ValidationInscriptionResponse.Conflit;
+import cnm.prs.entity.CompteAuth;
+import cnm.prs.entity.EntiteContract;
+import cnm.prs.entity.PieceJointe;
+import cnm.prs.entity.Prmp;
+import cnm.prs.entity.PrmpEntite;
+import cnm.prs.entity.PrmpEntiteDemande;
+import cnm.prs.enums.StatutCompte;
+import cnm.prs.enums.StatutDemandeEntite;
+import cnm.prs.enums.TypeActeur;
+import cnm.prs.enums.TypeNotification;
+import cnm.prs.enums.TypePieceJointe;
+import cnm.prs.exception.BusinessRuleException;
+import cnm.prs.exception.ResourceNotFoundException;
+import cnm.prs.mapper.PieceJointeMapper;
+import cnm.prs.repository.CompteAuthRepository;
+import cnm.prs.repository.EntiteContractRepository;
+import cnm.prs.repository.PieceJointeRepository;
+import cnm.prs.repository.PrmpEntiteDemandeRepository;
+import cnm.prs.repository.PrmpEntiteRepository;
+import cnm.prs.repository.PrmpRepository;
+import cnm.prs.security.CurrentUser;
+
+/**
+ * Instruction des inscriptions PRMP par l'Administrateur (§3.1) : consultation des inscriptions
+ * en attente, <strong>validation</strong> (vérification humaine de l'arrêté) ou <strong>refus</strong>
+ * motivé, et téléchargement des pièces.
+ *
+ * <p>La validation est <strong>partielle</strong> : chaque entité déclarée disponible est activée
+ * (création d'une affectation {@code t_prmp_entite}) ; les entités déjà rattachées à une autre PRMP
+ * active sont signalées en conflit ; les entités proposées acceptées sont créées dans le référentiel.
+ * Le compte n'est activé que si <strong>au moins une</strong> entité a été activée ; sinon il reste
+ * {@code EN_ATTENTE} avec le récapitulatif des conflits.</p>
+ */
+@Service
+@Transactional
+public class InscriptionService {
+
+    private final CompteAuthRepository compteRepository;
+    private final PrmpRepository prmpRepository;
+    private final PrmpEntiteDemandeRepository demandeRepository;
+    private final PrmpEntiteRepository prmpEntiteRepository;
+    private final EntiteContractRepository entiteContractRepository;
+    private final PieceJointeRepository pieceJointeRepository;
+    private final PieceJointeService pieceJointeService;
+    private final NotificationService notificationService;
+
+    public InscriptionService(CompteAuthRepository compteRepository, PrmpRepository prmpRepository,
+            PrmpEntiteDemandeRepository demandeRepository, PrmpEntiteRepository prmpEntiteRepository,
+            EntiteContractRepository entiteContractRepository, PieceJointeRepository pieceJointeRepository,
+            PieceJointeService pieceJointeService, NotificationService notificationService) {
+        this.compteRepository = compteRepository;
+        this.prmpRepository = prmpRepository;
+        this.demandeRepository = demandeRepository;
+        this.prmpEntiteRepository = prmpEntiteRepository;
+        this.entiteContractRepository = entiteContractRepository;
+        this.pieceJointeRepository = pieceJointeRepository;
+        this.pieceJointeService = pieceJointeService;
+        this.notificationService = notificationService;
+    }
+
+    /** Inscriptions PRMP en attente de validation, enrichies (entités déclarées + pièces). */
+    @Transactional(readOnly = true)
+    public List<InscriptionEnAttenteDto> enAttente() {
+        return compteRepository.findByStatutAndTypeActeur(StatutCompte.EN_ATTENTE.name(), TypeActeur.PRMP.name())
+                .stream().map(this::toInscriptionDto).toList();
+    }
+
+    private InscriptionEnAttenteDto toInscriptionDto(CompteAuth compte) {
+        Prmp prmp = prmpRepository.findById(compte.getRefActeur()).orElse(null);
+        List<DeclarationEntiteDto> declarations = demandeRepository.findByLogin(compte.getLogin())
+                .stream().map(this::toDeclarationDto).toList();
+        List<PieceJointeMetaDto> pieces = pieceJointeRepository.findByLogin(compte.getLogin())
+                .stream().map(PieceJointeMapper::toDto).toList();
+        return new InscriptionEnAttenteDto(compte.getLogin(), compte.getRefActeur(),
+                prmp != null ? prmp.getNomPrmp() : null,
+                prmp != null ? prmp.getPrenomsPrmp() : null,
+                prmp != null ? prmp.getEmailPrmp() : null,
+                declarations, pieces);
+    }
+
+    private DeclarationEntiteDto toDeclarationDto(PrmpEntiteDemande d) {
+        Boolean disponible = null;
+        if (d.getIdEntiteContract() != null) {
+            disponible = prmpEntiteRepository.findByIdEntiteContractAndActifTrue(d.getIdEntiteContract()).isEmpty();
+        }
+        return new DeclarationEntiteDto(d.getIdDemande(), d.getIdEntiteContract(), d.getLibellePropose(),
+                d.getAdressePropose(), d.getIdLocalitePropose(), d.getCategoriePropose(),
+                d.getStatutDemande(), d.getMotif(), disponible);
+    }
+
+    /**
+     * Valide une inscription (partiellement) : active les entités disponibles, crée les entités
+     * proposées acceptées, signale les conflits. Active le compte si ≥ 1 entité activée.
+     */
+    public ValidationInscriptionResponse valider(String login, ValidationInscriptionRequest req) {
+        CompteAuth compte = chargerEnAttente(login);
+        String idPrmp = compte.getRefActeur();
+        Map<Integer, DecisionEntiteProposee> decisions = indexerDecisions(req);
+
+        List<PrmpEntiteDemande> demandes = demandeRepository
+                .findByLoginAndStatutDemande(login, StatutDemandeEntite.EN_ATTENTE.name());
+        int prochaineAffectation = prmpEntiteRepository.findMaxId() + 1;
+        int prochaineEntite = entiteContractRepository.findMaxId() + 1;
+        List<String> validees = new ArrayList<>();
+        List<Conflit> conflits = new ArrayList<>();
+
+        for (PrmpEntiteDemande d : demandes) {
+            if (d.getIdEntiteContract() != null) {
+                // Entité existante : activable si elle n'est pas déjà prise par une PRMP active.
+                Optional<PrmpEntite> active = prmpEntiteRepository
+                        .findByIdEntiteContractAndActifTrue(d.getIdEntiteContract());
+                if (active.isPresent()) {
+                    d.setStatutDemande(StatutDemandeEntite.REFUSEE.name());
+                    d.setMotif("Entité déjà rattachée à la PRMP " + active.get().getIdPrmp() + ".");
+                    conflits.add(new Conflit(d.getIdEntiteContract(), null, d.getMotif()));
+                } else {
+                    creerAffectation(idPrmp, d.getIdEntiteContract(), prochaineAffectation++);
+                    d.setStatutDemande(StatutDemandeEntite.VALIDEE.name());
+                    validees.add("entité " + d.getIdEntiteContract());
+                }
+            } else {
+                // Entité proposée : créée seulement si l'Administrateur l'accepte (avec un organigramme).
+                DecisionEntiteProposee dec = decisions.get(d.getIdDemande());
+                if (dec != null && dec.accepter() && dec.idOrganigramme() != null) {
+                    EntiteContract e = new EntiteContract();
+                    e.setIdEntiteContract(prochaineEntite++);
+                    e.setLibelleEntite(d.getLibellePropose());
+                    e.setAdresse(d.getAdressePropose());
+                    e.setCategorieEntite(d.getCategoriePropose());
+                    e.setIdOrganigramme(dec.idOrganigramme());
+                    e.setIdLocalite(d.getIdLocalitePropose());
+                    entiteContractRepository.save(e);
+                    creerAffectation(idPrmp, e.getIdEntiteContract(), prochaineAffectation++);
+                    d.setIdEntiteContract(e.getIdEntiteContract());
+                    d.setStatutDemande(StatutDemandeEntite.VALIDEE.name());
+                    validees.add("entité proposée « " + d.getLibellePropose() + " » (créée id "
+                            + e.getIdEntiteContract() + ")");
+                } else {
+                    d.setStatutDemande(StatutDemandeEntite.REFUSEE.name());
+                    d.setMotif("Entité proposée non retenue.");
+                    conflits.add(new Conflit(null, d.getLibellePropose(), d.getMotif()));
+                }
+            }
+            demandeRepository.save(d);
+        }
+
+        String statutFinal;
+        if (!validees.isEmpty()) {
+            compte.setStatut(StatutCompte.ACTIF.name());
+            compte.setActif(true);
+            compte.setDateDecision(LocalDateTime.now());
+            compte.setImValidateur(CurrentUser.ref().orElse(null));
+            compteRepository.save(compte);
+            notifierPrmp(idPrmp, TypeNotification.INSCRIPTION_VALIDEE, "Inscription validée",
+                    "Votre compte a été activé. Entités rattachées : " + validees
+                            + (conflits.isEmpty() ? "." : " ; non retenues : " + conflits.size() + "."));
+            statutFinal = StatutCompte.ACTIF.name();
+        } else {
+            // Aucune entité activée : le compte reste en attente (l'Administrateur corrige ou refuse).
+            statutFinal = compte.getStatut();
+        }
+        return new ValidationInscriptionResponse(validees, conflits, statutFinal);
+    }
+
+    /** Refuse une inscription (motif communiqué à la PRMP). Le compte reste non connectable. */
+    public void refuser(String login, String motif) {
+        CompteAuth compte = chargerEnAttente(login);
+        compte.setStatut(StatutCompte.REFUSE.name());
+        compte.setActif(false);
+        compte.setMotifRefus(motif);
+        compte.setDateDecision(LocalDateTime.now());
+        compte.setImValidateur(CurrentUser.ref().orElse(null));
+        compteRepository.save(compte);
+
+        for (PrmpEntiteDemande d : demandeRepository.findByLoginAndStatutDemande(login,
+                StatutDemandeEntite.EN_ATTENTE.name())) {
+            d.setStatutDemande(StatutDemandeEntite.REFUSEE.name());
+            d.setMotif("Inscription refusée.");
+            demandeRepository.save(d);
+        }
+        notifierPrmp(compte.getRefActeur(), TypeNotification.INSCRIPTION_REFUSEE, "Inscription refusée",
+                "Votre inscription a été refusée. Motif : " + motif);
+    }
+
+    /** Récupère une pièce d'une inscription pour téléchargement (contenu + format). */
+    @Transactional(readOnly = true)
+    public PieceJointe telecharger(String login, TypePieceJointe type) {
+        return pieceJointeService.telecharger(login, type);
+    }
+
+    private void creerAffectation(String idPrmp, Integer idEntite, int idAffectation) {
+        PrmpEntite aff = new PrmpEntite();
+        aff.setIdPrmpEntite(idAffectation);
+        aff.setIdPrmp(idPrmp);
+        aff.setIdEntiteContract(idEntite);
+        aff.setDateAffectation(LocalDate.now());
+        aff.setActif(Boolean.TRUE);
+        prmpEntiteRepository.save(aff);
+    }
+
+    private Map<Integer, DecisionEntiteProposee> indexerDecisions(ValidationInscriptionRequest req) {
+        Map<Integer, DecisionEntiteProposee> map = new HashMap<>();
+        if (req != null && req.entitesProposees() != null) {
+            for (DecisionEntiteProposee d : req.entitesProposees()) {
+                if (d != null && d.idDemande() != null) {
+                    map.put(d.idDemande(), d);
+                }
+            }
+        }
+        return map;
+    }
+
+    private CompteAuth chargerEnAttente(String login) {
+        CompteAuth compte = compteRepository.findByLogin(login)
+                .orElseThrow(() -> new ResourceNotFoundException("Compte introuvable : " + login));
+        if (!TypeActeur.PRMP.name().equals(compte.getTypeActeur())) {
+            throw new BusinessRuleException("Ce compte n'est pas une inscription PRMP.");
+        }
+        if (!StatutCompte.EN_ATTENTE.name().equals(compte.getStatut())) {
+            throw new BusinessRuleException("L'inscription n'est pas en attente (statut « "
+                    + compte.getStatut() + " »).");
+        }
+        return compte;
+    }
+
+    private void notifierPrmp(String idPrmp, TypeNotification type, String titre, String corps) {
+        String email = prmpRepository.findById(idPrmp).map(Prmp::getEmailPrmp).orElse(null);
+        notificationService.emettre(null, type, null, email, titre, corps);
+    }
+}

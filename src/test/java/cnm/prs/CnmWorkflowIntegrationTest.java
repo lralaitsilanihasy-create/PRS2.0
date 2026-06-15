@@ -56,6 +56,7 @@ import cnm.prs.entity.EntiteContract;
 import cnm.prs.entity.Ministere;
 import cnm.prs.entity.Organigramme;
 import cnm.prs.entity.PrmpEntite;
+import cnm.prs.entity.PrmpEntiteDemande;
 import cnm.prs.entity.Situation;
 import cnm.prs.entity.TypeDossier;
 import cnm.prs.enums.ProfilUtilisateur;
@@ -525,6 +526,66 @@ class CnmWorkflowIntegrationTest {
                 sansEntite.getBytes(StandardCharsets.UTF_8));
         mvc.perform(multipart("/api/auth/register/prmp").file(dataSansEntite).file(arrete).file(cin))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Validation inscription : partielle (entité libre activée, conflit signalé, proposée créée) → ACTIF + login")
+    void inscription_validationPartielle() throws Exception {
+        entiteContractRepository.save(entite(5, 1, "ANT")); // entité libre
+        prmpRepository.save(prmp("PRMP900", "ANT"));
+        compteAuthRepository.save(new CompteAuth("prmp.val", passwordEncoder.encode("pw"), "PRMP", "PRMP900", false));
+        // Déclarations en attente : existante libre (5), existante déjà prise (1 = PRMP001 dans le seed), proposée.
+        prmpEntiteDemandeRepository.save(demande(9001, "prmp.val", 5, null));
+        prmpEntiteDemandeRepository.save(demande(9002, "prmp.val", 1, null));
+        prmpEntiteDemandeRepository.save(demande(9003, "prmp.val", null, "Nouvelle Autorite"));
+
+        // Lecture réservée à l'Admin.
+        mvc.perform(get("/api/inscriptions/en-attente").header("Authorization", tokenMembre))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/inscriptions/en-attente").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.login=='prmp.val')]", hasSize(1)));
+
+        // Validation : on accepte l'entité proposée (9003) avec un organigramme existant (1).
+        String body = "{\"entitesProposees\":[{\"idDemande\":9003,\"accepter\":true,\"idOrganigramme\":1}]}";
+        mvc.perform(post("/api/inscriptions/prmp.val/valider").header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statutCompte").value("ACTIF"))
+                .andExpect(jsonPath("$.validees.length()").value(2))    // entité 5 + entité proposée créée
+                .andExpect(jsonPath("$.conflits.length()").value(1));   // entité 1 déjà rattachée
+
+        // Compte activé → login OK (rôle PRMP, sans localité).
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"login\":\"prmp.val\",\"motDePasse\":\"pw\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("PRMP"))
+                .andExpect(jsonPath("$.localite").doesNotExist());
+
+        // 2 affectations actives pour PRMP900 (entité 5 + entité proposée).
+        assertTrue(prmpEntiteRepository.findByIdPrmpAndActifTrue("PRMP900").size() == 2, "2 affectations actives");
+    }
+
+    @Test
+    @DisplayName("Refus inscription : REFUSE + motif, login refusé, réservé Admin")
+    void inscription_refus() throws Exception {
+        prmpRepository.save(prmp("PRMP901", "ANT"));
+        compteAuthRepository.save(new CompteAuth("prmp.ref", passwordEncoder.encode("pw"), "PRMP", "PRMP901", false));
+        prmpEntiteDemandeRepository.save(demande(9100, "prmp.ref", 1, null));
+        String body = "{\"motif\":\"Arrêté de nomination non conforme\"}";
+
+        // Refus réservé à l'Admin.
+        mvc.perform(post("/api/inscriptions/prmp.ref/refuser").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+        // L'Admin refuse → 204.
+        mvc.perform(post("/api/inscriptions/prmp.ref/refuser").header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isNoContent());
+        // Login toujours refusé (compte non activé).
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"login\":\"prmp.ref\",\"motDePasse\":\"pw\"}"))
+                .andExpect(status().isUnauthorized());
     }
 
     // ------------------------------------------------------------------
@@ -1935,6 +1996,21 @@ class CnmWorkflowIntegrationTest {
         pe.setIdEntiteContract(entite);
         pe.setActif(actif);
         return pe;
+    }
+
+    private PrmpEntiteDemande demande(int id, String login, Integer idEntite, String libellePropose) {
+        PrmpEntiteDemande d = new PrmpEntiteDemande();
+        d.setIdDemande(id);
+        d.setLogin(login);
+        d.setIdEntiteContract(idEntite);
+        if (libellePropose != null) {
+            d.setLibellePropose(libellePropose);
+            d.setAdressePropose("Adresse proposée");
+            d.setIdLocalitePropose("ANT");
+        }
+        d.setStatutDemande("EN_ATTENTE");
+        d.setDateDeclaration(LocalDate.of(2026, 1, 1));
+        return d;
     }
 
     private Avis avis(String id, String libelle) {
