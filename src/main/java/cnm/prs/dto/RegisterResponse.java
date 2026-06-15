@@ -7,6 +7,7 @@ package cnm.prs.dto;
  * @param refActeur  identifiant de l'acteur (id PRMP)
  * @param typeActeur type d'acteur (PRMP)
  * @param actif      toujours {@code false} à l'inscription
+ * @param statut     statut du compte à l'inscription (toujours {@code EN_ATTENTE})
  * @param message    message d'information pour l'utilisateur
  */
 public record RegisterResponse(
@@ -14,5 +15,6 @@ public record RegisterResponse(
         String refActeur,
         String typeActeur,
         boolean actif,
+        String statut,
         String message) {
 }

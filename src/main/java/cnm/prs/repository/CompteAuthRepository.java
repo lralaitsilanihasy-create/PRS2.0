@@ -17,4 +17,7 @@ public interface CompteAuthRepository extends JpaRepository<CompteAuth, String> 
 
     /** Comptes selon leur état d'activation (ex. {@code false} = en attente de validation). */
     List<CompteAuth> findByActif(Boolean actif);
+
+    /** Comptes par statut et type d'acteur (ex. inscriptions PRMP EN_ATTENTE). */
+    List<CompteAuth> findByStatutAndTypeActeur(String statut, String typeActeur);
 }

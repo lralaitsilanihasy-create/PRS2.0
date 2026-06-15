@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -85,6 +86,8 @@ import cnm.prs.repository.OrganigrammeRepository;
 import cnm.prs.repository.PrmpEntiteRepository;
 import cnm.prs.repository.SituationRepository;
 import cnm.prs.repository.TypeDossierRepository;
+import cnm.prs.repository.PieceJointeRepository;
+import cnm.prs.repository.PrmpEntiteDemandeRepository;
 import cnm.prs.security.TokenService;
 import cnm.prs.service.PieceJointeService;
 
@@ -103,6 +106,8 @@ class CnmWorkflowIntegrationTest {
     @Autowired private TokenService tokenService;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private PieceJointeService pieceJointeService;
+    @Autowired private PieceJointeRepository pieceJointeRepository;
+    @Autowired private PrmpEntiteDemandeRepository prmpEntiteDemandeRepository;
 
     @Autowired private LocaliteRepository localiteRepository;
     @Autowired private ProfileRepository profileRepository;
@@ -473,6 +478,53 @@ class CnmWorkflowIntegrationTest {
         assertThrows(BadRequestException.class, () -> pieceJointeService.stocker("PRMP001",
                 TypePieceJointe.CIN, new MockMultipartFile("cin", "cin.txt", "text/plain",
                         "ceci n'est pas une image".getBytes(StandardCharsets.US_ASCII))));
+    }
+
+    @Test
+    @DisplayName("Inscription PRMP v2 (multipart) : compte EN_ATTENTE + déclarations + pièces ; ≥1 entité requise")
+    void inscriptionV2_multipart() throws Exception {
+        String data = "{\"login\":\"prmp.v2\",\"motDePasse\":\"Passw0rd!\",\"idPrmp\":\"PRMP900\","
+                + "\"nomPrmp\":\"Rakoto\",\"prenomsPrmp\":\"V2\",\"imPrmp\":\"IM9000\","
+                + "\"arreteNomin\":\"ARR-2026-900\",\"dateNomin\":\"2026-01-01\",\"cin\":\"909090909090\","
+                + "\"dateCin\":\"2010-01-01\",\"lieuCin\":\"Antananarivo\",\"emailPrmp\":\"v2@prmp.mg\","
+                + "\"telPrmp\":\"0340000900\",\"idEntites\":[1],"
+                + "\"entitesNonListees\":[{\"libelle\":\"Nouvelle Autorite\",\"adresse\":\"Adr\",\"idLocalite\":\"ANT\"}]}";
+        MockMultipartFile dataPart = new MockMultipartFile("data", "", "application/json",
+                data.getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile arrete = new MockMultipartFile("arrete", "arrete.pdf", "application/pdf",
+                "%PDF-1.4 arrete".getBytes(StandardCharsets.US_ASCII));
+        MockMultipartFile cin = new MockMultipartFile("cin", "cin.png", "image/png",
+                new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3 });
+
+        // Inscription multipart → 201, compte EN_ATTENTE.
+        mvc.perform(multipart("/api/auth/register/prmp").file(dataPart).file(arrete).file(cin))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.statut").value("EN_ATTENTE"))
+                .andExpect(jsonPath("$.actif").value(false));
+
+        // 2 déclarations (1 existante + 1 proposée) et 2 pièces (arrêté + CIN) enregistrées.
+        assertTrue(prmpEntiteDemandeRepository.findByLogin("prmp.v2").size() == 2, "2 déclarations d'entités");
+        assertTrue(pieceJointeRepository.findByLogin("prmp.v2").size() == 2, "2 pièces (arrêté + CIN)");
+
+        // L'Administrateur est notifié de l'inscription.
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='NOUVELLE_INSCRIPTION')]", hasSize(1)));
+
+        // Connexion refusée tant que non validée → 401.
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"login\":\"prmp.v2\",\"motDePasse\":\"Passw0rd!\"}"))
+                .andExpect(status().isUnauthorized());
+
+        // Aucune entité déclarée (ni existante ni proposée) → 400.
+        String sansEntite = "{\"login\":\"prmp.v3\",\"motDePasse\":\"Passw0rd!\",\"idPrmp\":\"PRMP901\","
+                + "\"nomPrmp\":\"Rakoto\",\"prenomsPrmp\":\"V3\",\"imPrmp\":\"IM9001\","
+                + "\"arreteNomin\":\"ARR-2026-901\",\"dateNomin\":\"2026-01-01\",\"cin\":\"901901901901\","
+                + "\"dateCin\":\"2010-01-01\",\"lieuCin\":\"Antananarivo\",\"emailPrmp\":\"v3@prmp.mg\","
+                + "\"telPrmp\":\"0340000901\",\"idEntites\":[],\"entitesNonListees\":[]}";
+        MockMultipartFile dataSansEntite = new MockMultipartFile("data", "", "application/json",
+                sansEntite.getBytes(StandardCharsets.UTF_8));
+        mvc.perform(multipart("/api/auth/register/prmp").file(dataSansEntite).file(arrete).file(cin))
+                .andExpect(status().isBadRequest());
     }
 
     // ------------------------------------------------------------------

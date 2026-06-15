@@ -3,12 +3,15 @@ package cnm.prs.controller;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.Valid;
 
@@ -16,6 +19,7 @@ import cnm.prs.dto.EntitePubliqueDto;
 import cnm.prs.dto.LoginRequest;
 import cnm.prs.dto.LoginResponse;
 import cnm.prs.dto.RegisterPrmpRequest;
+import cnm.prs.dto.RegisterPrmpV2Request;
 import cnm.prs.dto.RegisterResponse;
 import cnm.prs.service.AuthService;
 import cnm.prs.service.EntiteContractService;
@@ -50,11 +54,27 @@ public class AuthController {
     }
 
     /**
-     * Auto-inscription d'une PRMP (route publique). Crée un compte inactif, en attente de
-     * validation par l'Administrateur. Le login ne fonctionnera qu'après activation.
+     * Auto-inscription d'une PRMP (variante JSON historique, route publique). Conservée le temps
+     * de la bascule du frontend vers la v2 multipart ; sera retirée ensuite.
      */
-    @PostMapping("/register/prmp")
+    @PostMapping(value = "/register/prmp", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<RegisterResponse> registerPrmp(@Valid @RequestBody RegisterPrmpRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.registerPrmp(request));
+    }
+
+    /**
+     * Auto-inscription d'une PRMP v2 (route publique, {@code multipart/form-data}) : part JSON
+     * {@code data} + fichiers {@code arrete} et {@code cin} (obligatoires) et {@code photo}
+     * (optionnel). Crée un compte <strong>EN_ATTENTE</strong> avec ses entités déclarées et ses
+     * pièces ; la connexion n'est possible qu'après validation par l'Administrateur.
+     */
+    @PostMapping(value = "/register/prmp", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<RegisterResponse> registerPrmpV2(
+            @Valid @RequestPart("data") RegisterPrmpV2Request data,
+            @RequestPart("arrete") MultipartFile arrete,
+            @RequestPart("cin") MultipartFile cin,
+            @RequestPart(value = "photo", required = false) MultipartFile photo) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.registerPrmpV2(data, arrete, cin, photo));
     }
 }
