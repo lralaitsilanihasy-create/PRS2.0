@@ -42,5 +42,11 @@ public enum TypeNotification {
     MODE_NON_DETERMINE,
 
     /** Dossier officiellement soumis par la PRMP, en attente de réception — vers le Secrétaire/CC de la localité (§3.1, Module 03). */
-    DOSSIER_SOUMIS
+    DOSSIER_SOUMIS,
+
+    /** Inscription PRMP validée par l'Administrateur (compte activé) — vers la PRMP (§3.1). */
+    INSCRIPTION_VALIDEE,
+
+    /** Inscription PRMP refusée par l'Administrateur (avec motif) — vers la PRMP (§3.1). */
+    INSCRIPTION_REFUSEE
 }
