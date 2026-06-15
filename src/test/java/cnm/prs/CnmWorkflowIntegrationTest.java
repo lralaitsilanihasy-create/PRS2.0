@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -26,10 +27,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import cnm.prs.dto.PieceJointeMetaDto;
 import cnm.prs.entity.Avis;
 import cnm.prs.entity.CompteAuth;
 import cnm.prs.entity.Controleur;
@@ -56,6 +59,8 @@ import cnm.prs.entity.Situation;
 import cnm.prs.entity.TypeDossier;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.TypeActeur;
+import cnm.prs.enums.TypePieceJointe;
+import cnm.prs.exception.BadRequestException;
 import cnm.prs.repository.AvisRepository;
 import cnm.prs.repository.CompteAuthRepository;
 import cnm.prs.repository.ControleurRepository;
@@ -81,6 +86,7 @@ import cnm.prs.repository.PrmpEntiteRepository;
 import cnm.prs.repository.SituationRepository;
 import cnm.prs.repository.TypeDossierRepository;
 import cnm.prs.security.TokenService;
+import cnm.prs.service.PieceJointeService;
 
 /**
  * Tests d'intégration de bout en bout : authentification JWT, autorisations par profil,
@@ -96,6 +102,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private MockMvc mvc;
     @Autowired private TokenService tokenService;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private PieceJointeService pieceJointeService;
 
     @Autowired private LocaliteRepository localiteRepository;
     @Autowired private ProfileRepository profileRepository;
@@ -443,6 +450,29 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.idEntiteContract==1)]", hasSize(1)))
                 .andExpect(jsonPath("$[?(@.idEntiteContract==1)].idLocalite", hasItem("ANT")));
+    }
+
+    @Test
+    @DisplayName("Pièces jointes : stockage PDF (magic-bytes), remplacement par type, rejet d'un type non autorisé")
+    void pieceJointe_stockageRemplacementRejet() throws Exception {
+        byte[] pdf = "%PDF-1.4 contenu arrete".getBytes(StandardCharsets.US_ASCII);
+        PieceJointeMetaDto meta = pieceJointeService.stocker("PRMP001", TypePieceJointe.ARRETE_NOMIN,
+                new MockMultipartFile("arrete", "arrete.pdf", "application/pdf", pdf));
+        assertTrue("application/pdf".equals(meta.format()), "format PDF détecté par magic-bytes");
+        assertTrue(meta.hashSha256() != null && meta.hashSha256().length() == 64, "SHA-256 calculé");
+
+        // Re-dépôt du même type → remplacement (le contenu récupéré est le plus récent).
+        byte[] pdf2 = "%PDF-1.7 version corrigee".getBytes(StandardCharsets.US_ASCII);
+        pieceJointeService.stocker("PRMP001", TypePieceJointe.ARRETE_NOMIN,
+                new MockMultipartFile("arrete", "arrete2.pdf", "application/pdf", pdf2));
+        byte[] recupere = pieceJointeService.telecharger("PRMP001", TypePieceJointe.ARRETE_NOMIN).getContenu();
+        assertTrue(new String(recupere, StandardCharsets.US_ASCII).contains("version corrigee"),
+                "le dernier dépôt remplace le précédent");
+
+        // Type non autorisé (texte brut) → 400 (magic-bytes non reconnus).
+        assertThrows(BadRequestException.class, () -> pieceJointeService.stocker("PRMP001",
+                TypePieceJointe.CIN, new MockMultipartFile("cin", "cin.txt", "text/plain",
+                        "ceci n'est pas une image".getBytes(StandardCharsets.US_ASCII))));
     }
 
     // ------------------------------------------------------------------
