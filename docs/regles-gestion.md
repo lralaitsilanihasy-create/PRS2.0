@@ -21,8 +21,9 @@ ce que chaque utilisateur peut voir et faire.
 1.5. **Contrôleur vérificateur** — subordonné du Membre ; même localité.
 1.6. **Assistant contrôleur** — subordonné du Vérificateur ; même localité.
 
-> Règle transversale : la visibilité des dossiers est filtrée par `ID_LOCALITE`,
-> sauf pour le Président (`ID_LOCALITE = NULL`) qui voit tout.
+> Règle transversale : la visibilité des dossiers **des contrôleurs** est filtrée par `ID_LOCALITE`,
+> sauf pour le Président (`ID_LOCALITE = NULL`) qui voit tout. La **PRMP** (acteur externe) n'est
+> **pas** scopée par localité : elle ne voit que **ses propres** dossiers (propriété `t_dossier.ID_PRMP`).
 
 ---
 
@@ -58,6 +59,18 @@ Flux complet d'un dossier, avec navette du projet de PV :
 - **Visibilité** : Acteur externe — aucun périmètre CNM
 
 Acteur externe qui soumet ses PPM et marchés à la CNM. Suit l'avancement jusqu'au PV d'examen, peut demander le retrait motivé d'un dossier (soumis à validation du CC), et consulte ses indicateurs de performance par exercice. Son mandat est de 3 ans à compter de DATE_NOMIN — des alertes automatiques lui sont envoyées à J-90, J-30 et J-7 avant expiration.
+
+**Rattachement aux entités contractantes**
+
+- Une PRMP **gère plusieurs entités contractantes** (autorités contractantes), via la table
+  `t_prmp_entite`. Chaque entité n'est rattachée qu'à **une seule PRMP active** à la fois
+  (invariant d'unicité). Les affectations sont **créées et gérées par l'Administrateur** et restent
+  **stables** (une entité reste rattachée à sa PRMP ; il n'y a pas de transfert d'une PRMP à une autre).
+- La PRMP **n'a pas de localité propre**. La **localité d'un dossier** est déterminée par l'**entité
+  contractante choisie à la saisie** (`tr_entite_contract.ID_LOCALITE`), jamais par la PRMP. À la
+  saisie, la PRMP choisit une entité **parmi ses entités actives**.
+- Le périmètre de visibilité de la PRMP est donc la **propriété** de ses dossiers
+  (`t_dossier.ID_PRMP`), pas une localité.
 
 **Module 02 — Saisie & gestion PPM**
 
