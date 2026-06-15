@@ -436,6 +436,15 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(get("/api/dossiers")).andExpect(status().isUnauthorized());
     }
 
+    @Test
+    @DisplayName("Référentiel public d'entités : accessible SANS jeton (écran d'inscription)")
+    void entitesPubliques_sansToken() throws Exception {
+        mvc.perform(get("/api/auth/entites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idEntiteContract==1)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idEntiteContract==1)].idLocalite", hasItem("ANT")));
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------
