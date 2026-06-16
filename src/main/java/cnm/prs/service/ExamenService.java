@@ -52,7 +52,29 @@ public class ExamenService {
         Visibilite.exigerLocalite(dispatchRepository.findLocaliteById(dto.getIdDispatch()));
         exigerDossierDispatche(dto.getIdDispatch());
         Examen entity = ExamenMapper.toEntity(dto);
-        return ExamenMapper.toDto(repository.save(entity));
+        Examen saved = repository.save(entity);
+        // [Auto] Le dossier avance DISPATCHE → EXAMINE (il quitte « à examiner »), même transaction.
+        avancerDossierVersExamine(dto.getIdDispatch());
+        return ExamenMapper.toDto(saved);
+    }
+
+    /**
+     * [Auto] À la création d'un examen, le dossier passe de {@link StatutDossier#DISPATCHE} à
+     * {@link StatutDossier#EXAMINE} (même transaction). Idempotent : on ne réécrit que si le dossier
+     * est bien {@code DISPATCHE} (jamais un dossier déjà examiné/signé/clôturé).
+     */
+    private void avancerDossierVersExamine(Integer idDispatch) {
+        Integer idDossier = idDispatch == null ? null
+                : dossierRepository.findIdDossierByDispatch(idDispatch).orElse(null);
+        if (idDossier == null) {
+            return;
+        }
+        dossierRepository.findById(idDossier).ifPresent(d -> {
+            if (StatutDossier.DISPATCHE.name().equals(d.getStatut())) {
+                d.setStatut(StatutDossier.EXAMINE.name());
+                dossierRepository.save(d);
+            }
+        });
     }
 
     /**

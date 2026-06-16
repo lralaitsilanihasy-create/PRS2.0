@@ -188,7 +188,7 @@ class CnmWorkflowIntegrationTest {
 
         // Circuit amont pour le workflow PV.
         avisRepository.save(avis("FAV", "Favorable"));
-        dossierRepository.save(dossier(1, "EN_EXAMEN"));
+        dossierRepository.save(dossier(1, "EXAMINE"));
         receptionRepository.save(reception(1, 1, "CTRCC1", false));
         dispatchRepository.save(dispatch(1, 1, "CTRCC1", "CTRMEM"));
         examenRepository.save(examen(1, 1, "CTRMEM"));
@@ -197,7 +197,7 @@ class CnmWorkflowIntegrationTest {
         // Seconde localité (TMS) : un CC, un dossier et sa réception — pour la règle d'intérim.
         localiteRepository.save(localite("TMS", "Toamasina"));
         controleurRepository.save(controleur("CTRCC2", 3, "TMS"));
-        dossierRepository.save(dossier(2, "EN_EXAMEN"));
+        dossierRepository.save(dossier(2, "EXAMINE"));
         receptionRepository.save(reception(2, 2, "CTRCC2", false));
 
         // Une demande de retrait de PRMP001 sur le dossier 1 (localité ANT).
@@ -726,6 +726,58 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.typeNotif=='PV_ACCEPTE')].idObjet", hasItem(71)));
     }
 
+    @Test
+    @DisplayName("Statut examen : créer un examen fait passer le dossier DISPATCHE → EXAMINE (listes exclusives)")
+    void statut_examenAvanceVersExamine() throws Exception {
+        dossierRepository.save(dossier(30, "PRET_DISPATCH"));
+        receptionRepository.save(reception(60, 30, "CTRSEC", true)); // ANT
+        mvc.perform(post("/api/dispatchs").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDispatch\":80,\"idReception\":60,\"imCtrlMembre\":\"CTRMEM\",\"interimDispatch\":false}"))
+                .andExpect(status().isCreated());
+        // Avant examen : DISPATCHE (à examiner).
+        mvc.perform(get("/api/dossiers/30").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$.statut").value("DISPATCHE"));
+
+        // Le Membre crée l'examen → le dossier passe EXAMINE.
+        mvc.perform(post("/api/examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":80,\"idDispatch\":80,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/dossiers/30").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$.statut").value("EXAMINE"));
+
+        // Exclusivité : présent en ?statut=EXAMINE, absent de ?statut=DISPATCHE.
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPresident).param("statut", "EXAMINE"))
+                .andExpect(jsonPath("$[?(@.idDossier==30)]", hasSize(1)));
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPresident).param("statut", "DISPATCHE"))
+                .andExpect(jsonPath("$[?(@.idDossier==30)]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Statut examen : signer le PV fait passer le dossier EXAMINE → PV_SIGNE")
+    void statut_signaturePvAvanceVersPvSigne() throws Exception {
+        // Dossier 1 = EXAMINE (seed). PV sur l'examen 1, soumis, accepté, puis co-signé.
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":90,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/pv-examens/90/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"commentaire\":\"go\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/90/accepter").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC1\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/90/signer").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"role\":\"MEMBRE\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/90/signer").header("Authorization", tokenPresident)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRPRE\",\"role\":\"PRESIDENT\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statutPv").value("SIGNE"));
+
+        // Le dossier 1 est passé EXAMINE → PV_SIGNE.
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$.statut").value("PV_SIGNE"));
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------
@@ -809,7 +861,7 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$.nbDossiersSoumis").value(2))
                 .andExpect(jsonPath("$.nbDossiersConformes").value(0))
                 .andExpect(jsonPath("$.tauxConformitePct").value(0.0))
-                .andExpect(jsonPath("$.pipelineParStatut.EN_EXAMEN").value(2))
+                .andExpect(jsonPath("$.pipelineParStatut.EXAMINE").value(2))
                 .andExpect(jsonPath("$.topNonConformite").isArray());
         // Réservé : un Membre n'accède pas aux KPIs globaux.
         mvc.perform(get("/api/kpis/tableau-bord").header("Authorization", tokenMembre))
@@ -1280,7 +1332,7 @@ class CnmWorkflowIntegrationTest {
     void circuitComplet_boutEnBout() throws Exception {
         String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
         // Dossier de test neuf (id 3), distinct des dossiers seedés.
-        dossierRepository.save(dossier(3, "EN_EXAMEN"));
+        dossierRepository.save(dossier(3, "EXAMINE"));
 
         // 1) Réception complète par le Secrétaire → [Auto] dossier PRET_DISPATCH.
         mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
@@ -1374,7 +1426,7 @@ class CnmWorkflowIntegrationTest {
     @Test
     @DisplayName("Préconditions du circuit : dispatch hors PRET_DISPATCH / doublon, examen hors circuit, vérif hors PV SIGNE → 409")
     void preconditionsCircuit_bloquent() throws Exception {
-        // (a) Dispatch d'un dossier non PRET_DISPATCH (dossier 2 = EN_EXAMEN, réception 2 sans dispatch) → 409.
+        // (a) Dispatch d'un dossier non PRET_DISPATCH (dossier 2 = EXAMINE, réception 2 sans dispatch) → 409.
         mvc.perform(post("/api/dispatchs").header("Authorization", tokenPresident).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idDispatch\":40,\"idReception\":2,\"interimDispatch\":false}"))
                 .andExpect(status().isConflict());
@@ -1387,7 +1439,7 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idDispatch\":42,\"idReception\":24,\"interimDispatch\":false}"))
                 .andExpect(status().isConflict());
 
-        // (c) Examen d'un dossier non dispatché (dispatch 1 → dossier 1 = EN_EXAMEN, pas DISPATCHE) → 409.
+        // (c) Examen d'un dossier non dispatché (dispatch 1 → dossier 1 = EXAMINE, pas DISPATCHE) → 409.
         mvc.perform(post("/api/examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idExamen\":40,\"idDispatch\":1,\"imCtrlMembre\":\"CTRMEM\"}"))
                 .andExpect(status().isConflict());

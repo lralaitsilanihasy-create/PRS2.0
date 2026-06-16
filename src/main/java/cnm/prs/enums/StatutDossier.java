@@ -27,6 +27,21 @@ public enum StatutDossier {
      */
     DISPATCHE,
 
+    /**
+     * ⚠️ Règle ajoutée (non issue de la brochure) — dossier <strong>examiné</strong> : un examen a été
+     * créé (§2.4 → §2.5). Posé automatiquement à la création de l'examen. Le dossier quitte « à examiner » ;
+     * l'examen et le projet de PV restent <strong>modifiables</strong> via la navette tant que le PV n'est
+     * pas signé.
+     */
+    EXAMINE,
+
+    /**
+     * ⚠️ Règle ajoutée (non issue de la brochure) — <strong>PV signé</strong> (§2.6) : posé automatiquement
+     * à la signature du PV. L'examen devient <strong>définitif (verrouillé)</strong> ; le dossier est en
+     * attente de vérification.
+     */
+    PV_SIGNE,
+
     /** §3.3 — retrait approuvé par le Chef de commission. */
     RETIRE,
 

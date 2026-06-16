@@ -71,6 +71,13 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             """)
     Optional<String> findStatutByDispatch(@Param("idDispatch") Integer idDispatch);
 
+    /** Identifiant du dossier rattaché à un dispatch, via sa réception (transition DISPATCHE→EXAMINE). */
+    @Query("""
+            select d.idDossier from Dossier d, Reception r, Dispatch di
+            where di.idDispatch = :idDispatch and r.idReception = di.idReception and d.idDossier = r.idDossier
+            """)
+    Optional<Integer> findIdDossierByDispatch(@Param("idDispatch") Integer idDispatch);
+
     /**
      * Dossiers visibles d'une localité (§1) : un dossier appartient à la localité du contrôleur
      * qui l'a réceptionné ({@code Reception.imCtrlRecept → Controleur.idLocalite}) <strong>ou</strong>,

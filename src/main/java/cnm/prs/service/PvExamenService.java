@@ -16,12 +16,14 @@ import cnm.prs.entity.PvExamen;
 import cnm.prs.entity.PvNavette;
 import cnm.prs.enums.RoleSignataire;
 import cnm.prs.enums.SensNavette;
+import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.StatutPv;
 import cnm.prs.enums.TypeNotification;
 import cnm.prs.enums.TypeObjet;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.PvExamenMapper;
+import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.PrmpRepository;
 import cnm.prs.repository.PvExamenRepository;
 import cnm.prs.repository.PvNavetteRepository;
@@ -45,15 +47,17 @@ public class PvExamenService {
     private final PrmpRepository prmpRepository;
     private final NotificationService notificationService;
     private final ControleurDirectory controleurDirectory;
+    private final DossierRepository dossierRepository;
 
     public PvExamenService(PvExamenRepository repository, PvNavetteRepository navetteRepository,
             PrmpRepository prmpRepository, NotificationService notificationService,
-            ControleurDirectory controleurDirectory) {
+            ControleurDirectory controleurDirectory, DossierRepository dossierRepository) {
         this.repository = repository;
         this.navetteRepository = navetteRepository;
         this.prmpRepository = prmpRepository;
         this.notificationService = notificationService;
         this.controleurDirectory = controleurDirectory;
+        this.dossierRepository = dossierRepository;
     }
 
     @Transactional(readOnly = true)
@@ -171,6 +175,24 @@ public class PvExamenService {
     }
 
     /**
+     * [Auto] À la signature du PV, le dossier passe de {@link StatutDossier#EXAMINE} à
+     * {@link StatutDossier#PV_SIGNE} (même transaction) — l'examen devient définitif. Idempotent :
+     * on ne réécrit que si le dossier est bien {@code EXAMINE}.
+     */
+    private void avancerDossierVersPvSigne(PvExamen pv) {
+        Integer idDossier = repository.findIdDossierByPv(pv.getIdPv()).orElse(null);
+        if (idDossier == null) {
+            return;
+        }
+        dossierRepository.findById(idDossier).ifPresent(d -> {
+            if (StatutDossier.EXAMINE.name().equals(d.getStatut())) {
+                d.setStatut(StatutDossier.PV_SIGNE.name());
+                dossierRepository.save(d);
+            }
+        });
+    }
+
+    /**
      * Retour du projet pour correction par le Président / CC (§3.2) :
      * PROJET_SOUMIS → EN_RECTIFICATION. Commentaire de rectification obligatoire.
      * Insère une navette SENS = RETOUR_RECTIF.
@@ -232,6 +254,8 @@ public class PvExamenService {
             pv.setStatutPv(StatutPv.SIGNE.name());
             pv.setDatePv(today);
             PvExamenDto dto = PvExamenMapper.toDto(repository.save(pv));
+            // [Auto] Le dossier avance EXAMINE → PV_SIGNE : l'examen devient définitif (verrouillé).
+            avancerDossierVersPvSigne(pv);
             notifierPvSigne(pv);
             return dto;
         }
