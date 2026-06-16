@@ -48,5 +48,8 @@ public enum TypeNotification {
     INSCRIPTION_VALIDEE,
 
     /** Inscription PRMP refusée par l'Administrateur (avec motif) — vers la PRMP (§3.1). */
-    INSCRIPTION_REFUSEE
+    INSCRIPTION_REFUSEE,
+
+    /** Message reçu dans la messagerie interne — vers le destinataire du message (Module 04). */
+    NOUVEAU_MESSAGE
 }

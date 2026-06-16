@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 import cnm.prs.dto.MessageDto;
 import cnm.prs.dto.MessageEnvoiRequest;
 import cnm.prs.entity.Message;
+import cnm.prs.enums.TypeNotification;
+import cnm.prs.enums.TypeObjet;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.MessageMapper;
 import cnm.prs.repository.MessageRepository;
@@ -24,9 +26,11 @@ import cnm.prs.security.CurrentUser;
 public class MessageService {
 
     private final MessageRepository repository;
+    private final NotificationService notificationService;
 
-    public MessageService(MessageRepository repository) {
+    public MessageService(MessageRepository repository, NotificationService notificationService) {
         this.repository = repository;
+        this.notificationService = notificationService;
     }
 
     /** Tous les messages impliquant l'utilisateur courant (confidentialité). */
@@ -68,7 +72,14 @@ public class MessageService {
         m.setIdMessageParent(req.idMessageParent());
         m.setDateEnvoi(LocalDateTime.now());
         m.setLu(false);
-        return MessageMapper.toDto(repository.save(m));
+        Message saved = repository.save(m);
+
+        // [Auto] Notifie le destinataire du nouveau message (même transaction).
+        notificationService.emettreControleur(TypeNotification.NOUVEAU_MESSAGE, saved.getDestinataireIm(),
+                null, saved.getIdMessage(), TypeObjet.MESSAGE, saved.getIdDossier(),
+                "Nouveau message" + (saved.getSujet() != null ? " : " + saved.getSujet() : ""),
+                "Vous avez reçu un message de " + saved.getExpediteurIm() + ".");
+        return MessageMapper.toDto(saved);
     }
 
     /** Boîte de réception de l'utilisateur courant. */

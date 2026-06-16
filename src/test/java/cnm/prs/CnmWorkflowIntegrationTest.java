@@ -633,6 +633,26 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    @DisplayName("Notification message : l'envoi notifie le destinataire (NOUVEAU_MESSAGE, objet MESSAGE), pas l'expéditeur")
+    void notification_nouveauMessage() throws Exception {
+        // Le Membre envoie un message au CC.
+        mvc.perform(post("/api/messages/envoyer").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"destinataireIm\":\"CTRCC1\",\"sujet\":\"Question\",\"corps\":\"Bonjour\"}"))
+                .andExpect(status().isCreated());
+
+        // Le CC (destinataire) reçoit une notification NOUVEAU_MESSAGE pointant l'objet MESSAGE.
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.typeNotif=='NOUVEAU_MESSAGE')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='NOUVEAU_MESSAGE')].typeObjet", hasItem("MESSAGE")));
+
+        // L'expéditeur (Membre) n'a pas de notification de message.
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$[?(@.typeNotif=='NOUVEAU_MESSAGE')]", hasSize(0)));
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------
