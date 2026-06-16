@@ -156,6 +156,20 @@ public class PvExamenService {
         }
     }
 
+    /** [Auto] Notifie le Membre auteur du PV ({@code imCtrlMembre}), objet PV. */
+    private void notifierPvAuteur(PvExamen pv, TypeNotification type, String titre, String corps) {
+        String imAuteur = pv.getImCtrlMembre();
+        if (imAuteur == null || imAuteur.isBlank()) {
+            return;
+        }
+        Integer idDossier = repository.findIdDossierByPv(pv.getIdPv()).orElse(null);
+        notificationService.emettreControleur(type, imAuteur, null, pv.getIdPv(), TypeObjet.PV, idDossier, titre, corps);
+    }
+
+    private String referencePv(PvExamen pv) {
+        return pv.getReferencePv() != null ? pv.getReferencePv() : ("n° " + pv.getIdPv());
+    }
+
     /**
      * Retour du projet pour correction par le Président / CC (§3.2) :
      * PROJET_SOUMIS → EN_RECTIFICATION. Commentaire de rectification obligatoire.
@@ -169,7 +183,11 @@ public class PvExamenService {
         }
         pv.setStatutPv(StatutPv.EN_RECTIFICATION.name());
         ajouterNavette(pv, SensNavette.RETOUR_RECTIF, req.imActeur(), req.commentaire());
-        return PvExamenMapper.toDto(repository.save(pv));
+        PvExamen saved = repository.save(pv);
+        // [Auto] Le Membre auteur est notifié du retour pour rectification, avec le commentaire.
+        notifierPvAuteur(saved, TypeNotification.PV_A_RECTIFIER, "Projet de PV à rectifier",
+                "Le projet de PV " + referencePv(saved) + " a été retourné pour rectification : " + req.commentaire());
+        return PvExamenMapper.toDto(saved);
     }
 
     /**
@@ -184,7 +202,11 @@ public class PvExamenService {
         pv.setStatutPv(StatutPv.PROJET_ACCEPTE.name());
         pv.setDateAcceptation(LocalDate.now());
         ajouterNavette(pv, SensNavette.ACCEPTATION, req.imActeur(), req.commentaire());
-        return PvExamenMapper.toDto(repository.save(pv));
+        PvExamen saved = repository.save(pv);
+        // [Auto] Le Membre auteur est notifié de l'acceptation du projet de PV.
+        notifierPvAuteur(saved, TypeNotification.PV_ACCEPTE, "Projet de PV accepté",
+                "Le projet de PV " + referencePv(saved) + " a été accepté.");
+        return PvExamenMapper.toDto(saved);
     }
 
     /**

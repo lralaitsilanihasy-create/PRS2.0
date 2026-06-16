@@ -694,6 +694,38 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.typeNotif=='PV_A_VALIDER')]", hasSize(1)));
     }
 
+    @Test
+    @DisplayName("Notification navette : retour (PV_A_RECTIFIER) et acceptation (PV_ACCEPTE) notifient le Membre auteur")
+    void notification_navettePvAuteur() throws Exception {
+        // Création + soumission d'un PV (auteur CTRMEM, localité ANT).
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":71,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/pv-examens/71/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"commentaire\":\"v1\"}"))
+                .andExpect(status().isOk());
+
+        // Le CC retourne le PV pour rectification → le Membre auteur reçoit PV_A_RECTIFIER (objet PV).
+        mvc.perform(post("/api/pv-examens/71/retourner").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC1\",\"commentaire\":\"corriger la synthese\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statutPv").value("EN_RECTIFICATION"));
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_A_RECTIFIER')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_A_RECTIFIER')].idObjet", hasItem(71)));
+
+        // Re-soumission puis acceptation par le CC → le Membre auteur reçoit PV_ACCEPTE.
+        mvc.perform(post("/api/pv-examens/71/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"commentaire\":\"v2\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/71/accepter").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC1\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statutPv").value("PROJET_ACCEPTE"));
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_ACCEPTE')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_ACCEPTE')].idObjet", hasItem(71)));
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------

@@ -57,5 +57,11 @@ public enum TypeNotification {
     EXAMEN_A_FAIRE,
 
     /** Projet de PV soumis, à valider/signer — vers le CC et le Président de la localité (§3.2, §3.5). */
-    PV_A_VALIDER
+    PV_A_VALIDER,
+
+    /** Projet de PV retourné pour rectification (avec commentaire) — vers le Membre auteur (§3.2). */
+    PV_A_RECTIFIER,
+
+    /** Projet de PV accepté — vers le Membre auteur (§3.2). */
+    PV_ACCEPTE
 }
