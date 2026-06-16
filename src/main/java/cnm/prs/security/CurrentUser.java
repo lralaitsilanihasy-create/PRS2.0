@@ -42,6 +42,11 @@ public final class CurrentUser {
         return jwt().map(j -> j.getClaimAsString("ref"));
     }
 
+    /** Type d'acteur : {@code CONTROLEUR} ou {@code PRMP} (claim {@code acteurType}). */
+    public static Optional<String> acteurType() {
+        return jwt().map(j -> j.getClaimAsString("acteurType"));
+    }
+
     /** Profil métier, ou vide si non reconnu. */
     public static Optional<ProfilUtilisateur> profil() {
         return jwt()

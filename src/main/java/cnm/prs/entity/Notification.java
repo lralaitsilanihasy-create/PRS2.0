@@ -58,6 +58,22 @@ public class Notification {
     @Column(name = "CANAL", length = 20)
     private String canal;
 
+    /** Destinataire unifié : matricule contrôleur ou identifiant PRMP (selon {@code DESTINATAIRE_TYPE}). */
+    @Column(name = "DESTINATAIRE_REF", length = 10)
+    private String destinataireRef;
+
+    /** Type du destinataire : {@code CONTROLEUR} ou {@code PRMP} (cf. {@code cnm.prs.enums.TypeActeur}). */
+    @Column(name = "DESTINATAIRE_TYPE", length = 20)
+    private String destinataireType;
+
+    /** Identifiant de l'objet métier concerné (selon {@code TYPE_OBJET}). */
+    @Column(name = "ID_OBJET")
+    private Integer idObjet;
+
+    /** Type d'objet concerné : {@code DOSSIER} / {@code PV} / {@code MESSAGE} (cf. {@code cnm.prs.enums.TypeObjet}). */
+    @Column(name = "TYPE_OBJET", length = 20)
+    private String typeObjet;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "DESTINATAIRE_IM", insertable = false, updatable = false)
     @JsonIgnore

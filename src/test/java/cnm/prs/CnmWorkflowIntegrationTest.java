@@ -61,6 +61,8 @@ import cnm.prs.entity.Situation;
 import cnm.prs.entity.TypeDossier;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.TypeActeur;
+import cnm.prs.enums.TypeNotification;
+import cnm.prs.enums.TypeObjet;
 import cnm.prs.enums.TypePieceJointe;
 import cnm.prs.exception.BadRequestException;
 import cnm.prs.repository.AvisRepository;
@@ -90,6 +92,7 @@ import cnm.prs.repository.TypeDossierRepository;
 import cnm.prs.repository.PieceJointeRepository;
 import cnm.prs.repository.PrmpEntiteDemandeRepository;
 import cnm.prs.security.TokenService;
+import cnm.prs.service.NotificationService;
 import cnm.prs.service.PieceJointeService;
 
 /**
@@ -107,6 +110,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private TokenService tokenService;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private PieceJointeService pieceJointeService;
+    @Autowired private NotificationService notificationService;
     @Autowired private PieceJointeRepository pieceJointeRepository;
     @Autowired private PrmpEntiteDemandeRepository prmpEntiteDemandeRepository;
 
@@ -586,6 +590,47 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"login\":\"prmp.ref\",\"motDePasse\":\"pw\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Notifications : /mes scopé, comptage non-lues, marquer lu (refus si pas la mienne), liste globale Admin-only")
+    void notifications_meScopeLectureGlobalAdmin() throws Exception {
+        // 2 notifications pour CTRMEM, 1 pour CTRPRE (émises via le service ; ids 1, 2, 3).
+        notificationService.emettreControleur(TypeNotification.PRET_DISPATCH, "CTRMEM", null, 1, TypeObjet.DOSSIER, 1, "Notif 1", "corps");
+        notificationService.emettreControleur(TypeNotification.PRET_DISPATCH, "CTRMEM", null, 2, TypeObjet.DOSSIER, 2, "Notif 2", "corps");
+        notificationService.emettreControleur(TypeNotification.PRET_DISPATCH, "CTRPRE", null, 3, TypeObjet.DOSSIER, 1, "Notif 3", "corps");
+
+        // Scoping : CTRMEM voit ses 2, CTRPRE voit sa 1.
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenMembre))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2));
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$.length()").value(1));
+
+        // Comptage des non-lues.
+        mvc.perform(get("/api/notifications/mes/non-lues/count").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$.nonLues").value(2));
+
+        // Marquer la notif 1 comme lue (CTRMEM) → lu=true ; le compteur descend à 1.
+        mvc.perform(post("/api/notifications/1/lu").header("Authorization", tokenMembre))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.lu").value(true));
+        mvc.perform(get("/api/notifications/mes/non-lues/count").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$.nonLues").value(1));
+
+        // Marquer la notif de CTRPRE (id 3) en tant que CTRMEM → 403.
+        mvc.perform(post("/api/notifications/3/lu").header("Authorization", tokenMembre))
+                .andExpect(status().isForbidden());
+
+        // Tout marquer lu (CTRMEM) → 1 restante traitée, puis 0 non-lue.
+        mvc.perform(post("/api/notifications/lire-tout").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$.traitees").value(1));
+        mvc.perform(get("/api/notifications/mes/non-lues/count").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$.nonLues").value(0));
+
+        // Liste globale : interdite à un non-Admin (403), autorisée à l'Admin (200).
+        mvc.perform(get("/api/notifications").header("Authorization", tokenMembre))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk());
     }
 
     // ------------------------------------------------------------------
@@ -1075,7 +1120,7 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isConflict());
 
         // [Auto] La PRMP du dossier reçoit une notification PV_SIGNE.
-        mvc.perform(get("/api/notifications").header("Authorization", tokenCc))
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.typeNotif=='PV_SIGNE')]", hasSize(1)))
                 .andExpect(jsonPath("$[?(@.typeNotif=='PV_SIGNE')].destinataireEmail", hasItem("prmp@min.mg")));
@@ -1098,7 +1143,7 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("PRET_DISPATCH"));
 
         // [Auto] Notification PRET_DISPATCH adressée au Président et au CC de la localité.
-        mvc.perform(get("/api/notifications").header("Authorization", tokenCc))
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.typeNotif=='PRET_DISPATCH')]", hasSize(2)))
                 .andExpect(jsonPath("$[?(@.typeNotif=='PRET_DISPATCH')].destinataireIm", hasItem("CTRPRE")))
@@ -1132,7 +1177,7 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("CLOTURE"));
 
         // [Auto] Le Chargé de publication est alerté que le dossier clôturé est éligible.
-        mvc.perform(get("/api/notifications").header("Authorization", tokenCc))
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
                 .andExpect(jsonPath("$[?(@.typeNotif=='CLOTURE_ELIGIBLE')]", hasSize(1)))
                 .andExpect(jsonPath("$[?(@.typeNotif=='CLOTURE_ELIGIBLE')].destinataireIm", hasItem("CTRPUB")));
     }

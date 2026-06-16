@@ -27,6 +27,10 @@ public final class NotificationMapper {
         dto.setLu(entity.getLu());
         dto.setDateLecture(entity.getDateLecture());
         dto.setCanal(entity.getCanal());
+        dto.setDestinataireRef(entity.getDestinataireRef());
+        dto.setDestinataireType(entity.getDestinataireType());
+        dto.setIdObjet(entity.getIdObjet());
+        dto.setTypeObjet(entity.getTypeObjet());
         return dto;
     }
 
@@ -46,6 +50,10 @@ public final class NotificationMapper {
         entity.setLu(dto.getLu());
         entity.setDateLecture(dto.getDateLecture());
         entity.setCanal(dto.getCanal());
+        entity.setDestinataireRef(dto.getDestinataireRef());
+        entity.setDestinataireType(dto.getDestinataireType());
+        entity.setIdObjet(dto.getIdObjet());
+        entity.setTypeObjet(dto.getTypeObjet());
         return entity;
     }
 }

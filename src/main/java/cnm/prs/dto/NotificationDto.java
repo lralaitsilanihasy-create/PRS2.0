@@ -42,4 +42,15 @@ public class NotificationDto {
 
     @Size(max = 20)
     private String canal;
+
+    @Size(max = 10)
+    private String destinataireRef;
+
+    @Size(max = 20)
+    private String destinataireType;
+
+    private Integer idObjet;
+
+    @Size(max = 20)
+    private String typeObjet;
 }
