@@ -51,5 +51,8 @@ public enum TypeNotification {
     INSCRIPTION_REFUSEE,
 
     /** Message reçu dans la messagerie interne — vers le destinataire du message (Module 04). */
-    NOUVEAU_MESSAGE
+    NOUVEAU_MESSAGE,
+
+    /** Dossier dispatché à examiner — vers le Membre assigné (§2.3, transmission dispatch→examen). */
+    EXAMEN_A_FAIRE
 }

@@ -653,6 +653,24 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.typeNotif=='NOUVEAU_MESSAGE')]", hasSize(0)));
     }
 
+    @Test
+    @DisplayName("Notification dispatch : le Membre assigné reçoit EXAMEN_A_FAIRE sur le dossier dispatché")
+    void notification_examenAFaire() throws Exception {
+        // Dossier PRET_DISPATCH d'ANT avec une réception fraîche.
+        dossierRepository.save(dossier(20, "PRET_DISPATCH"));
+        receptionRepository.save(reception(40, 20, "CTRSEC", true)); // CTRSEC = localité ANT
+        // Le CC d'ANT dispatche le dossier au Membre CTRMEM (titulaire, même localité).
+        mvc.perform(post("/api/dispatchs").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDispatch\":50,\"idReception\":40,\"imCtrlMembre\":\"CTRMEM\",\"interimDispatch\":false}"))
+                .andExpect(status().isCreated());
+
+        // Le Membre assigné reçoit EXAMEN_A_FAIRE pointant le dossier 20.
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenMembre))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.typeNotif=='EXAMEN_A_FAIRE')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='EXAMEN_A_FAIRE')].idObjet", hasItem(20)));
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------

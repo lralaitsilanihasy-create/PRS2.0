@@ -6,10 +6,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.DispatchDto;
+import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Dispatch;
 import cnm.prs.entity.Reception;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
+import cnm.prs.enums.TypeNotification;
+import cnm.prs.enums.TypeObjet;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.DispatchMapper;
@@ -31,13 +34,16 @@ public class DispatchService {
     private final ReceptionRepository receptionRepository;
     private final ControleurRepository controleurRepository;
     private final DossierRepository dossierRepository;
+    private final NotificationService notificationService;
 
     public DispatchService(DispatchRepository repository, ReceptionRepository receptionRepository,
-            ControleurRepository controleurRepository, DossierRepository dossierRepository) {
+            ControleurRepository controleurRepository, DossierRepository dossierRepository,
+            NotificationService notificationService) {
         this.repository = repository;
         this.receptionRepository = receptionRepository;
         this.controleurRepository = controleurRepository;
         this.dossierRepository = dossierRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -62,7 +68,25 @@ public class DispatchService {
         Dispatch saved = repository.save(entity);
         // [Auto] Le dossier avance PRET_DISPATCH → DISPATCHE, dans la même transaction que le dispatch.
         avancerDossierVersDispatche(dto.getIdReception());
+        // [Auto] Le Membre assigné est notifié qu'un dossier lui est transmis pour examen.
+        notifierMembreAssigne(saved);
         return DispatchMapper.toDto(saved);
+    }
+
+    /** [Auto] Notifie le Membre assigné ({@code EXAMEN_A_FAIRE}) du dossier dispatché. */
+    private void notifierMembreAssigne(Dispatch dispatch) {
+        String imMembre = dispatch.getImCtrlMembre();
+        if (imMembre == null || imMembre.isBlank()) {
+            return;
+        }
+        Integer idDossier = dispatch.getIdReception() == null ? null
+                : receptionRepository.findById(dispatch.getIdReception())
+                        .map(Reception::getIdDossier).orElse(null);
+        String email = controleurRepository.findById(imMembre).map(Controleur::getEmailCont).orElse(null);
+        notificationService.emettreControleur(TypeNotification.EXAMEN_A_FAIRE, imMembre, email,
+                idDossier, TypeObjet.DOSSIER, idDossier,
+                "Dossier à examiner",
+                "Le dossier " + idDossier + " vous a été dispatché pour examen.");
     }
 
     /**
