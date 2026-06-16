@@ -49,6 +49,23 @@ Flux complet d'un dossier, avec navette du projet de PV :
 > L'**examen (4)** exige désormais que le dossier soit **`DISPATCHE`** (et non plus `PRET_DISPATCH`).
 > Portée : étape Dispatch → Examen uniquement. Le frontend doit s'aligner sur ce statut.
 
+### Notifications (transversal au circuit)
+
+À **chaque transmission**, le système émet une **notification** au(x) responsable(s) de l'étape suivante,
+**dans la même transaction** que l'événement :
+
+- **soumission** du dossier → Secrétaire / CC de la localité (`DOSSIER_SOUMIS`) ;
+- **dossier complet** → Président + CC de la localité (`PRET_DISPATCH`) ;
+- **dispatch** → **Membre assigné** (`EXAMEN_A_FAIRE`) ;
+- **projet de PV soumis** → CC + Président de la localité (`PV_A_VALIDER`) ;
+- **navette retour (commentaire) / acceptation** → **Membre auteur** (`PV_A_RECTIFIER` / `PV_ACCEPTE`) ;
+- **PV signé** → PRMP (`PV_SIGNE`) ; **clôture éligible** → Chargé de publication (`CLOTURE_ELIGIBLE`) ;
+- **message** de la messagerie interne → son destinataire (`NOUVEAU_MESSAGE`).
+
+Le destinataire est déterminé par **rôle + localité** du dossier (ou par **assignation explicite**, ex. le
+Membre du dispatch). Chaque utilisateur ne consulte que **ses** notifications (`/api/notifications/mes`,
+comptage des non-lues, marquer lu) ; la **liste globale** est réservée à l'**Administrateur** (supervision).
+
 ---
 
 ## 3. Fonctionnalités et règles par profil

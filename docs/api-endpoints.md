@@ -1582,7 +1582,9 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 ---
 
 ## Notifications
-**Ressource** `/api/notifications` — Lecture / écriture : tout utilisateur authentifié. *(Normalement créées automatiquement par le système.)*
+**Ressource** `/api/notifications` (table `t_notification`) — Notifications système, émises **automatiquement à chaque transmission** (dossier, PV, navette, message).
+- **Mes notifications** (`/mes`, `/mes/non-lues/count`, `/{id}/lu`, `/lire-tout`) : **scopées** à l'utilisateur courant — chacun ne voit/agit que sur **les siennes** (clé `DESTINATAIRE_REF` + `DESTINATAIRE_TYPE` ; repli e-mail pour les PRMP).
+- **Liste globale** et **CRUD** : réservés à l'**Administrateur** (supervision).
 
 **Champs `NotificationDto`**
 
@@ -1591,8 +1593,12 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | idNotification | number | Oui (PK, au POST) | clé primaire |
 | idDossier | number | Non | |
 | typeNotif | string | Oui | @NotBlank, max 30 |
-| destinataireIm | string | Non | max 7 |
-| destinataireEmail | string | Non | max 100 |
+| destinataireIm | string | Non | max 7 — destinataire contrôleur (compat.) |
+| destinataireEmail | string | Non | max 100 — destinataire PRMP/externe |
+| **destinataireRef** | string | Non | max 10 — clé unifiée (matricule ou id PRMP) |
+| **destinataireType** | string | Non | max 20 — `CONTROLEUR` / `PRMP` |
+| **idObjet** | number | Non | objet concerné (selon `typeObjet`) |
+| **typeObjet** | string | Non | max 20 — `DOSSIER` / `PV` / `MESSAGE` |
 | titre | string | Non | max 200 |
 | corps | string | Non | |
 | dateEnvoi | string (date-time) | Non | |
@@ -1604,22 +1610,42 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
-| GET | /api/notifications | — | `NotificationDto[]` | 200 | Authentifié |
-| GET | /api/notifications/{id} | — | `NotificationDto` | 200, 404 | Authentifié |
-| POST | /api/notifications | `NotificationDto` | `NotificationDto` | 201, 400 | Authentifié |
-| PUT | /api/notifications/{id} | `NotificationDto` | `NotificationDto` | 200, 400, 404 | Authentifié |
-| DELETE | /api/notifications/{id} | — | — | 204, 404 | Authentifié |
+| GET | /api/notifications/mes`?lu=` | — | `NotificationDto[]` | 200 | Authentifié (scopé) |
+| GET | /api/notifications/mes/non-lues/count | — | `{ "nonLues": number }` | 200 | Authentifié (scopé) |
+| POST | /api/notifications/{id}/lu | — | `NotificationDto` | 200, 403, 404 | Destinataire |
+| POST | /api/notifications/lire-tout | — | `{ "traitees": number }` | 200 | Authentifié (scopé) |
+| GET | /api/notifications | — | `NotificationDto[]` | 200, 403 | ADMINISTRATEUR |
+| GET | /api/notifications/{id} | — | `NotificationDto` | 200, 403, 404 | ADMINISTRATEUR |
+| POST | /api/notifications | `NotificationDto` | `NotificationDto` | 201, 400, 403 | ADMINISTRATEUR |
+| PUT | /api/notifications/{id} | `NotificationDto` | `NotificationDto` | 200, 400, 403, 404 | ADMINISTRATEUR |
+| DELETE | /api/notifications/{id} | — | — | 204, 403, 404 | ADMINISTRATEUR |
 
-`{id}` = idNotification (number).
+`{id}` = idNotification (number). `?lu=true|false` filtre lues/non-lues ; `POST /{id}/lu` refuse (403) une notification qui ne vous appartient pas.
 
-**Exemple — réponse**
+**Types (`TYPE_NOTIF`) émis à la transmission**
+| Type | Événement | Destinataire | Objet |
+|---|---|---|---|
+| `DOSSIER_SOUMIS` | soumission du dossier | Secrétaire / CC de la localité | DOSSIER |
+| `PRET_DISPATCH` | dossier complet | Président + CC de la localité | DOSSIER |
+| `EXAMEN_A_FAIRE` | dossier dispatché | Membre assigné | DOSSIER |
+| `PV_A_VALIDER` | projet de PV soumis | CC + Président de la localité | PV |
+| `PV_A_RECTIFIER` | navette retournée (commentaire) | Membre auteur | PV |
+| `PV_ACCEPTE` | projet de PV accepté | Membre auteur | PV |
+| `PV_SIGNE` | PV signé | PRMP | DOSSIER |
+| `CLOTURE_ELIGIBLE` | dossier clôturé éligible | Chargé de publication | DOSSIER |
+| `NOUVEAU_MESSAGE` | message reçu (messagerie) | destinataire | MESSAGE |
+
+*(Autres types existants : `NOUVELLE_INSCRIPTION`, `INSCRIPTION_VALIDEE/REFUSEE`, `DEMANDE_RETRAIT`, `RETRAIT_APPROUVE/REJETE`, `MODE_NON_DETERMINE`, `FIN_MANDAT`, `ALERTE_DELAI`, `DISPATCH_CC`.)*
+
+**Exemple — réponse `/mes`**
 ```json
-{
-  "idNotification": 1024, "idDossier": 312, "typeNotif": "PV_SIGNE",
-  "destinataireIm": null, "destinataireEmail": "prmp@ministere.mg",
-  "titre": "PV signé", "corps": "Le PV n° 312 a été signé.",
-  "dateEnvoi": "2026-06-12T09:15:30", "lu": false, "dateLecture": null, "canal": "SYSTEME"
-}
+[{
+  "idNotification": 1042, "typeNotif": "EXAMEN_A_FAIRE",
+  "destinataireRef": "CTRMEM", "destinataireType": "CONTROLEUR",
+  "idObjet": 312, "typeObjet": "DOSSIER", "idDossier": 312,
+  "titre": "Dossier à examiner", "corps": "Le dossier 312 vous a été dispatché pour examen.",
+  "dateEnvoi": "2026-06-16T09:15:30", "lu": false, "dateLecture": null, "canal": "SYSTEME"
+}]
 ```
 
 ---
