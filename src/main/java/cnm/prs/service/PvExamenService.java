@@ -2,6 +2,7 @@ package cnm.prs.service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -9,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.PvActionRequest;
 import cnm.prs.dto.PvExamenDto;
+import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Prmp;
 import cnm.prs.entity.PvExamen;
 import cnm.prs.entity.PvNavette;
@@ -16,6 +18,7 @@ import cnm.prs.enums.RoleSignataire;
 import cnm.prs.enums.SensNavette;
 import cnm.prs.enums.StatutPv;
 import cnm.prs.enums.TypeNotification;
+import cnm.prs.enums.TypeObjet;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.PvExamenMapper;
@@ -41,13 +44,16 @@ public class PvExamenService {
     private final PvNavetteRepository navetteRepository;
     private final PrmpRepository prmpRepository;
     private final NotificationService notificationService;
+    private final ControleurDirectory controleurDirectory;
 
     public PvExamenService(PvExamenRepository repository, PvNavetteRepository navetteRepository,
-            PrmpRepository prmpRepository, NotificationService notificationService) {
+            PrmpRepository prmpRepository, NotificationService notificationService,
+            ControleurDirectory controleurDirectory) {
         this.repository = repository;
         this.navetteRepository = navetteRepository;
         this.prmpRepository = prmpRepository;
         this.notificationService = notificationService;
+        this.controleurDirectory = controleurDirectory;
     }
 
     @Transactional(readOnly = true)
@@ -126,7 +132,28 @@ public class PvExamenService {
         }
         pv.setStatutPv(StatutPv.PROJET_SOUMIS.name());
         ajouterNavette(pv, SensNavette.SOUMISSION, req.imActeur(), req.commentaire());
-        return PvExamenMapper.toDto(repository.save(pv));
+        PvExamen saved = repository.save(pv);
+        // [Auto] Le CC et le Président de la localité sont notifiés qu'un projet de PV attend validation.
+        notifierPvAValider(saved);
+        return PvExamenMapper.toDto(saved);
+    }
+
+    /** [Auto] Notifie le CC et le Président de la localité du dossier ({@code PV_A_VALIDER}). */
+    private void notifierPvAValider(PvExamen pv) {
+        String localite = repository.findLocaliteByPv(pv.getIdPv()).orElse(null);
+        Integer idDossier = repository.findIdDossierByPv(pv.getIdPv()).orElse(null);
+        String reference = pv.getReferencePv() != null ? pv.getReferencePv() : ("n° " + pv.getIdPv());
+        String titre = "Projet de PV à valider";
+        String corps = "Le projet de PV " + reference + " a été soumis et attend votre validation.";
+
+        List<Controleur> destinataires = new ArrayList<>(controleurDirectory.presidents());
+        if (localite != null) {
+            destinataires.addAll(controleurDirectory.chefsCommission(localite));
+        }
+        for (Controleur c : destinataires) {
+            notificationService.emettreControleur(TypeNotification.PV_A_VALIDER, c.getImControleur(),
+                    c.getEmailCont(), pv.getIdPv(), TypeObjet.PV, idDossier, titre, corps);
+        }
     }
 
     /**

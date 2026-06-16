@@ -28,6 +28,14 @@ public interface PvExamenRepository extends JpaRepository<PvExamen, Integer> {
     @Query("select pv.statutPv from PvExamen pv where pv.idPv = :id")
     Optional<String> findStatutById(@Param("id") Integer id);
 
+    /** Localité du dossier d'un PV (via examen→dispatch→réception→contrôleur réceptionnaire). */
+    @Query("select pv.examen.dispatch.reception.ctrlRecept.idLocalite from PvExamen pv where pv.idPv = :idPv")
+    Optional<String> findLocaliteByPv(@Param("idPv") Integer idPv);
+
+    /** Identifiant du dossier d'un PV (via examen→dispatch→réception). */
+    @Query("select pv.examen.dispatch.reception.idDossier from PvExamen pv where pv.idPv = :idPv")
+    Optional<Integer> findIdDossierByPv(@Param("idPv") Integer idPv);
+
     @Query("select pv from PvExamen pv where pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
     List<PvExamen> findVisiblesParLocalite(@Param("loc") String loc);
 

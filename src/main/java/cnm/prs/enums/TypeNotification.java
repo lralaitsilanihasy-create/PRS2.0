@@ -54,5 +54,8 @@ public enum TypeNotification {
     NOUVEAU_MESSAGE,
 
     /** Dossier dispatché à examiner — vers le Membre assigné (§2.3, transmission dispatch→examen). */
-    EXAMEN_A_FAIRE
+    EXAMEN_A_FAIRE,
+
+    /** Projet de PV soumis, à valider/signer — vers le CC et le Président de la localité (§3.2, §3.5). */
+    PV_A_VALIDER
 }

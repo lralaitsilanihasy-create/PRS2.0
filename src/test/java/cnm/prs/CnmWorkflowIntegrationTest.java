@@ -671,6 +671,29 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.typeNotif=='EXAMEN_A_FAIRE')].idObjet", hasItem(20)));
     }
 
+    @Test
+    @DisplayName("Notification PV : la soumission d'un projet de PV notifie le CC et le Président (PV_A_VALIDER, objet PV)")
+    void notification_pvAValider() throws Exception {
+        // Création d'un PV sur l'examen 1 (chaîne → localité ANT), par le Membre.
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":70,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        // Soumission du projet → PROJET_SOUMIS.
+        mvc.perform(post("/api/pv-examens/70/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"commentaire\":\"a valider\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statutPv").value("PROJET_SOUMIS"));
+
+        // Le CC d'ANT reçoit PV_A_VALIDER pointant le PV 70 (objet PV).
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_A_VALIDER')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_A_VALIDER')].idObjet", hasItem(70)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_A_VALIDER')].typeObjet", hasItem("PV")));
+        // Le Président de la CNM aussi.
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_A_VALIDER')]", hasSize(1)));
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------
