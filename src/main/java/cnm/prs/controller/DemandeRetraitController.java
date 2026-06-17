@@ -42,6 +42,20 @@ public class DemandeRetraitController {
         return service.findById(id);
     }
 
+    /** File « à valider » du CC (sa localité) / Président (toutes localités) : demandes EN_ATTENTE. */
+    @PreAuthorize("hasRole('CHEF_COMMISSION') or hasRole('PRESIDENT')")
+    @GetMapping("/a-valider")
+    public List<DemandeRetraitDto> aValider() {
+        return service.aValider();
+    }
+
+    /** Historique des demandes décidées (ACCEPTEE / REFUSEE), même scope. */
+    @PreAuthorize("hasRole('CHEF_COMMISSION') or hasRole('PRESIDENT')")
+    @GetMapping("/historique")
+    public List<DemandeRetraitDto> historique() {
+        return service.historique();
+    }
+
     // Demande de retrait : action de la PRMP (§3.1, Module 11).
     @PreAuthorize("hasRole('PRMP')")
     @PostMapping

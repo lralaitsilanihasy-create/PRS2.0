@@ -1570,6 +1570,52 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
+    @Test
+    @DisplayName("Dropdown retirables : SOUMIS + PRET_DISPATCH de la PRMP ; exclut EXAMINE et les dossiers d'autrui")
+    void retrait_dropdown_retirables() throws Exception {
+        Dossier a = dossier(150, "SOUMIS"); a.setIdLocalite("ANT"); a.setIdPrmp("PRMP001"); dossierRepository.save(a);
+        Dossier b = dossier(151, "PRET_DISPATCH"); b.setIdLocalite("ANT"); b.setIdPrmp("PRMP001"); dossierRepository.save(b);
+        Dossier c = dossier(152, "EXAMINE"); c.setIdLocalite("ANT"); c.setIdPrmp("PRMP001"); dossierRepository.save(c);
+        Dossier e = dossier(153, "SOUMIS"); e.setIdLocalite("ANT"); dossierRepository.save(e); // sans propriétaire
+        mvc.perform(get("/api/dossiers/retirables").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==150)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==151)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==152)]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.idDossier==153)]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("À valider : CC voit les EN_ATTENTE de sa localité (ANT), pas TMS ; le Président voit les deux")
+    void retrait_aValider_scopeLocalite() throws Exception {
+        Dossier ant = dossier(160, "SOUMIS"); ant.setIdLocalite("ANT"); ant.setIdPrmp("PRMP001"); dossierRepository.save(ant);
+        Dossier tms = dossier(161, "SOUMIS"); tms.setIdLocalite("TMS"); tms.setIdPrmp("PRMP001"); dossierRepository.save(tms);
+        int drAnt = demandeRetraitRepository.save(demandeRetrait(0, 160, "PRMP001")).getIdDemandeRetrait();
+        int drTms = demandeRetraitRepository.save(demandeRetrait(0, 161, "PRMP001")).getIdDemandeRetrait();
+
+        mvc.perform(get("/api/demande-retraits/a-valider").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDemandeRetrait==" + drAnt + ")]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDemandeRetrait==" + drTms + ")]", hasSize(0)));
+        mvc.perform(get("/api/demande-retraits/a-valider").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$[?(@.idDemandeRetrait==" + drAnt + ")]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDemandeRetrait==" + drTms + ")]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Historique : une demande décidée (REFUSEE) y apparaît, et plus dans « à valider »")
+    void retrait_historique() throws Exception {
+        Dossier d = dossier(162, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 162, "PRMP001")).getIdDemandeRetrait();
+        mvc.perform(post("/api/demande-retraits/" + drId + "/refuser").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"motif\":\"x\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/demande-retraits/historique").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$[?(@.idDemandeRetrait==" + drId + ")]", hasSize(1)));
+        mvc.perform(get("/api/demande-retraits/a-valider").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$[?(@.idDemandeRetrait==" + drId + ")]", hasSize(0)));
+    }
+
     // ------------------------------------------------------------------
     // Workflow du PV
     // ------------------------------------------------------------------

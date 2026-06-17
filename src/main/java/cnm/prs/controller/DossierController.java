@@ -80,6 +80,13 @@ public class DossierController {
         return service.verifies(pageable);
     }
 
+    /** Liste déroulante « dossiers retirables » de la PRMP (SOUMIS/PRET_DISPATCH dont elle est propriétaire). */
+    @PreAuthorize("hasRole('PRMP')")
+    @GetMapping("/retirables")
+    public List<DossierDto> retirables() {
+        return service.retirables();
+    }
+
     @GetMapping("/{id}")
     public DossierDto findById(@PathVariable Integer id) {
         return service.findById(id);

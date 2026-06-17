@@ -168,6 +168,16 @@ public class DossierService {
         return repository.findVerifiesParLocalite(localite, pageable).map(DossierMapper::toDto);
     }
 
+    /** Liste déroulante « dossiers retirables » de la PRMP connectée (SOUMIS/PRET_DISPATCH dont elle est propriétaire). */
+    @Transactional(readOnly = true)
+    public List<DossierDto> retirables() {
+        String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        if (idPrmp == null) {
+            return List.of();
+        }
+        return repository.findRetirablesPourPrmp(idPrmp).stream().map(DossierMapper::toDto).toList();
+    }
+
     /** Vérifie que le dossier est dans le périmètre de visibilité de l'utilisateur (§1). */
     private void controlerVisibilite(Integer idDossier) {
         ProfilUtilisateur profil = CurrentUser.profil().orElse(null);

@@ -18,6 +18,16 @@ public interface DemandeRetraitRepository extends JpaRepository<DemandeRetrait, 
     /** Vrai s'il existe déjà une demande à ce statut pour ce dossier (anti-doublon EN_ATTENTE). */
     boolean existsByIdDossierAndStatut(Integer idDossier, String statut);
 
+    /** Demandes à un (ou plusieurs) statut(s) — Président, toutes localités. */
+    List<DemandeRetrait> findByStatutIn(List<String> statuts);
+
+    /** Demandes d'un ou plusieurs statuts dont le DOSSIER est dans la localité (scope CC, §3.3). */
+    @Query("""
+            select dr from DemandeRetrait dr where dr.statut in :statuts
+              and exists (select 1 from Dossier d where d.idDossier = dr.idDossier and d.idLocalite = :loc)
+            """)
+    List<DemandeRetrait> findByStatutsEtLocaliteDossier(@Param("statuts") List<String> statuts, @Param("loc") String loc);
+
     @Query("""
             select dr from DemandeRetrait dr where exists (
                 select 1 from Reception r where r.idDossier = dr.idDossier and r.ctrlRecept.idLocalite = :loc)

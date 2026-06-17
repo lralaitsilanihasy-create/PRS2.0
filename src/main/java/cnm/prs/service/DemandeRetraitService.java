@@ -219,6 +219,29 @@ public class DemandeRetraitService {
         notificationService.emettre(demande.getIdDossier(), type, null, emailPrmp, titre, corps);
     }
 
+    /** File « à valider » : demandes EN_ATTENTE (Président : toutes ; CC : sa localité de dossier). */
+    @Transactional(readOnly = true)
+    public List<DemandeRetraitDto> aValider() {
+        return parStatuts(List.of(StatutRetrait.EN_ATTENTE.name()));
+    }
+
+    /** Historique : demandes décidées (ACCEPTEE / REFUSEE), même scope que « à valider ». */
+    @Transactional(readOnly = true)
+    public List<DemandeRetraitDto> historique() {
+        return parStatuts(List.of(StatutRetrait.ACCEPTEE.name(), StatutRetrait.REFUSEE.name()));
+    }
+
+    private List<DemandeRetraitDto> parStatuts(List<String> statuts) {
+        List<DemandeRetrait> list;
+        if (CurrentUser.profil().orElse(null) == ProfilUtilisateur.PRESIDENT) {
+            list = repository.findByStatutIn(statuts);
+        } else {
+            String loc = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+            list = loc == null ? List.of() : repository.findByStatutsEtLocaliteDossier(statuts, loc);
+        }
+        return list.stream().map(DemandeRetraitMapper::toDto).toList();
+    }
+
     public void delete(Integer id) {
         if (!repository.existsById(id)) {
             throw new ResourceNotFoundException("DemandeRetrait introuvable : " + id);
