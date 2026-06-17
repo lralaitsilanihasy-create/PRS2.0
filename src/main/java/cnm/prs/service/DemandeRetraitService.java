@@ -144,7 +144,7 @@ public class DemandeRetraitService {
      * </ul>
      */
     private void appliquerDecisionRetrait(DemandeRetrait demande, StatutRetrait decision) {
-        if (decision == StatutRetrait.APPROUVE && demande.getIdDossier() != null) {
+        if (decision == StatutRetrait.ACCEPTEE && demande.getIdDossier() != null) {
             dossierRepository.findById(demande.getIdDossier()).ifPresent(dossier -> {
                 dossier.setStatut(StatutDossier.RETIRE.name());
                 dossierRepository.save(dossier);
@@ -154,18 +154,18 @@ public class DemandeRetraitService {
         String emailPrmp = prmpRepository.findById(demande.getIdPrmp())
                 .map(Prmp::getEmailPrmp)
                 .orElse(null);
-        TypeNotification type = decision == StatutRetrait.APPROUVE
-                ? TypeNotification.RETRAIT_APPROUVE
-                : TypeNotification.RETRAIT_REJETE;
-        String titre = decision == StatutRetrait.APPROUVE
-                ? "Demande de retrait approuvée"
-                : "Demande de retrait rejetée";
+        TypeNotification type = decision == StatutRetrait.ACCEPTEE
+                ? TypeNotification.RETRAIT_ACCEPTE
+                : TypeNotification.RETRAIT_REFUSE;
+        String titre = decision == StatutRetrait.ACCEPTEE
+                ? "Demande de retrait acceptée"
+                : "Demande de retrait refusée";
         notificationService.emettre(demande.getIdDossier(), type, null, emailPrmp, titre, demande.getObsDecision());
     }
 
     private StatutRetrait parseStatut(String statut) {
         if (statut == null || statut.isBlank()) {
-            throw new BusinessRuleException("Le statut de la demande est obligatoire (EN_ATTENTE / APPROUVE / REJETE).");
+            throw new BusinessRuleException("Le statut de la demande est obligatoire (EN_ATTENTE / ACCEPTEE / REFUSEE).");
         }
         try {
             return StatutRetrait.valueOf(statut.trim().toUpperCase());

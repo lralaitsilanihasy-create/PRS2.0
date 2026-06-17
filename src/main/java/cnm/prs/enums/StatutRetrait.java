@@ -8,17 +8,17 @@ package cnm.prs.enums;
  */
 public enum StatutRetrait {
 
-    /** Demande soumise par la PRMP, en attente de décision du CC. */
+    /** Demande soumise par la PRMP, en attente de décision (CC de la localité ou Président). */
     EN_ATTENTE,
 
-    /** Retrait approuvé par le CC ({@code t_dossier.STATUT = RETIRE}, §3.3). */
-    APPROUVE,
+    /** Retrait accepté → le dossier repasse en {@code BROUILLON} (⚠️ règle ajoutée). */
+    ACCEPTEE,
 
-    /** Retrait rejeté par le CC. */
-    REJETE;
+    /** Retrait refusé → dossier inchangé, motif de refus enregistré. */
+    REFUSEE;
 
-    /** Vrai si le statut correspond à une décision du CC (approbation ou rejet). */
+    /** Vrai si le statut correspond à une décision (acceptation ou refus). */
     public boolean estDecision() {
-        return this == APPROUVE || this == REJETE;
+        return this == ACCEPTEE || this == REFUSEE;
     }
 }

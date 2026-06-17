@@ -17,11 +17,11 @@ public enum TypeNotification {
     /** Demande de retrait soumise par une PRMP — vers le CC (§3.3). */
     DEMANDE_RETRAIT,
 
-    /** Retrait approuvé par le CC — vers la PRMP (§3.1, §3.3). */
-    RETRAIT_APPROUVE,
+    /** Retrait accepté par le décideur (CC localité ou Président) — vers la PRMP (§3.1, §3.3). */
+    RETRAIT_ACCEPTE,
 
-    /** Retrait rejeté par le CC — vers la PRMP (§3.1, §3.3). */
-    RETRAIT_REJETE,
+    /** Retrait refusé par le décideur (CC localité ou Président) — vers la PRMP (§3.1, §3.3). */
+    RETRAIT_REFUSE,
 
     /** PV passé au statut SIGNE — vers la PRMP (§3.1). */
     PV_SIGNE,

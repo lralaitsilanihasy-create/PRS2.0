@@ -2455,7 +2455,7 @@ class CnmWorkflowIntegrationTest {
 
     private DemandeRetrait demandeRetrait(int id, int dossier, String idPrmp) {
         DemandeRetrait d = new DemandeRetrait();
-        d.setIdDemandeRetrait(id);
+        // ID_DEMANDE_RETRAIT est auto-généré (IDENTITY) : ne pas le fixer (sinon entité détachée).
         d.setIdDossier(dossier);
         d.setIdPrmp(idPrmp);
         d.setMotifRetrait("Motif de retrait");
