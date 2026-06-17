@@ -21,19 +21,16 @@ public class DemandeRetraitDto {
     @NotNull
     private Integer idDossier;
 
-    @NotBlank
     @Size(max = 10)
-    private String idPrmp;
+    private String idPrmp;          // ignoré en entrée (dérivé du JWT) ; peuplé en sortie
 
     @NotBlank
     private String motifRetrait;
 
-    @NotNull
-    private LocalDateTime dateDemande;
+    private LocalDateTime dateDemande;   // ignoré en entrée (posé côté serveur)
 
-    @NotBlank
     @Size(max = 20)
-    private String statut;
+    private String statut;          // ignoré en entrée (forcé EN_ATTENTE)
 
     @Size(max = 7)
     private String imCtrlCc;

@@ -1433,6 +1433,67 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
     }
 
+    @Test
+    @DisplayName("Demande de retrait — création OK : identité JWT, EN_ATTENTE, notif DEMANDE_RETRAIT au CC + Président")
+    void retrait_creation_ok() throws Exception {
+        Dossier d = dossier(120, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        mvc.perform(post("/api/demande-retraits").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idDossier\":120,\"motifRetrait\":\"Erreur de saisie\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idDemandeRetrait").isNumber())
+                .andExpect(jsonPath("$.statut").value("EN_ATTENTE"))
+                .andExpect(jsonPath("$.idPrmp").value("PRMP001"));
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='DEMANDE_RETRAIT')].destinataireIm", hasItem("CTRCC1")))
+                .andExpect(jsonPath("$[?(@.typeNotif=='DEMANDE_RETRAIT')].destinataireIm", hasItem("CTRPRE")));
+    }
+
+    @Test
+    @DisplayName("Demande de retrait — identité du demandeur = JWT (corps idPrmp ignoré)")
+    void retrait_creation_identiteJWT() throws Exception {
+        Dossier d = dossier(121, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        mvc.perform(post("/api/demande-retraits").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":121,\"idPrmp\":\"USURP\",\"motifRetrait\":\"x\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idPrmp").value("PRMP001"));
+    }
+
+    @Test
+    @DisplayName("Demande de retrait — non propriétaire → 403")
+    void retrait_creation_nonProprietaire_403() throws Exception {
+        // Dossier non possédé par PRMP001 (idPrmp null) → la PRMP connectée n'est pas propriétaire.
+        Dossier d = dossier(122, "SOUMIS"); d.setIdLocalite("ANT");
+        dossierRepository.save(d);
+        mvc.perform(post("/api/demande-retraits").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idDossier\":122,\"motifRetrait\":\"x\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Demande de retrait — dossier non éligible (EXAMINE) → 409")
+    void retrait_creation_dossierNonEligible_409() throws Exception {
+        // dossier 1 = EXAMINE (seed), possédé par PRMP001 (via PPM 1).
+        mvc.perform(post("/api/demande-retraits").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idDossier\":1,\"motifRetrait\":\"x\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Demande de retrait — doublon EN_ATTENTE → 409")
+    void retrait_creation_doublonEnAttente_409() throws Exception {
+        Dossier d = dossier(123, "PRET_DISPATCH"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        mvc.perform(post("/api/demande-retraits").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idDossier\":123,\"motifRetrait\":\"x\"}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/demande-retraits").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idDossier\":123,\"motifRetrait\":\"y\"}"))
+                .andExpect(status().isConflict());
+    }
+
     // ------------------------------------------------------------------
     // Workflow du PV
     // ------------------------------------------------------------------

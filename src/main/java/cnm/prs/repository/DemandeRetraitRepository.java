@@ -15,6 +15,9 @@ public interface DemandeRetraitRepository extends JpaRepository<DemandeRetrait, 
     /** Demandes d'une PRMP (suivi de ses propres demandes, §3.1). */
     List<DemandeRetrait> findByIdPrmp(String idPrmp);
 
+    /** Vrai s'il existe déjà une demande à ce statut pour ce dossier (anti-doublon EN_ATTENTE). */
+    boolean existsByIdDossierAndStatut(Integer idDossier, String statut);
+
     @Query("""
             select dr from DemandeRetrait dr where exists (
                 select 1 from Reception r where r.idDossier = dr.idDossier and r.ctrlRecept.idLocalite = :loc)

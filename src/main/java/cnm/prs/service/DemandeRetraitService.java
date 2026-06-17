@@ -1,6 +1,7 @@
 package cnm.prs.service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -8,7 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.DemandeRetraitDto;
+import cnm.prs.entity.Controleur;
 import cnm.prs.entity.DemandeRetrait;
+import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Prmp;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.StatutRetrait;
@@ -33,13 +36,16 @@ public class DemandeRetraitService {
     private final DossierRepository dossierRepository;
     private final PrmpRepository prmpRepository;
     private final NotificationService notificationService;
+    private final ControleurDirectory controleurDirectory;
 
     public DemandeRetraitService(DemandeRetraitRepository repository, DossierRepository dossierRepository,
-            PrmpRepository prmpRepository, NotificationService notificationService) {
+            PrmpRepository prmpRepository, NotificationService notificationService,
+            ControleurDirectory controleurDirectory) {
         this.repository = repository;
         this.dossierRepository = dossierRepository;
         this.prmpRepository = prmpRepository;
         this.notificationService = notificationService;
+        this.controleurDirectory = controleurDirectory;
     }
 
     /**
@@ -80,12 +86,51 @@ public class DemandeRetraitService {
      * (déjà imposé par {@code @NotBlank} sur le DTO, MOTIF_RETRAIT NOT NULL).
      */
     public DemandeRetraitDto create(DemandeRetraitDto dto) {
-        DemandeRetrait entity = DemandeRetraitMapper.toEntity(dto);
+        String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank())
+                .orElseThrow(() -> new AccessDeniedException("PRMP non identifiée."));
+        Integer idDossier = dto.getIdDossier();
+        // Garde 1 — la PRMP doit être PROPRIÉTAIRE du dossier (§3.1).
+        if (idDossier == null || !dossierRepository.existsVisiblePourPrmp(idDossier, idPrmp)) {
+            throw new AccessDeniedException("Retrait possible uniquement sur l'un de vos dossiers (§3.1).");
+        }
+        // Garde 2 — dossier éligible : SOUMIS ou PRET_DISPATCH (soumis, pas encore dispatché).
+        String statutDossier = dossierRepository.findById(idDossier).map(Dossier::getStatut).orElse(null);
+        if (!StatutDossier.SOUMIS.name().equals(statutDossier)
+                && !StatutDossier.PRET_DISPATCH.name().equals(statutDossier)) {
+            throw new BusinessRuleException(
+                    "Retrait possible uniquement sur un dossier SOUMIS ou PRET_DISPATCH (statut « " + statutDossier + " »).");
+        }
+        // Garde 3 — pas de demande déjà EN_ATTENTE pour ce dossier.
+        if (repository.existsByIdDossierAndStatut(idDossier, StatutRetrait.EN_ATTENTE.name())) {
+            throw new BusinessRuleException("Une demande de retrait est déjà en attente pour ce dossier.");
+        }
+
+        DemandeRetrait entity = new DemandeRetrait();
+        entity.setIdDossier(idDossier);
+        entity.setIdPrmp(idPrmp);                          // identité = JWT, jamais le corps
+        entity.setMotifRetrait(dto.getMotifRetrait());     // @NotBlank
         entity.setStatut(StatutRetrait.EN_ATTENTE.name());
-        entity.setImCtrlCc(null);
-        entity.setDateDecision(null);
-        entity.setObsDecision(null);
-        return DemandeRetraitMapper.toDto(repository.save(entity));
+        entity.setDateDemande(LocalDateTime.now());        // date serveur
+        DemandeRetrait saved = repository.save(entity);    // ID auto-généré (IDENTITY)
+        notifierDemandeAValider(saved);
+        return DemandeRetraitMapper.toDto(saved);
+    }
+
+    /** [Auto] Notifie le CC de la localité du dossier + le(s) Président(s) qu'une demande attend validation. */
+    private void notifierDemandeAValider(DemandeRetrait demande) {
+        String localite = dossierRepository.findById(demande.getIdDossier())
+                .map(Dossier::getIdLocalite).orElse(null);
+        String titre = "Demande de retrait à valider";
+        String corps = "La PRMP " + demande.getIdPrmp() + " demande le retrait du dossier "
+                + demande.getIdDossier() + ". Motif : " + demande.getMotifRetrait();
+        List<Controleur> destinataires = new ArrayList<>(controleurDirectory.presidents());
+        if (localite != null) {
+            destinataires.addAll(controleurDirectory.chefsCommission(localite));
+        }
+        for (Controleur c : destinataires) {
+            notificationService.emettre(demande.getIdDossier(), TypeNotification.DEMANDE_RETRAIT,
+                    c.getImControleur(), c.getEmailCont(), titre, corps);
+        }
     }
 
     /**
