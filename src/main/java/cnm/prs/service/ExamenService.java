@@ -2,11 +2,13 @@ package cnm.prs.service;
 
 import java.util.List;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.ExamenDto;
 import cnm.prs.entity.Examen;
+import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
@@ -14,6 +16,7 @@ import cnm.prs.mapper.ExamenMapper;
 import cnm.prs.repository.DispatchRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenRepository;
+import cnm.prs.security.CurrentUser;
 import cnm.prs.security.Visibilite;
 
 /**
@@ -50,6 +53,7 @@ public class ExamenService {
 
     public ExamenDto create(ExamenDto dto) {
         Visibilite.exigerLocalite(dispatchRepository.findLocaliteById(dto.getIdDispatch()));
+        exigerMembreAttributaire(dto.getIdDispatch());
         exigerDossierDispatche(dto.getIdDispatch());
         Examen entity = ExamenMapper.toEntity(dto);
         Examen saved = repository.save(entity);
@@ -75,6 +79,26 @@ public class ExamenService {
                 dossierRepository.save(d);
             }
         });
+    }
+
+    /**
+     * Autorisation (§2.4, §3.5) : un Membre <strong>titulaire</strong> n'examine que les dossiers qui
+     * lui sont <strong>attribués</strong> ({@code Dispatch.imCtrlMembre}). Un CC / Président instruisant
+     * <strong>par délégation</strong> (profil ≠ MEMBRE, déjà contrôlé en localité) reste autorisé.
+     *
+     * @throws AccessDeniedException (→ 403) si un Membre tente d'examiner le dossier d'un autre Membre
+     */
+    private void exigerMembreAttributaire(Integer idDispatch) {
+        if (CurrentUser.profil().orElse(null) != ProfilUtilisateur.MEMBRE) {
+            return; // délégation (CC/Président) : autorisé, localité déjà vérifiée
+        }
+        String attributaire = idDispatch == null ? null
+                : dispatchRepository.findImCtrlMembreById(idDispatch).orElse(null);
+        String moi = CurrentUser.ref().orElse(null);
+        if (attributaire == null || !attributaire.equals(moi)) {
+            throw new AccessDeniedException(
+                    "Examen réservé au Membre attributaire du dispatch (§2.4) : vous n'êtes pas l'attributaire.");
+        }
     }
 
     /**

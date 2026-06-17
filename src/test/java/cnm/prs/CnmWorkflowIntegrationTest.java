@@ -813,6 +813,38 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
+    @Test
+    @DisplayName("Autorisation examen : réservé au Membre attributaire ; un autre Membre → 403 ; CC par délégation → OK")
+    void autorisation_examenReserveeAttributaire() throws Exception {
+        // Dossier dispatché au Membre CTRMEM.
+        dossierRepository.save(dossier(40, "PRET_DISPATCH"));
+        receptionRepository.save(reception(70, 40, "CTRSEC", true)); // ANT
+        mvc.perform(post("/api/dispatchs").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDispatch\":90,\"idReception\":70,\"imCtrlMembre\":\"CTRMEM\",\"interimDispatch\":false}"))
+                .andExpect(status().isCreated());
+
+        // Un AUTRE Membre d'ANT (non attributaire) → 403.
+        String tokenAutreMembre = bearer("CTRMEM2", ProfilUtilisateur.MEMBRE, TypeActeur.CONTROLEUR, "CTRMEM2", "ANT");
+        mvc.perform(post("/api/examens").header("Authorization", tokenAutreMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":90,\"idDispatch\":90,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isForbidden());
+
+        // Le Membre attributaire (CTRMEM) → 201.
+        mvc.perform(post("/api/examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":90,\"idDispatch\":90,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isCreated());
+
+        // Délégation : le CC peut instruire l'examen à la place d'un Membre de sa localité → 201.
+        dossierRepository.save(dossier(41, "PRET_DISPATCH"));
+        receptionRepository.save(reception(71, 41, "CTRSEC", true));
+        mvc.perform(post("/api/dispatchs").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDispatch\":91,\"idReception\":71,\"imCtrlMembre\":\"CTRMEM\",\"interimDispatch\":false}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/examens").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":91,\"idDispatch\":91,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isCreated());
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------
@@ -1506,10 +1538,11 @@ class CnmWorkflowIntegrationTest {
         dossierRepository.save(dossier(16, "PRET_DISPATCH"));
         receptionRepository.save(reception(26, 16, "CTRSEC", true));
         mvc.perform(post("/api/dispatchs").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDispatch\":46,\"idReception\":26,\"interimDispatch\":false}"))
+                .content("{\"idDispatch\":46,\"idReception\":26,\"imCtrlMembre\":\"CTRMEM\",\"interimDispatch\":false}"))
                 .andExpect(status().isCreated());
         mvc.perform(get("/api/dossiers/16").header("Authorization", tokenPresident))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("DISPATCHE"));
+        // L'examen est permis pour le Membre attributaire (CTRMEM).
         mvc.perform(post("/api/examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idExamen\":46,\"idDispatch\":46,\"imCtrlMembre\":\"CTRMEM\"}"))
                 .andExpect(status().isCreated());

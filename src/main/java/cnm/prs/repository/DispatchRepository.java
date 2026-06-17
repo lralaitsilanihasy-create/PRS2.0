@@ -1,6 +1,7 @@
 package cnm.prs.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +12,10 @@ import cnm.prs.entity.Dispatch;
 
 @Repository
 public interface DispatchRepository extends JpaRepository<Dispatch, Integer> {
+
+    /** Matricule du Membre attributaire d'un dispatch — pour réserver l'examen à l'attributaire (§2.4). */
+    @Query("select d.imCtrlMembre from Dispatch d where d.idDispatch = :id")
+    Optional<String> findImCtrlMembreById(@Param("id") Integer id);
 
     @Query("select d from Dispatch d where d.reception.ctrlRecept.idLocalite = :loc")
     List<Dispatch> findVisiblesParLocalite(@Param("loc") String loc);
