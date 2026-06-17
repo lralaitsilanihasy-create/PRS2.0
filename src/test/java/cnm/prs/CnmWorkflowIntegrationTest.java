@@ -877,6 +877,74 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$.content[?(@.idDossier==51)]", hasSize(0)));
     }
 
+    @Test
+    @DisplayName("Co-signature PV : rôle↔acteur authentifié, identité enregistrée (Membre attributaire + Président réel)")
+    void cosignature_authentificationEtIdentite() throws Exception {
+        // PV sur examen 1 (Membre CTRMEM), porté à PROJET_ACCEPTE.
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":92,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/pv-examens/92/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"commentaire\":\"go\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/92/accepter").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC1\"}"))
+                .andExpect(status().isOk());
+
+        // Un Membre ne peut PAS falsifier la signature Président → 403.
+        mvc.perform(post("/api/pv-examens/92/signer").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"role\":\"PRESIDENT\"}"))
+                .andExpect(status().isForbidden());
+        // Un AUTRE Membre (non attributaire) ne peut pas signer comme MEMBRE → 403.
+        String tokenAutreMembre = bearer("CTRMEM2", ProfilUtilisateur.MEMBRE, TypeActeur.CONTROLEUR, "CTRMEM2", "ANT");
+        mvc.perform(post("/api/pv-examens/92/signer").header("Authorization", tokenAutreMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM2\",\"role\":\"MEMBRE\"}"))
+                .andExpect(status().isForbidden());
+
+        // Le Membre attributaire signe → reste PROJET_ACCEPTE (le co-signataire manque).
+        mvc.perform(post("/api/pv-examens/92/signer").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"role\":\"MEMBRE\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statutPv").value("PROJET_ACCEPTE"));
+        // Le Président réel co-signe → SIGNE, identités enregistrées (plus de « — »).
+        mvc.perform(post("/api/pv-examens/92/signer").header("Authorization", tokenPresident)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRPRE\",\"role\":\"PRESIDENT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statutPv").value("SIGNE"))
+                .andExpect(jsonPath("$.imCtrlMembre").value("CTRMEM"))
+                .andExpect(jsonPath("$.imCtrlPresident").value("CTRPRE"));
+    }
+
+    @Test
+    @DisplayName("Co-signature PV par le CC : CC de la localité OK (identité enregistrée), CC d'une autre localité → 403")
+    void cosignature_ccDeLaLocalite() throws Exception {
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":93,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/pv-examens/93/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"commentaire\":\"go\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/93/accepter").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC1\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/93/signer").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"role\":\"MEMBRE\"}"))
+                .andExpect(status().isOk());
+
+        // Un CC d'une AUTRE localité (TMS) ne peut pas co-signer un PV d'ANT → 403.
+        String tokenCcTms = bearer("CTRCC2", ProfilUtilisateur.CHEF_COMMISSION, TypeActeur.CONTROLEUR, "CTRCC2", "TMS");
+        mvc.perform(post("/api/pv-examens/93/signer").header("Authorization", tokenCcTms)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC2\",\"role\":\"CC\"}"))
+                .andExpect(status().isForbidden());
+        // Le CC de la localité (ANT) co-signe → SIGNE, identité enregistrée.
+        mvc.perform(post("/api/pv-examens/93/signer").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC1\",\"role\":\"CC\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statutPv").value("SIGNE"))
+                .andExpect(jsonPath("$.imCtrlCc").value("CTRCC1"));
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------

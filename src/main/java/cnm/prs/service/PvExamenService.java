@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +15,7 @@ import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Prmp;
 import cnm.prs.entity.PvExamen;
 import cnm.prs.entity.PvNavette;
+import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.RoleSignataire;
 import cnm.prs.enums.SensNavette;
 import cnm.prs.enums.StatutDossier;
@@ -27,6 +29,7 @@ import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.PrmpRepository;
 import cnm.prs.repository.PvExamenRepository;
 import cnm.prs.repository.PvNavetteRepository;
+import cnm.prs.security.CurrentUser;
 import cnm.prs.security.Visibilite;
 
 /**
@@ -241,11 +244,38 @@ public class PvExamenService {
         requireStatut(pv, StatutPv.PROJET_ACCEPTE);
 
         RoleSignataire role = parseRole(req.role());
+        // Le signataire est l'utilisateur authentifié (jamais req.imActeur(), falsifiable).
+        String signataire = CurrentUser.ref().filter(s -> !s.isBlank())
+                .orElseThrow(() -> new AccessDeniedException("Signataire non identifié."));
+        ProfilUtilisateur profil = CurrentUser.profil().orElse(null);
         LocalDate today = LocalDate.now();
         switch (role) {
-            case MEMBRE -> pv.setDateSignatureMembre(today);
-            case PRESIDENT -> pv.setDateSignaturePresident(today);
-            case CC -> pv.setDateSignatureCc(today);
+            case MEMBRE -> {
+                // Signature Membre réservée au Membre attributaire du PV (§3.5, pas de délégation).
+                if (!signataire.equals(pv.getImCtrlMembre())) {
+                    throw new AccessDeniedException(
+                            "La signature Membre est réservée au Membre attributaire du PV (§3.5).");
+                }
+                pv.setDateSignatureMembre(today);
+                pv.setImCtrlMembre(signataire);
+            }
+            case PRESIDENT -> {
+                if (profil != ProfilUtilisateur.PRESIDENT) {
+                    throw new AccessDeniedException("La signature Président est réservée à un Président (§3.2).");
+                }
+                exigerCoSignataireDistinct(signataire, pv);
+                pv.setDateSignaturePresident(today);
+                pv.setImCtrlPresident(signataire);
+            }
+            case CC -> {
+                if (profil != ProfilUtilisateur.CHEF_COMMISSION) {
+                    throw new AccessDeniedException("La signature CC est réservée à un Chef de commission (§3.3).");
+                }
+                exigerCcDeLaLocalite(pv);
+                exigerCoSignataireDistinct(signataire, pv);
+                pv.setDateSignatureCc(today);
+                pv.setImCtrlCc(signataire);
+            }
         }
 
         boolean membreSigne = pv.getDateSignatureMembre() != null;
@@ -260,6 +290,23 @@ public class PvExamenService {
             return dto;
         }
         return PvExamenMapper.toDto(repository.save(pv));
+    }
+
+    /** Le co-signataire (Président/CC) doit être une personne différente du Membre (§2.6). */
+    private void exigerCoSignataireDistinct(String coSignataire, PvExamen pv) {
+        if (coSignataire.equals(pv.getImCtrlMembre())) {
+            throw new BusinessRuleException(
+                    "Le co-signataire doit être différent du Membre signataire (auto-co-signature interdite, §2.6).");
+        }
+    }
+
+    /** Un Chef de commission ne co-signe que les PV de sa localité (§3.3). */
+    private void exigerCcDeLaLocalite(PvExamen pv) {
+        String localiteDossier = repository.findLocaliteByPv(pv.getIdPv()).orElse(null);
+        String localiteCc = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+        if (localiteDossier != null && !localiteDossier.equals(localiteCc)) {
+            throw new AccessDeniedException("Le CC ne peut co-signer que les PV de sa localité (§3.3).");
+        }
     }
 
     /**
