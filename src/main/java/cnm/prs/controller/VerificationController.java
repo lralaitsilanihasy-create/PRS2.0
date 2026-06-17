@@ -42,7 +42,8 @@ public class VerificationController {
         return service.findById(id);
     }
 
-    // Vérification de levée : Vérificateur, CC ou Président (§2.7, §3.6).
+    // Autorisation large à l'entrée ; le service exige STRICTEMENT le profil Contrôleur vérificateur
+    // (⚠️ règle ajoutée — pas de délégation), enregistre l'identité du JWT et vérifie avis FAVR + dossier non clos.
     @PreAuthorize("@perm.peutExercer('VERIFICATEUR')")
     @PostMapping
     public ResponseEntity<VerificationDto> create(@Valid @RequestBody VerificationDto dto) {

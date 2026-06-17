@@ -1531,12 +1531,13 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("[Auto] Vérification obs. levées → dossier CLOTURE")
+    @DisplayName("[Auto] Vérification (FAVR) obs. levées → dossier CLOTURE")
     void auto_cloture() throws Exception {
-        // La vérification exige un PV au statut SIGNE (§3.6) : on amène le PV jusqu'à SIGNE.
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        // PV FAVR amené à SIGNE → dossier EN_VERIFICATION ; le vérificateur lève les observations → CLOTURE.
         mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idPv\":1,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                .content("{\"idPv\":1,\"idExamen\":1,\"idAvis\":\"FAVR\",\"imCtrlMembre\":\"CTRMEM\","
                         + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
                 .andExpect(status().isCreated());
         soumettre(tokenMembre).andExpect(status().isOk());
@@ -1547,10 +1548,9 @@ class CnmWorkflowIntegrationTest {
         signer(tokenPresident, "CTRPRE", "PRESIDENT").andExpect(status().isOk())
                 .andExpect(jsonPath("$.statutPv").value("SIGNE"));
 
-        mvc.perform(post("/api/verifications").header("Authorization", tokenCc)
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idVerification\":1,\"idReception\":1,\"idPv\":1,\"imCtrlVerif\":\"CTRCC1\","
-                        + "\"obsLevees\":true}"))
+                .content("{\"idReception\":1,\"idPv\":1,\"obsLevees\":true}"))
                 .andExpect(status().isCreated());
 
         mvc.perform(get("/api/dossiers/1").header("Authorization", tokenCc))
@@ -1560,6 +1560,57 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
                 .andExpect(jsonPath("$[?(@.typeNotif=='CLOTURE_ELIGIBLE')]", hasSize(1)))
                 .andExpect(jsonPath("$[?(@.typeNotif=='CLOTURE_ELIGIBLE')].destinataireIm", hasItem("CTRPUB")));
+    }
+
+    @Test
+    @DisplayName("Vérification réservée au profil VÉRIFICATEUR : un CC (profil délégable) → 403")
+    void verif_parNonVerificateur_403() throws Exception {
+        signerPvAvecAvis(80, "FAVR"); // dossier 1 → EN_VERIFICATION
+        mvc.perform(post("/api/verifications").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":80,\"obsLevees\":false}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Vérification réservée aux PV FAVR : avis FAV (auto-clôturé) → 409")
+    void verif_surAvisNonReserve_409() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        signerPvAvecAvis(81, "FAV"); // dossier 1 → CLOTURE, PV 81 SIGNE avis FAV
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":81,\"obsLevees\":true}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Vérification itérative : obs. non levées → reste EN_VERIFICATION ; 2e passage levées → CLOTURE")
+    void verif_iterative_obsNonLevees_resteEnVerification() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        signerPvAvecAvis(82, "FAVR"); // dossier 1 → EN_VERIFICATION
+        // 1er passage : observations NON levées → le dossier reste EN_VERIFICATION.
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":82,\"observation\":\"reserve a lever\",\"obsLevees\":false}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenVer))
+                .andExpect(jsonPath("$.statut").value("EN_VERIFICATION"));
+        // 2e passage : observations levées → CLOTURE auto.
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":82,\"observation\":\"ok\",\"obsLevees\":true}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenVer))
+                .andExpect(jsonPath("$.statut").value("CLOTURE"));
+    }
+
+    @Test
+    @DisplayName("Vérification : identité enregistrée = JWT (CurrentUser.ref), jamais le corps ; ID auto-généré")
+    void verif_identiteDepuisJwt() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        signerPvAvecAvis(83, "FAVR");
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":83,\"imCtrlVerif\":\"FAKE\",\"obsLevees\":false}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.imCtrlVerif").value("CTRVER"))
+                .andExpect(jsonPath("$.idVerification").isNumber())
+                .andExpect(jsonPath("$.dateVerif").isNotEmpty());
     }
 
     @Test
@@ -1597,7 +1648,7 @@ class CnmWorkflowIntegrationTest {
         // 4) Projet de PV par le Membre → toujours créé en BROUILLON.
         mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idPv\":3,\"idExamen\":3,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                .content("{\"idPv\":3,\"idExamen\":3,\"idAvis\":\"FAVR\",\"imCtrlMembre\":\"CTRMEM\","
                         + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.statutPv").value("BROUILLON"));
@@ -1617,11 +1668,11 @@ class CnmWorkflowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRPRE\",\"role\":\"PRESIDENT\"}"))
                 .andExpect(jsonPath("$.statutPv").value("SIGNE"));
 
-        // 6) Vérification avec observations levées → [Auto] dossier CLOTURE.
-        mvc.perform(post("/api/verifications").header("Authorization", tokenCc)
+        // 6) Vérification (FAVR → EN_VERIFICATION) avec observations levées → [Auto] dossier CLOTURE.
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idVerification\":3,\"idReception\":3,\"idPv\":3,\"imCtrlVerif\":\"CTRCC1\","
-                        + "\"obsLevees\":true}"))
+                .content("{\"idReception\":3,\"idPv\":3,\"obsLevees\":true}"))
                 .andExpect(status().isCreated());
         mvc.perform(get("/api/dossiers/3").header("Authorization", tokenPresident))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("CLOTURE"));
@@ -1679,14 +1730,14 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idExamen\":40,\"idDispatch\":1,\"imCtrlMembre\":\"CTRMEM\"}"))
                 .andExpect(status().isConflict());
 
-        // (d) Vérification sur un PV non SIGNE (BROUILLON) → 409.
+        // (d) Vérification sur un PV non SIGNE (BROUILLON) → 409 (par un vérificateur, pour atteindre la garde PV SIGNE).
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
         mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idPv\":5,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                .content("{\"idPv\":5,\"idExamen\":1,\"idAvis\":\"FAVR\",\"imCtrlMembre\":\"CTRMEM\","
                         + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
                 .andExpect(status().isCreated());
-        mvc.perform(post("/api/verifications").header("Authorization", tokenCc).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idVerification\":40,\"idReception\":1,\"idPv\":5,\"imCtrlVerif\":\"CTRCC1\","
-                        + "\"obsLevees\":true}"))
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":5,\"obsLevees\":true}"))
                 .andExpect(status().isConflict());
     }
 

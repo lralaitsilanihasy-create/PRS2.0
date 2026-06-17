@@ -1,13 +1,17 @@
 package cnm.prs.service;
 
+import java.time.LocalDate;
 import java.util.List;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.VerificationDto;
 import cnm.prs.entity.Controleur;
+import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Verification;
+import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.StatutPv;
 import cnm.prs.enums.TypeNotification;
@@ -18,6 +22,7 @@ import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.PvExamenRepository;
 import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.repository.VerificationRepository;
+import cnm.prs.security.CurrentUser;
 import cnm.prs.security.Visibilite;
 
 /**
@@ -61,8 +66,13 @@ public class VerificationService {
 
     public VerificationDto create(VerificationDto dto) {
         Visibilite.exigerLocalite(receptionRepository.findLocaliteById(dto.getIdReception()));
+        exigerVerificateur();                  // strict profil VERIFICATEUR (⚠️ règle ajoutée)
         exigerPvSigne(dto.getIdPv());
+        exigerCibleVerifiable(dto.getIdPv());  // avis FAVR + dossier non clos (⚠️ règle ajoutée)
         Verification entity = VerificationMapper.toEntity(dto);
+        entity.setIdVerification(null);                    // ID auto-généré (D6)
+        entity.setImCtrlVerif(verificateurAuthentifie());  // identité = JWT, jamais le corps
+        entity.setDateVerif(LocalDate.now());              // date serveur
         Verification saved = repository.save(entity);
         declencherCloture(saved);
         return VerificationMapper.toDto(saved);
@@ -81,14 +91,48 @@ public class VerificationService {
         }
     }
 
+    /** Seul le profil Contrôleur vérificateur peut vérifier (§3.6, ⚠️ règle ajoutée — pas de délégation). */
+    private void exigerVerificateur() {
+        if (CurrentUser.profil().orElse(null) != ProfilUtilisateur.VERIFICATEUR) {
+            throw new AccessDeniedException("Seul un Contrôleur vérificateur peut vérifier (§3.6).");
+        }
+    }
+
+    /** Matricule du vérificateur authentifié (principal JWT). */
+    private String verificateurAuthentifie() {
+        return CurrentUser.ref().filter(s -> !s.isBlank())
+                .orElseThrow(() -> new AccessDeniedException("Vérificateur non identifié."));
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — la vérification ne porte que sur un PV d'avis « favorable avec réserves »
+     * (FAVR) dont le dossier n'est pas clôturé ; sinon 409.
+     */
+    private void exigerCibleVerifiable(Integer idPv) {
+        String avis = idPv == null ? null : pvExamenRepository.findIdAvisByPv(idPv).orElse(null);
+        if (!"FAVR".equals(avis)) {
+            throw new BusinessRuleException(
+                    "Vérification réservée aux PV « favorable avec réserves » (FAVR) ; avis actuel « " + avis + " ».");
+        }
+        Integer idDossier = pvExamenRepository.findIdDossierByPv(idPv).orElse(null);
+        String statut = idDossier == null ? null
+                : dossierRepository.findById(idDossier).map(Dossier::getStatut).orElse(null);
+        if (StatutDossier.CLOTURE.name().equals(statut)) {
+            throw new BusinessRuleException("Vérification impossible : le dossier est déjà clôturé.");
+        }
+    }
+
     public VerificationDto update(Integer id, VerificationDto dto) {
         Visibilite.exigerLocalite(receptionRepository.findLocaliteById(dto.getIdReception()));
+        exigerVerificateur();
+        exigerPvSigne(dto.getIdPv());
+        exigerCibleVerifiable(dto.getIdPv());
         Verification existing = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Verification introuvable : " + id));
         existing.setIdReception(dto.getIdReception());
         existing.setIdPv(dto.getIdPv());
-        existing.setImCtrlVerif(dto.getImCtrlVerif());
-        existing.setDateVerif(dto.getDateVerif());
+        existing.setImCtrlVerif(verificateurAuthentifie());  // identité = JWT
+        existing.setDateVerif(LocalDate.now());              // date serveur
         existing.setObservation(dto.getObservation());
         existing.setObsLevees(dto.getObsLevees());
         Verification saved = repository.save(existing);
@@ -122,9 +166,13 @@ public class VerificationService {
                 return;
             }
             dossierRepository.findById(reception.getIdDossier()).ifPresent(dossier -> {
-                dossier.setStatut(StatutDossier.CLOTURE.name());
-                dossierRepository.save(dossier);
-                notifierClotureEligible(dossier.getIdDossier());
+                // ⚠️ Règle ajoutée — la clôture par observations levées ne s'applique qu'à un dossier
+                // EN_VERIFICATION (les autres statuts ne sont pas réécrits).
+                if (StatutDossier.EN_VERIFICATION.name().equals(dossier.getStatut())) {
+                    dossier.setStatut(StatutDossier.CLOTURE.name());
+                    dossierRepository.save(dossier);
+                    notifierClotureEligible(dossier.getIdDossier());
+                }
             });
         });
     }
