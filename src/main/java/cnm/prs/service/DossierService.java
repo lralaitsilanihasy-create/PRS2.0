@@ -133,8 +133,9 @@ public class DossierService {
 
     /**
      * Historique « examinés » du Membre attributaire : ses dossiers déjà examinés
-     * ({@link StatutDossier#EXAMINE}, {@link StatutDossier#PV_SIGNE}, {@link StatutDossier#CLOTURE}),
-     * <strong>paginé</strong>. Exclusif de la file « à examiner » (DISPATCHE).
+     * ({@link StatutDossier#EXAMINE}, {@link StatutDossier#PV_SIGNE},
+     * {@link StatutDossier#EN_VERIFICATION}, {@link StatutDossier#CLOTURE}), <strong>paginé</strong>.
+     * Exclusif de la file « à examiner » (DISPATCHE).
      */
     @Transactional(readOnly = true)
     public Page<DossierDto> examines(Pageable pageable) {
@@ -143,7 +144,7 @@ public class DossierService {
             return Page.empty(pageable);
         }
         List<String> statuts = List.of(StatutDossier.EXAMINE.name(), StatutDossier.PV_SIGNE.name(),
-                StatutDossier.CLOTURE.name());
+                StatutDossier.EN_VERIFICATION.name(), StatutDossier.CLOTURE.name());
         return repository.findExaminesParMembre(statuts, im, pageable).map(DossierMapper::toDto);
     }
 

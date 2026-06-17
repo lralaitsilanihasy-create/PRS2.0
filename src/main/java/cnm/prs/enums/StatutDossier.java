@@ -42,6 +42,13 @@ public enum StatutDossier {
      */
     PV_SIGNE,
 
+    /**
+     * ⚠️ Règle ajoutée (non issue de la brochure) — PV signé avec avis « favorable avec réserves » :
+     * le dossier est en cours de <strong>vérification itérative</strong> par le Contrôleur vérificateur
+     * (distinct de {@code PV_SIGNE} et {@code CLOTURE}). Posé automatiquement à la signature.
+     */
+    EN_VERIFICATION,
+
     /** §3.3 — retrait approuvé par le Chef de commission. */
     RETIRE,
 

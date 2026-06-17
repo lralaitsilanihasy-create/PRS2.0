@@ -63,5 +63,11 @@ public enum TypeNotification {
     PV_A_RECTIFIER,
 
     /** Projet de PV accepté — vers le Membre auteur (§3.2). */
-    PV_ACCEPTE
+    PV_ACCEPTE,
+
+    /** PV signé (favorable avec réserves) à vérifier — vers le Vérificateur de la localité (⚠️ règle ajoutée). */
+    PV_A_VERIFIER,
+
+    /** PV signé, dossier auto-clôturé — vers le Vérificateur pour information/lecture seule (⚠️ règle ajoutée). */
+    PV_POUR_INFO
 }

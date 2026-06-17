@@ -36,6 +36,10 @@ public interface PvExamenRepository extends JpaRepository<PvExamen, Integer> {
     @Query("select pv.examen.dispatch.reception.idDossier from PvExamen pv where pv.idPv = :idPv")
     Optional<Integer> findIdDossierByPv(@Param("idPv") Integer idPv);
 
+    /** Code d'avis (tr_avis) d'un PV — sert au branchement du circuit à la signature (⚠️ règle ajoutée). */
+    @Query("select pv.idAvis from PvExamen pv where pv.idPv = :idPv")
+    Optional<String> findIdAvisByPv(@Param("idPv") Integer idPv);
+
     @Query("select pv from PvExamen pv where pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
     List<PvExamen> findVisiblesParLocalite(@Param("loc") String loc);
 

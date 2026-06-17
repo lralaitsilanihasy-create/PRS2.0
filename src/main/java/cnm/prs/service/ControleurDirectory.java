@@ -62,6 +62,15 @@ public class ControleurDirectory {
         return controleurRepository.findByIdProfileInAndIdLocalite(ids, idLocalite);
     }
 
+    /** Les Contrôleurs vérificateurs d'une localité donnée (§3.6, transmission du PV signé). */
+    public List<Controleur> verificateurs(String idLocalite) {
+        List<Integer> ids = idProfiles(ProfilUtilisateur.VERIFICATEUR);
+        if (ids.isEmpty() || idLocalite == null) {
+            return List.of();
+        }
+        return controleurRepository.findByIdProfileInAndIdLocalite(ids, idLocalite);
+    }
+
     private List<Controleur> parProfil(ProfilUtilisateur profil) {
         List<Integer> ids = idProfiles(profil);
         return ids.isEmpty() ? List.of() : controleurRepository.findByIdProfileIn(ids);

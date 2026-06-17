@@ -165,6 +165,7 @@ class CnmWorkflowIntegrationTest {
         controleurRepository.save(controleur("CTRCC1", 3, "ANT"));  // Chef de commission
         controleurRepository.save(controleur("CTRSEC", 4, "ANT"));  // Secrétaire
         controleurRepository.save(controleur("CTRMEM", 5, "ANT"));  // Membre
+        controleurRepository.save(controleur("CTRVER", 6, "ANT"));  // Contrôleur vérificateur
         controleurRepository.save(controleur("CTRADM", 8, "ANT"));  // Administrateur
         controleurRepository.save(controleur("CTRPUB", 7, null));   // Chargé de publication
         prmpRepository.save(prmp("PRMP001", "ANT"));
@@ -188,6 +189,9 @@ class CnmWorkflowIntegrationTest {
 
         // Circuit amont pour le workflow PV.
         avisRepository.save(avis("FAV", "Favorable"));
+        avisRepository.save(avis("FAVR", "Favorable avec réserves"));
+        avisRepository.save(avis("DEF", "Défavorable"));
+        avisRepository.save(avis("NSP", "Ne se prononce pas"));
         dossierRepository.save(dossier(1, "EXAMINE"));
         receptionRepository.save(reception(1, 1, "CTRCC1", false));
         dispatchRepository.save(dispatch(1, 1, "CTRCC1", "CTRMEM"));
@@ -753,11 +757,11 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Statut examen : signer le PV fait passer le dossier EXAMINE → PV_SIGNE")
+    @DisplayName("Statut examen : signer le PV (favorable avec réserves) fait passer le dossier EXAMINE → EN_VERIFICATION")
     void statut_signaturePvAvanceVersPvSigne() throws Exception {
-        // Dossier 1 = EXAMINE (seed). PV sur l'examen 1, soumis, accepté, puis co-signé.
+        // Dossier 1 = EXAMINE (seed). PV FAVR sur l'examen 1, soumis, accepté, puis co-signé.
         mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idPv\":90,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                .content("{\"idPv\":90,\"idExamen\":1,\"idAvis\":\"FAVR\",\"imCtrlMembre\":\"CTRMEM\","
                         + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
                 .andExpect(status().isCreated());
         mvc.perform(post("/api/pv-examens/90/soumettre").header("Authorization", tokenMembre)
@@ -773,20 +777,84 @@ class CnmWorkflowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRPRE\",\"role\":\"PRESIDENT\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.statutPv").value("SIGNE"));
 
-        // Le dossier 1 est passé EXAMINE → PV_SIGNE.
+        // Le dossier 1 (avis FAVR) est passé EXAMINE → EN_VERIFICATION.
         mvc.perform(get("/api/dossiers/1").header("Authorization", tokenPresident))
-                .andExpect(jsonPath("$.statut").value("PV_SIGNE"));
+                .andExpect(jsonPath("$.statut").value("EN_VERIFICATION"));
+    }
+
+    /** Crée un PV avec l'avis donné sur l'examen 1 (dossier 1) et le porte à SIGNE (Membre + Président). */
+    private void signerPvAvecAvis(int idPv, String avis) throws Exception {
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":" + idPv + ",\"idExamen\":1,\"idAvis\":\"" + avis + "\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/pv-examens/" + idPv + "/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"commentaire\":\"go\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/" + idPv + "/accepter").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC1\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/" + idPv + "/signer").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"role\":\"MEMBRE\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/" + idPv + "/signer").header("Authorization", tokenPresident)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRPRE\",\"role\":\"PRESIDENT\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statutPv").value("SIGNE"));
     }
 
     @Test
-    @DisplayName("Verrou examen : modifiable tant que EXAMINE, verrouillé (409) dès PV_SIGNE")
+    @DisplayName("Branchement signature — avis FAVORABLE (FAV) → dossier CLOTURE auto + PRMP PV_SIGNE + vérificateur PV_POUR_INFO")
+    void signature_avisFavorable_clotureAuto() throws Exception {
+        signerPvAvecAvis(94, "FAV");
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$.statut").value("CLOTURE"));
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_SIGNE')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_POUR_INFO')].destinataireIm", hasItem("CTRVER")));
+    }
+
+    @Test
+    @DisplayName("Branchement signature — avis DÉFAVORABLE (DEF) → dossier CLOTURE + PRMP PV_SIGNE + vérificateur PV_POUR_INFO")
+    void signature_avisDefavorable_clotureAuto() throws Exception {
+        signerPvAvecAvis(95, "DEF");
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$.statut").value("CLOTURE"));
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_SIGNE')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_POUR_INFO')].destinataireIm", hasItem("CTRVER")));
+    }
+
+    @Test
+    @DisplayName("Branchement signature — avis NE SE PRONONCE PAS (NSP) → dossier CLOTURE (idem DEF) + notifs PRMP + vérificateur")
+    void signature_avisNeSePrononce_clotureAuto() throws Exception {
+        signerPvAvecAvis(96, "NSP");
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$.statut").value("CLOTURE"));
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_SIGNE')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_POUR_INFO')].destinataireIm", hasItem("CTRVER")));
+    }
+
+    @Test
+    @DisplayName("Branchement signature — avis FAVORABLE AVEC RÉSERVE (FAVR) → dossier EN_VERIFICATION + vérificateur PV_A_VERIFIER + PRMP PV_SIGNE")
+    void signature_avisReserve_enVerification() throws Exception {
+        signerPvAvecAvis(97, "FAVR");
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$.statut").value("EN_VERIFICATION"));
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_SIGNE')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_A_VERIFIER')].destinataireIm", hasItem("CTRVER")));
+    }
+
+    @Test
+    @DisplayName("Verrou examen : modifiable tant que EXAMINE, verrouillé (409) dès la signature du PV")
     void verrou_examenJusquaSignature() throws Exception {
         // Dossier 1 = EXAMINE (seed) : l'examen 1 est modifiable.
         mvc.perform(put("/api/examens/1").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idExamen\":1,\"idDispatch\":1,\"imCtrlMembre\":\"CTRMEM\"}"))
                 .andExpect(status().isOk());
 
-        // Signer le PV de l'examen 1 → dossier PV_SIGNE.
+        // Signer le PV (FAV) de l'examen 1 → dossier auto-clôturé (CLOTURE), examen définitif.
         mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idPv\":91,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
                         + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
@@ -804,7 +872,7 @@ class CnmWorkflowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRPRE\",\"role\":\"PRESIDENT\"}"))
                 .andExpect(status().isOk());
 
-        // Examen verrouillé (PV_SIGNE) : update de l'examen et écriture d'un détail → 409.
+        // Examen verrouillé (dossier ≠ EXAMINE) : update de l'examen et écriture d'un détail → 409.
         mvc.perform(put("/api/examens/1").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idExamen\":1,\"idDispatch\":1,\"imCtrlMembre\":\"CTRMEM\"}"))
                 .andExpect(status().isConflict());

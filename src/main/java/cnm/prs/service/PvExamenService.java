@@ -177,22 +177,54 @@ public class PvExamenService {
         return pv.getReferencePv() != null ? pv.getReferencePv() : ("n° " + pv.getIdPv());
     }
 
+    /** Code d'avis « favorable avec réserves » (tr_avis) : seul cas ouvrant la vérification. */
+    private static final String AVIS_FAVORABLE_RESERVE = "FAVR";
+
     /**
-     * [Auto] À la signature du PV, le dossier passe de {@link StatutDossier#EXAMINE} à
-     * {@link StatutDossier#PV_SIGNE} (même transaction) — l'examen devient définitif. Idempotent :
-     * on ne réécrit que si le dossier est bien {@code EXAMINE}.
+     * [Auto] ⚠️ Règle ajoutée — à la signature du PV, le circuit se branche selon l'avis
+     * ({@code t_pv_examen.ID_AVIS}) :
+     * <ul>
+     *   <li>{@code FAVR} (favorable avec réserves) → dossier {@link StatutDossier#EN_VERIFICATION}
+     *       (vérification ouverte) ; le vérificateur est notifié « à vérifier ».</li>
+     *   <li>{@code FAV} / {@code DEF} / {@code NSP} → dossier {@link StatutDossier#CLOTURE} (auto) ;
+     *       le vérificateur est notifié « pour information » (lecture seule).</li>
+     * </ul>
+     * Idempotent : on ne réécrit le statut que si le dossier est bien {@code EXAMINE}. Dans tous les
+     * cas, le PV est transmis à la PRMP ({@link #notifierPvSigne}).
      */
-    private void avancerDossierVersPvSigne(PvExamen pv) {
+    private void brancherSelonAvis(PvExamen pv) {
+        boolean reserve = AVIS_FAVORABLE_RESERVE.equals(repository.findIdAvisByPv(pv.getIdPv()).orElse(null));
         Integer idDossier = repository.findIdDossierByPv(pv.getIdPv()).orElse(null);
-        if (idDossier == null) {
+        if (idDossier != null) {
+            dossierRepository.findById(idDossier).ifPresent(d -> {
+                if (StatutDossier.EXAMINE.name().equals(d.getStatut())) {
+                    d.setStatut(reserve ? StatutDossier.EN_VERIFICATION.name() : StatutDossier.CLOTURE.name());
+                    dossierRepository.save(d);
+                }
+            });
+        }
+        notifierPvSigne(pv);                            // PRMP (transmission systématique)
+        notifierVerificateur(pv, reserve, idDossier);
+    }
+
+    /**
+     * Notifie le(s) vérificateur(s) de la localité du dossier : {@code PV_A_VERIFIER} si l'avis est
+     * favorable avec réserves (action attendue), sinon {@code PV_POUR_INFO} (lecture seule).
+     */
+    private void notifierVerificateur(PvExamen pv, boolean reserve, Integer idDossier) {
+        String localite = repository.findLocaliteByPv(pv.getIdPv()).orElse(null);
+        if (localite == null) {
             return;
         }
-        dossierRepository.findById(idDossier).ifPresent(d -> {
-            if (StatutDossier.EXAMINE.name().equals(d.getStatut())) {
-                d.setStatut(StatutDossier.PV_SIGNE.name());
-                dossierRepository.save(d);
-            }
-        });
+        String reference = referencePv(pv);
+        TypeNotification type = reserve ? TypeNotification.PV_A_VERIFIER : TypeNotification.PV_POUR_INFO;
+        String titre = reserve ? "PV à vérifier" : "PV signé (pour information)";
+        String corps = reserve
+                ? "Le PV " + reference + " (favorable avec réserves) est à vérifier."
+                : "Le PV " + reference + " est signé, dossier clôturé (lecture seule).";
+        for (Controleur v : controleurDirectory.verificateurs(localite)) {
+            notificationService.emettre(idDossier, type, v.getImControleur(), v.getEmailCont(), titre, corps);
+        }
     }
 
     /**
@@ -284,9 +316,8 @@ public class PvExamenService {
             pv.setStatutPv(StatutPv.SIGNE.name());
             pv.setDatePv(today);
             PvExamenDto dto = PvExamenMapper.toDto(repository.save(pv));
-            // [Auto] Le dossier avance EXAMINE → PV_SIGNE : l'examen devient définitif (verrouillé).
-            avancerDossierVersPvSigne(pv);
-            notifierPvSigne(pv);
+            // [Auto] ⚠️ Règle ajoutée — branchement du circuit selon l'avis du PV.
+            brancherSelonAvis(pv);
             return dto;
         }
         return PvExamenMapper.toDto(repository.save(pv));
