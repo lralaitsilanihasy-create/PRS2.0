@@ -49,6 +49,20 @@ Flux complet d'un dossier, avec navette du projet de PV :
 > L'**examen (4)** exige désormais que le dossier soit **`DISPATCHE`** (et non plus `PRET_DISPATCH`).
 > Portée : étape Dispatch → Examen uniquement. Le frontend doit s'aligner sur ce statut.
 
+> ⚠️ **Règle ajoutée — statuts `EXAMINE` et `PV_SIGNE`.** Même principe que `DISPATCHE`, pour matérialiser
+> **Examen (4)** et **PV signé (6)** : à la **création de l'examen**, le dossier passe **`DISPATCHE` →
+> `EXAMINE`** (il **quitte « à examiner »**) ; à la **signature du PV**, il passe **`EXAMINE` → `PV_SIGNE`**.
+> Cycle : `… DISPATCHE → EXAMINE → PV_SIGNE → CLOTURE`. Transitions transactionnelles et idempotentes.
+>
+> - **Verrou de l'examen** : l'examen et ses détails (`t_examen_detail`) sont **modifiables** tant que le
+>   dossier est `EXAMINE` (navette ouverte) ; toute modification est **refusée (409)** dès `PV_SIGNE`
+>   (l'examen devient **définitif** à la signature).
+> - **Attributaire** : un **Membre titulaire** n'examine que les dossiers **qui lui sont attribués**
+>   (`Dispatch.imCtrlMembre`) — sinon **403** ; un CC/Président instruisant **par délégation** (§3.5)
+>   reste autorisé.
+> - **Deux listes exclusives** (scopées au Membre attributaire) : « **à examiner** » = ses dossiers
+>   `DISPATCHE` ; « **examinés** » = ses dossiers `EXAMINE` / `PV_SIGNE` / `CLOTURE` (historique, paginé).
+
 ### Notifications (transversal au circuit)
 
 À **chaque transmission**, le système émet une **notification** au(x) responsable(s) de l'étape suivante,
