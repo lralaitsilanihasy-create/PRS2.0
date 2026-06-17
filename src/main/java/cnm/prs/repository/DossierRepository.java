@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -163,4 +165,29 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
                           where m.idDossier = d.idDossier and m.idPpm = p2.idPpm and p2.idPrmp = :idPrmp))
             """)
     boolean existsVisiblePourPrmp(@Param("idDossier") Integer idDossier, @Param("idPrmp") String idPrmp);
+
+    /**
+     * Dossiers d'un statut <strong>attribués à un Membre</strong> (via réception → dispatch
+     * {@code imCtrlMembre}). Sert à la file « à examiner » (DISPATCHE) du Membre attributaire (§2.4).
+     */
+    @Query("""
+            select d from Dossier d where d.statut = :statut
+              and exists (select 1 from Reception r, Dispatch di
+                          where r.idDossier = d.idDossier and di.idReception = r.idReception
+                            and di.imCtrlMembre = :im)
+            """)
+    List<Dossier> findAExaminerParMembre(@Param("statut") String statut, @Param("im") String im);
+
+    /**
+     * Dossiers d'un ensemble de statuts attribués à un Membre, <strong>paginés</strong> — historique
+     * « examinés » (EXAMINE + PV_SIGNE + CLOTURE) du Membre attributaire.
+     */
+    @Query("""
+            select d from Dossier d where d.statut in :statuts
+              and exists (select 1 from Reception r, Dispatch di
+                          where r.idDossier = d.idDossier and di.idReception = r.idReception
+                            and di.imCtrlMembre = :im)
+            """)
+    Page<Dossier> findExaminesParMembre(@Param("statuts") List<String> statuts, @Param("im") String im,
+            Pageable pageable);
 }

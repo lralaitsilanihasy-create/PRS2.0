@@ -845,6 +845,38 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isCreated());
     }
 
+    @Test
+    @DisplayName("Listes Membre : à-examiner (DISPATCHE assignés) et examinés (paginé) scopés à l'attributaire")
+    void listes_membreScopeesAttributaire() throws Exception {
+        controleurRepository.save(controleur("CTRMEM2", 5, "ANT")); // 2e Membre d'ANT
+        // Dossier 50 DISPATCHE assigné à CTRMEM ; dossier 51 DISPATCHE assigné à CTRMEM2.
+        dossierRepository.save(dossier(50, "DISPATCHE"));
+        receptionRepository.save(reception(80, 50, "CTRSEC", true));
+        dispatchRepository.save(dispatch(95, 80, "CTRCC1", "CTRMEM"));
+        dossierRepository.save(dossier(51, "DISPATCHE"));
+        receptionRepository.save(reception(81, 51, "CTRSEC", true));
+        dispatchRepository.save(dispatch(96, 81, "CTRCC1", "CTRMEM2"));
+
+        // à-examiner de CTRMEM : son dossier 50, pas celui de l'autre Membre (51).
+        mvc.perform(get("/api/dossiers/a-examiner").header("Authorization", tokenMembre))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==50)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==51)]", hasSize(0)));
+
+        // CTRMEM examine son dossier 50 → il passe EXAMINE.
+        mvc.perform(post("/api/examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":95,\"idDispatch\":95,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isCreated());
+
+        // Exclusivité : 50 quitte à-examiner et entre dans examinés (paginé → $.content).
+        mvc.perform(get("/api/dossiers/a-examiner").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$[?(@.idDossier==50)]", hasSize(0)));
+        mvc.perform(get("/api/dossiers/examines").header("Authorization", tokenMembre))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.idDossier==50)]", hasSize(1)))
+                .andExpect(jsonPath("$.content[?(@.idDossier==51)]", hasSize(0)));
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------

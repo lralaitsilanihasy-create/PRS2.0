@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -112,6 +114,37 @@ public class DossierService {
             return List.of();
         }
         return repository.findAReceptionnerParLocalite(localite).stream().map(DossierMapper::toDto).toList();
+    }
+
+    /**
+     * File « à examiner » du Membre attributaire (§2.4) : ses dossiers au statut
+     * {@link StatutDossier#DISPATCHE} (dispatchés vers lui, pas encore examinés). Scopée à
+     * l'utilisateur courant ({@code Dispatch.imCtrlMembre}).
+     */
+    @Transactional(readOnly = true)
+    public List<DossierDto> aExaminer() {
+        String im = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        if (im == null) {
+            return List.of();
+        }
+        return repository.findAExaminerParMembre(StatutDossier.DISPATCHE.name(), im)
+                .stream().map(DossierMapper::toDto).toList();
+    }
+
+    /**
+     * Historique « examinés » du Membre attributaire : ses dossiers déjà examinés
+     * ({@link StatutDossier#EXAMINE}, {@link StatutDossier#PV_SIGNE}, {@link StatutDossier#CLOTURE}),
+     * <strong>paginé</strong>. Exclusif de la file « à examiner » (DISPATCHE).
+     */
+    @Transactional(readOnly = true)
+    public Page<DossierDto> examines(Pageable pageable) {
+        String im = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        if (im == null) {
+            return Page.empty(pageable);
+        }
+        List<String> statuts = List.of(StatutDossier.EXAMINE.name(), StatutDossier.PV_SIGNE.name(),
+                StatutDossier.CLOTURE.name());
+        return repository.findExaminesParMembre(statuts, im, pageable).map(DossierMapper::toDto);
     }
 
     /** Vérifie que le dossier est dans le périmètre de visibilité de l'utilisateur (§1). */

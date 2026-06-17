@@ -2,6 +2,8 @@ package cnm.prs.controller;
 
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -48,6 +50,20 @@ public class DossierController {
     @GetMapping("/a-receptionner")
     public List<DossierDto> aReceptionner() {
         return service.aReceptionner();
+    }
+
+    /** File « à examiner » du Membre attributaire (§2.4) : ses dossiers DISPATCHE, pas encore examinés. */
+    @PreAuthorize("@perm.peutExercer('MEMBRE') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/a-examiner")
+    public List<DossierDto> aExaminer() {
+        return service.aExaminer();
+    }
+
+    /** Historique « examinés » du Membre attributaire (EXAMINE + PV_SIGNE + CLOTURE), paginé. */
+    @PreAuthorize("@perm.peutExercer('MEMBRE') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/examines")
+    public Page<DossierDto> examines(Pageable pageable) {
+        return service.examines(pageable);
     }
 
     @GetMapping("/{id}")
