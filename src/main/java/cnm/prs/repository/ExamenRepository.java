@@ -1,6 +1,7 @@
 package cnm.prs.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -17,4 +18,11 @@ public interface ExamenRepository extends JpaRepository<Examen, Integer> {
 
     @Query("select (count(e) > 0) from Examen e where e.idExamen = :id and e.dispatch.reception.ctrlRecept.idLocalite = :loc")
     boolean existsDansLocalite(@Param("id") Integer id, @Param("loc") String loc);
+
+    /** Statut du dossier d'un examen (via examen→dispatch→réception→dossier) — pour le verrou d'édition. */
+    @Query("""
+            select d.statut from Examen e, Dossier d
+            where e.idExamen = :idExamen and d.idDossier = e.dispatch.reception.idDossier
+            """)
+    Optional<String> findStatutDossierByExamen(@Param("idExamen") Integer idExamen);
 }

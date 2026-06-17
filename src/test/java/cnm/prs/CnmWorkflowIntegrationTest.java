@@ -778,6 +778,41 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$.statut").value("PV_SIGNE"));
     }
 
+    @Test
+    @DisplayName("Verrou examen : modifiable tant que EXAMINE, verrouillé (409) dès PV_SIGNE")
+    void verrou_examenJusquaSignature() throws Exception {
+        // Dossier 1 = EXAMINE (seed) : l'examen 1 est modifiable.
+        mvc.perform(put("/api/examens/1").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":1,\"idDispatch\":1,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isOk());
+
+        // Signer le PV de l'examen 1 → dossier PV_SIGNE.
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":91,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/pv-examens/91/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"commentaire\":\"go\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/91/accepter").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRCC1\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/91/signer").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRMEM\",\"role\":\"MEMBRE\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/pv-examens/91/signer").header("Authorization", tokenPresident)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"imActeur\":\"CTRPRE\",\"role\":\"PRESIDENT\"}"))
+                .andExpect(status().isOk());
+
+        // Examen verrouillé (PV_SIGNE) : update de l'examen et écriture d'un détail → 409.
+        mvc.perform(put("/api/examens/1").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":1,\"idDispatch\":1,\"imCtrlMembre\":\"CTRMEM\"}"))
+                .andExpect(status().isConflict());
+        mvc.perform(post("/api/examen-details").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDetailExamen\":500,\"idExamen\":1,\"idPtControle\":1,\"conforme\":true}"))
+                .andExpect(status().isConflict());
+    }
+
     // ------------------------------------------------------------------
     // Autorisations par profil
     // ------------------------------------------------------------------

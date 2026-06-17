@@ -94,6 +94,7 @@ public class ExamenService {
 
     public ExamenDto update(Integer id, ExamenDto dto) {
         Visibilite.exigerLocalite(dispatchRepository.findLocaliteById(dto.getIdDispatch()));
+        exigerExamenModifiable(id);
         Examen existing = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Examen introuvable : " + id));
         existing.setIdDispatch(dto.getIdDispatch());
@@ -107,5 +108,20 @@ public class ExamenService {
             throw new ResourceNotFoundException("Examen introuvable : " + id);
         }
         repository.deleteById(id);
+    }
+
+    /**
+     * Verrou d'édition de l'examen (§2.6) : modifiable uniquement tant que le dossier est
+     * {@link StatutDossier#EXAMINE} (avant signature du PV) ; dès {@link StatutDossier#PV_SIGNE}
+     * l'examen est <strong>définitif</strong> → toute modification est refusée (409).
+     */
+    private void exigerExamenModifiable(Integer idExamen) {
+        String statut = idExamen == null ? null
+                : repository.findStatutDossierByExamen(idExamen).orElse(null);
+        if (!StatutDossier.EXAMINE.name().equals(statut)) {
+            throw new BusinessRuleException(
+                    "Examen verrouillé : modification possible uniquement tant que le dossier est EXAMINE "
+                            + "(statut actuel « " + statut + " », examen définitif après signature du PV, §2.6).");
+        }
     }
 }
