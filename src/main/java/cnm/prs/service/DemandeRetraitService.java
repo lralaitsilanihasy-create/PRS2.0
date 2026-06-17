@@ -13,6 +13,7 @@ import cnm.prs.entity.Controleur;
 import cnm.prs.entity.DemandeRetrait;
 import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Prmp;
+import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.StatutRetrait;
 import cnm.prs.enums.TypeNotification;
@@ -134,89 +135,88 @@ public class DemandeRetraitService {
     }
 
     /**
-     * Mise à jour / décision sur une demande de retrait. Le statut doit être une valeur
-     * valide ({@link StatutRetrait}). Lorsque le CC statue (APPROUVE / REJETE), l'observation
-     * et le matricule du CC décideur sont obligatoires (§3.3) ; la date de décision est
-     * horodatée si absente.
-     *
-     * <p>NB : la propagation {@code APPROUVE → t_dossier.STATUT = RETIRE} est un comportement
-     * automatique traité au Lot 3.</p>
+     * Décision d'<strong>acceptation</strong> d'une demande (CC de la localité ou Président).
+     * ⚠️ Règle ajoutée — le dossier repasse en {@link StatutDossier#BROUILLON} ; la PRMP est notifiée.
      */
-    public DemandeRetraitDto update(Integer id, DemandeRetraitDto dto) {
-        DemandeRetrait existing = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DemandeRetrait introuvable : " + id));
-        StatutRetrait ancienStatut = parseStatut(existing.getStatut());
-        StatutRetrait nouveauStatut = parseStatut(dto.getStatut());
-
-        existing.setIdDossier(dto.getIdDossier());
-        existing.setIdPrmp(dto.getIdPrmp());
-        existing.setMotifRetrait(dto.getMotifRetrait());
-        existing.setDateDemande(dto.getDateDemande());
-        existing.setStatut(nouveauStatut.name());
-
-        if (nouveauStatut.estDecision()) {
-            if (dto.getObsDecision() == null || dto.getObsDecision().isBlank()) {
-                throw new BusinessRuleException("L'observation de décision est obligatoire pour statuer (§3.3).");
-            }
-            if (dto.getImCtrlCc() == null || dto.getImCtrlCc().isBlank()) {
-                throw new BusinessRuleException("Le matricule du CC décideur (imCtrlCc) est obligatoire pour statuer (§3.3).");
-            }
-            existing.setImCtrlCc(dto.getImCtrlCc());
-            existing.setObsDecision(dto.getObsDecision());
-            existing.setDateDecision(dto.getDateDecision() != null ? dto.getDateDecision() : LocalDateTime.now());
-        } else {
-            existing.setImCtrlCc(dto.getImCtrlCc());
-            existing.setObsDecision(dto.getObsDecision());
-            existing.setDateDecision(dto.getDateDecision());
+    public DemandeRetraitDto accepter(Integer id) {
+        DemandeRetrait demande = chargerEnAttente(id);
+        exigerDecideur(demande);
+        demande.setStatut(StatutRetrait.ACCEPTEE.name());
+        demande.setImCtrlCc(decideurAuthentifie());      // décideur réel (CC ou Président), JWT
+        demande.setDateDecision(LocalDateTime.now());
+        DemandeRetrait saved = repository.save(demande);
+        if (demande.getIdDossier() != null) {
+            dossierRepository.findById(demande.getIdDossier()).ifPresent(d -> {
+                d.setStatut(StatutDossier.BROUILLON.name());
+                dossierRepository.save(d);
+            });
         }
-
-        DemandeRetrait saved = repository.save(existing);
-
-        // Comportements [Auto] (§3.3) déclenchés au passage EN_ATTENTE → décision.
-        boolean transitionVersDecision = nouveauStatut.estDecision() && ancienStatut == StatutRetrait.EN_ATTENTE;
-        if (transitionVersDecision) {
-            appliquerDecisionRetrait(saved, nouveauStatut);
-        }
+        notifierDecision(saved, StatutRetrait.ACCEPTEE);
         return DemandeRetraitMapper.toDto(saved);
     }
 
     /**
-     * Effets automatiques d'une décision de retrait (§3.3) :
-     * <ul>
-     *   <li>si APPROUVE : le dossier passe au statut {@code RETIRE} ;</li>
-     *   <li>dans tous les cas : notification {@code RETRAIT_APPROUVE} / {@code RETRAIT_REJETE}
-     *       envoyée à la PRMP (par e-mail, depuis {@code t_prmp}).</li>
-     * </ul>
+     * Décision de <strong>refus</strong> (CC de la localité ou Président). Le dossier reste inchangé ;
+     * le motif de refus (optionnel) est enregistré ; la PRMP est notifiée.
      */
-    private void appliquerDecisionRetrait(DemandeRetrait demande, StatutRetrait decision) {
-        if (decision == StatutRetrait.ACCEPTEE && demande.getIdDossier() != null) {
-            dossierRepository.findById(demande.getIdDossier()).ifPresent(dossier -> {
-                dossier.setStatut(StatutDossier.RETIRE.name());
-                dossierRepository.save(dossier);
-            });
-        }
-
-        String emailPrmp = prmpRepository.findById(demande.getIdPrmp())
-                .map(Prmp::getEmailPrmp)
-                .orElse(null);
-        TypeNotification type = decision == StatutRetrait.ACCEPTEE
-                ? TypeNotification.RETRAIT_ACCEPTE
-                : TypeNotification.RETRAIT_REFUSE;
-        String titre = decision == StatutRetrait.ACCEPTEE
-                ? "Demande de retrait acceptée"
-                : "Demande de retrait refusée";
-        notificationService.emettre(demande.getIdDossier(), type, null, emailPrmp, titre, demande.getObsDecision());
+    public DemandeRetraitDto refuser(Integer id, String motif) {
+        DemandeRetrait demande = chargerEnAttente(id);
+        exigerDecideur(demande);
+        demande.setStatut(StatutRetrait.REFUSEE.name());
+        demande.setImCtrlCc(decideurAuthentifie());
+        demande.setDateDecision(LocalDateTime.now());
+        demande.setObsDecision(motif);
+        DemandeRetrait saved = repository.save(demande);
+        notifierDecision(saved, StatutRetrait.REFUSEE);
+        return DemandeRetraitMapper.toDto(saved);
     }
 
-    private StatutRetrait parseStatut(String statut) {
-        if (statut == null || statut.isBlank()) {
-            throw new BusinessRuleException("Le statut de la demande est obligatoire (EN_ATTENTE / ACCEPTEE / REFUSEE).");
+    /** Charge une demande qui doit être {@code EN_ATTENTE} (sinon 409 : déjà traitée). */
+    private DemandeRetrait chargerEnAttente(Integer id) {
+        DemandeRetrait demande = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("DemandeRetrait introuvable : " + id));
+        if (!StatutRetrait.EN_ATTENTE.name().equals(demande.getStatut())) {
+            throw new BusinessRuleException("La demande a déjà été traitée (statut « " + demande.getStatut() + " »).");
         }
-        try {
-            return StatutRetrait.valueOf(statut.trim().toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            throw new BusinessRuleException("Statut de demande de retrait invalide : « " + statut + " ».");
+        return demande;
+    }
+
+    /** Décision réservée au CC de la localité du dossier OU au Président (rôle↔localité dans le service). */
+    private void exigerDecideur(DemandeRetrait demande) {
+        ProfilUtilisateur profil = CurrentUser.profil().orElse(null);
+        if (profil == ProfilUtilisateur.PRESIDENT) {
+            return;
         }
+        if (profil == ProfilUtilisateur.CHEF_COMMISSION) {
+            String localiteDossier = dossierRepository.findById(demande.getIdDossier())
+                    .map(Dossier::getIdLocalite).orElse(null);
+            String localiteCc = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+            if (localiteDossier != null && localiteDossier.equals(localiteCc)) {
+                return;
+            }
+        }
+        throw new AccessDeniedException("Décision réservée au CC de la localité du dossier ou au Président (§3.3).");
+    }
+
+    private String decideurAuthentifie() {
+        return CurrentUser.ref().filter(s -> !s.isBlank())
+                .orElseThrow(() -> new AccessDeniedException("Décideur non identifié."));
+    }
+
+    /** Notifie la PRMP de la décision (RETRAIT_ACCEPTE / RETRAIT_REFUSE), par e-mail. */
+    private void notifierDecision(DemandeRetrait demande, StatutRetrait decision) {
+        String emailPrmp = prmpRepository.findById(demande.getIdPrmp())
+                .map(Prmp::getEmailPrmp).orElse(null);
+        TypeNotification type = decision == StatutRetrait.ACCEPTEE
+                ? TypeNotification.RETRAIT_ACCEPTE : TypeNotification.RETRAIT_REFUSE;
+        String titre = decision == StatutRetrait.ACCEPTEE
+                ? "Demande de retrait acceptée" : "Demande de retrait refusée";
+        String corps = decision == StatutRetrait.ACCEPTEE
+                ? "Votre demande de retrait du dossier " + demande.getIdDossier()
+                        + " a été acceptée ; le dossier repasse en brouillon."
+                : "Votre demande de retrait du dossier " + demande.getIdDossier() + " a été refusée."
+                        + (demande.getObsDecision() != null ? " Motif : " + demande.getObsDecision() : "");
+        notificationService.emettre(demande.getIdDossier(), type, null, emailPrmp, titre, corps);
     }
 
     public void delete(Integer id) {

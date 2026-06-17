@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +15,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 
 import jakarta.validation.Valid;
 
+import cnm.prs.dto.DemandeRetraitDecisionRequest;
 import cnm.prs.dto.DemandeRetraitDto;
 import cnm.prs.service.DemandeRetraitService;
 
@@ -49,11 +49,19 @@ public class DemandeRetraitController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(dto));
     }
 
-    // Décision (APPROUVE / REJETE) : réservée au Chef de commission (§3.3).
-    @PreAuthorize("hasRole('CHEF_COMMISSION')")
-    @PutMapping("/{id}")
-    public DemandeRetraitDto update(@PathVariable Integer id, @Valid @RequestBody DemandeRetraitDto dto) {
-        return service.update(id, dto);
+    // Décision : acceptation. Le service vérifie rôle↔localité (CC de la localité du dossier ou Président).
+    @PreAuthorize("hasRole('CHEF_COMMISSION') or hasRole('PRESIDENT')")
+    @PostMapping("/{id}/accepter")
+    public DemandeRetraitDto accepter(@PathVariable Integer id) {
+        return service.accepter(id);
+    }
+
+    // Décision : refus (motif optionnel). Le service vérifie rôle↔localité.
+    @PreAuthorize("hasRole('CHEF_COMMISSION') or hasRole('PRESIDENT')")
+    @PostMapping("/{id}/refuser")
+    public DemandeRetraitDto refuser(@PathVariable Integer id,
+            @RequestBody(required = false) @Valid DemandeRetraitDecisionRequest req) {
+        return service.refuser(id, req != null ? req.motif() : null);
     }
 
     @PreAuthorize("hasRole('ADMINISTRATEUR')")

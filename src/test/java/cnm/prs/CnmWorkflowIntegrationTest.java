@@ -1494,6 +1494,82 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
+    @Test
+    @DisplayName("Décision retrait — CC de la localité accepte → ACCEPTEE, dossier BROUILLON, notif RETRAIT_ACCEPTE")
+    void decision_accepter_parCc_dossierBrouillon() throws Exception {
+        Dossier d = dossier(130, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 130, "PRMP001")).getIdDemandeRetrait();
+
+        mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("ACCEPTEE"))
+                .andExpect(jsonPath("$.imCtrlCc").value("CTRCC1"));
+        // Le dossier repasse en BROUILLON (vérifié via le repository : BROUILLON est masqué de l'API).
+        org.junit.jupiter.api.Assertions.assertEquals("BROUILLON",
+                dossierRepository.findById(130).orElseThrow().getStatut());
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='RETRAIT_ACCEPTE')]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Décision retrait — le Président accepte (toutes localités) → ACCEPTEE, dossier BROUILLON")
+    void decision_accepter_parPresident_ok() throws Exception {
+        Dossier d = dossier(131, "PRET_DISPATCH"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 131, "PRMP001")).getIdDemandeRetrait();
+
+        mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("ACCEPTEE"))
+                .andExpect(jsonPath("$.imCtrlCc").value("CTRPRE"));
+        org.junit.jupiter.api.Assertions.assertEquals("BROUILLON",
+                dossierRepository.findById(131).orElseThrow().getStatut());
+    }
+
+    @Test
+    @DisplayName("Décision retrait — un CC d'une autre localité (dossier TMS) → 403")
+    void decision_parCcAutreLocalite_403() throws Exception {
+        Dossier d = dossier(132, "SOUMIS"); d.setIdLocalite("TMS"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 132, "PRMP001")).getIdDemandeRetrait();
+
+        mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenCc))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Décision retrait — refus : REFUSEE + motif, dossier inchangé, notif RETRAIT_REFUSE")
+    void decision_refuser_dossierInchange() throws Exception {
+        Dossier d = dossier(133, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 133, "PRMP001")).getIdDemandeRetrait();
+
+        mvc.perform(post("/api/demande-retraits/" + drId + "/refuser").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"motif\":\"Dossier incomplet\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("REFUSEE"))
+                .andExpect(jsonPath("$.obsDecision").value("Dossier incomplet"));
+        // Dossier inchangé (toujours SOUMIS, donc visible).
+        mvc.perform(get("/api/dossiers/133").header("Authorization", tokenCc))
+                .andExpect(jsonPath("$.statut").value("SOUMIS"));
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='RETRAIT_REFUSE')]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Décision retrait — demande déjà traitée → 409")
+    void decision_dejaTraitee_409() throws Exception {
+        Dossier d = dossier(134, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 134, "PRMP001")).getIdDemandeRetrait();
+
+        mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenCc))
+                .andExpect(status().isConflict());
+    }
+
     // ------------------------------------------------------------------
     // Workflow du PV
     // ------------------------------------------------------------------
