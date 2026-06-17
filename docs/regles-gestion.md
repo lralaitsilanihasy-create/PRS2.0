@@ -37,10 +37,20 @@ Flux complet d'un dossier, avec navette du projet de PV :
 4. **Examen** — acteurs : Membre / CC / Président
 5. **Projet de PV** — rédigé par le Membre ; navette (aller-retour) possible
 6. **PV accepté & signé** — co-signature Président/CC + Membre
-7. **Vérification** — acteurs : Vérificateur / CC / Président
-8. **Clôture** — automatique
+7. **Vérification** — acteur : **Contrôleur vérificateur** (strict, ⚠️ règle ajoutée) — uniquement pour un avis `FAVR`
+8. **Clôture** — automatique (à la signature pour FAV/DEF/NSP, ou après levée des observations pour FAVR)
 
 > Statuts de navette du PV : `PROJET_PV_SOUMIS`, `PROJET_PV_RETOUR`, `PROJET_PV_ACCEPTE`, puis `SIGNE`.
+
+> ⚠️ **Règle ajoutée (non issue de la brochure) — branchement du circuit à la signature du PV (selon l'avis).**
+> À la bascule `SIGNE`, le dossier est aiguillé selon `t_pv_examen.ID_AVIS` (référentiel `tr_avis` :
+> `FAV`, `FAVR`, `DEF`, `NSP`) :
+> - **`FAVR`** (favorable avec réserves) → dossier **`EN_VERIFICATION`** (vérification itérative ouverte) ;
+> - **`FAV`** / **`DEF`** / **`NSP`** (ne se prononce pas) → dossier **`CLOTURE`** automatique (pas de vérification).
+>
+> Dans **tous** les cas le PV est **transmis à la PRMP** (`PV_SIGNE`) et le **Contrôleur vérificateur** de la
+> localité est notifié : `PV_A_VERIFIER` (FAVR, à vérifier) ou `PV_POUR_INFO` (FAV/DEF/NSP, lecture seule).
+> Le statut `PV_SIGNE` n'est donc **plus un état de repos** du dossier.
 
 > ⚠️ **Règle ajoutée (non issue de la brochure d'origine) — statut `DISPATCHE`.** La brochure ne nomme
 > aucun statut de dossier entre `PRET_DISPATCH` et `CLOTURE`. Pour matérialiser l'étape **Dispatch (3)**
@@ -448,9 +458,10 @@ Subordonné direct du Membre. Travaille sur la base du PV signé (STATUT_PV = SI
 - Lecture du PV signé [Lecture]
   - Accès au PV définitif (STATUT_PV = SIGNE) avant vérification : référence, avis, SYNTHESE_OBSERVATIONS issue de la navette acceptée — t_verification.ID_PV requis. Peut aussi consulter l'historique de la navette (t_pv_navette) pour comprendre les rectifications apportées.
 - Vérification de levée des observations [Action]
-  - OBS_LEVEES = true → clôture automatique / false → nouveau passage (NUM_PASSAGE + 1).
+  - OBS_LEVEES = true → clôture automatique / false → le dossier **reste `EN_VERIFICATION`** (nouveau passage).
+  - ⚠️ **Règle ajoutée** : la vérification est **itérative** sur le même dossier et n'est possible que si **PV `SIGNE` + avis `FAVR` + dossier non clos** (sinon 403/409). **Seul le profil Contrôleur vérificateur** peut vérifier — **pas de délégation** CC/Président pour cet acte. L'**identité** enregistrée (`IM_CTRL_VERIF`) et la **date** proviennent du **JWT / serveur**, jamais du corps de requête. L'`ID_VERIFICATION` est **auto-généré** (IDENTITY).
 - Déclenchement de la clôture [Auto]
-  - Statut CLOTURE propagé automatiquement sur t_dossier quand OBS_LEVEES = true.
+  - ⚠️ **Règle ajoutée** : `OBS_LEVEES = true` clôture le dossier **uniquement s'il est `EN_VERIFICATION`** (`declencherCloture` conditionnelle — fin de la clôture inconditionnelle). Notifie `CLOTURE_ELIGIBLE` au Chargé de publication.
 
 **Module 04 — Messagerie**
 
@@ -463,6 +474,7 @@ Subordonné direct du Membre. Travaille sur la base du PV signé (STATUT_PV = SI
 
 - Pipeline de ses dossiers [Lecture]
   - Vue des dossiers en attente de vérification (PV signé) et des dossiers récemment clôturés ou retournés.
+  - ⚠️ **Règle ajoutée** — files scopées localité : **« à vérifier »** (`GET /api/dossiers/a-verifier` — dossiers `EN_VERIFICATION`) et **« vérifiés / clôturés »** (`GET /api/dossiers/verifies`, paginé, lecture seule — PV signés au statut `CLOTURE`, **y compris les auto-clôturés** FAV/DEF/NSP).
 
 **Restrictions / contraintes :**
 
