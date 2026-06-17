@@ -190,4 +190,29 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             """)
     Page<Dossier> findExaminesParMembre(@Param("statuts") List<String> statuts, @Param("im") String im,
             Pageable pageable);
+
+    /**
+     * File « à vérifier » du Vérificateur (§3.6, ⚠️ règle ajoutée) : dossiers EN_VERIFICATION
+     * (PV signé « favorable avec réserves ») de la localité, via le contrôleur réceptionnaire.
+     */
+    @Query("""
+            select d from Dossier d where d.statut = 'EN_VERIFICATION'
+              and exists (select 1 from Reception r
+                          where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :loc)
+            """)
+    List<Dossier> findAVerifierParLocalite(@Param("loc") String loc);
+
+    /**
+     * Historique « vérifiés / clôturés » du Vérificateur (§3.6, ⚠️ règle ajoutée), paginé, lecture seule :
+     * dossiers CLOTURE de la localité ayant un PV SIGNE — qu'ils aient été <strong>auto-clôturés</strong>
+     * à la signature (FAV/DEF/NSP) ou clôturés après levée des observations (FAVR).
+     */
+    @Query("""
+            select d from Dossier d where d.statut = 'CLOTURE'
+              and exists (select 1 from Reception r, Dispatch di, Examen e, PvExamen pv
+                          where r.idDossier = d.idDossier and di.idReception = r.idReception
+                            and e.idDispatch = di.idDispatch and pv.idExamen = e.idExamen
+                            and pv.statutPv = 'SIGNE' and r.ctrlRecept.idLocalite = :loc)
+            """)
+    Page<Dossier> findVerifiesParLocalite(@Param("loc") String loc, Pageable pageable);
 }

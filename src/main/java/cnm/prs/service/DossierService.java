@@ -148,6 +148,26 @@ public class DossierService {
         return repository.findExaminesParMembre(statuts, im, pageable).map(DossierMapper::toDto);
     }
 
+    /** File « à vérifier » du Vérificateur (§3.6) : dossiers EN_VERIFICATION de sa localité. */
+    @Transactional(readOnly = true)
+    public List<DossierDto> aVerifier() {
+        String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+        if (localite == null) {
+            return List.of();
+        }
+        return repository.findAVerifierParLocalite(localite).stream().map(DossierMapper::toDto).toList();
+    }
+
+    /** Historique « vérifiés / clôturés » du Vérificateur (PV signés clôturés), paginé, lecture seule. */
+    @Transactional(readOnly = true)
+    public Page<DossierDto> verifies(Pageable pageable) {
+        String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+        if (localite == null) {
+            return Page.empty(pageable);
+        }
+        return repository.findVerifiesParLocalite(localite, pageable).map(DossierMapper::toDto);
+    }
+
     /** Vérifie que le dossier est dans le périmètre de visibilité de l'utilisateur (§1). */
     private void controlerVisibilite(Integer idDossier) {
         ProfilUtilisateur profil = CurrentUser.profil().orElse(null);

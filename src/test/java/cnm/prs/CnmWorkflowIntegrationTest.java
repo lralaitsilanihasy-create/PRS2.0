@@ -1614,6 +1614,41 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Worklist vérificateur « à-vérifier » : EN_VERIFICATION de la localité ; scope localité respecté")
+    void worklist_aVerifier_listeEnVerification() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        String tokenVerTms = bearer("CTRVER2", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER2", "TMS");
+        signerPvAvecAvis(70, "FAVR"); // dossier 1 (ANT) → EN_VERIFICATION
+
+        mvc.perform(get("/api/dossiers/a-verifier").header("Authorization", tokenVer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(1)));
+        // Exclusif de l'historique « vérifiés ».
+        mvc.perform(get("/api/dossiers/verifies").header("Authorization", tokenVer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.idDossier==1)]", hasSize(0)));
+        // Scope localité : un vérificateur TMS ne voit pas le dossier ANT.
+        mvc.perform(get("/api/dossiers/a-verifier").header("Authorization", tokenVerTms))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Worklist vérificateur « vérifiés » : inclut les dossiers AUTO-CLÔTURÉS (FAV) en lecture seule")
+    void worklist_verifies_inclutAutoClotures() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        signerPvAvecAvis(71, "FAV"); // dossier 1 (ANT) → CLOTURE auto, PV 71 SIGNE
+
+        mvc.perform(get("/api/dossiers/verifies").header("Authorization", tokenVer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.idDossier==1)]", hasSize(1)));
+        // Exclusif de la file « à vérifier ».
+        mvc.perform(get("/api/dossiers/a-verifier").header("Authorization", tokenVer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(0)));
+    }
+
+    @Test
     @DisplayName("Circuit complet : Réception → PRET_DISPATCH → Dispatch → Examen → PV(navette → SIGNE) → Vérification → CLOTURE")
     void circuitComplet_boutEnBout() throws Exception {
         String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");

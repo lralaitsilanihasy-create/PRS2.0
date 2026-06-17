@@ -66,6 +66,20 @@ public class DossierController {
         return service.examines(pageable);
     }
 
+    /** File « à vérifier » du Vérificateur (§3.6) : dossiers EN_VERIFICATION de sa localité. */
+    @PreAuthorize("@perm.peutExercer('VERIFICATEUR') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/a-verifier")
+    public List<DossierDto> aVerifier() {
+        return service.aVerifier();
+    }
+
+    /** Historique « vérifiés / clôturés » du Vérificateur (PV signés clôturés), paginé, lecture seule. */
+    @PreAuthorize("@perm.peutExercer('VERIFICATEUR') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/verifies")
+    public Page<DossierDto> verifies(Pageable pageable) {
+        return service.verifies(pageable);
+    }
+
     @GetMapping("/{id}")
     public DossierDto findById(@PathVariable Integer id) {
         return service.findById(id);
