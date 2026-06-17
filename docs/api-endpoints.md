@@ -1925,7 +1925,7 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | idAvis | string | Oui | @NotBlank, max 10 |
 | imCtrlPresident | string | Non | max 7 |
 | imCtrlCc | string | Non | max 7 |
-| imCtrlMembre | string | Oui | @NotBlank, max 7 |
+| imCtrlMembre | string | Oui (validation) | @NotBlank, max 7 — **valeur ignorée** : dérivée de l'attribution (`Examen → Dispatch.imCtrlMembre`) ; examen sans attributaire → 409 |
 | syntheseObservations | string | Non | |
 | statutPv | string | Oui | @NotBlank, max 20 (forcé `BROUILLON` à la création) |
 | nbNavettes | number | Oui | @NotNull (forcé `0` à la création) |

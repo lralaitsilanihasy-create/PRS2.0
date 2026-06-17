@@ -413,6 +413,7 @@ Subordonné direct du Chef de commission. Voit tous les dossiers de sa localité
   - Renseigne chaque point de tr_points_ctrl : conforme / non conforme + observation (t_examen_detail).
 - Rédaction du projet de PV [Écriture]
   - Le Membre rédige le projet de PV dans t_pv_examen (STATUT_PV = BROUILLON) : synthèse des observations non conformes de t_examen_detail.OBS_SI_NON_CONFORME, avis ID_AVIS. Le projet est modifiable librement tant qu'il n'a pas été soumis.
+  - ⚠️ **Règle ajoutée** : l'attributaire `IM_CTRL_MEMBRE` du PV est **dérivé de l'attribution** (Examen→Dispatch.imCtrlMembre), **jamais saisi** dans le corps — c'est la source de vérité de la signature Membre. Un examen sans attributaire → création/MAJ refusée (409).
 - Soumission du projet au Président/CC [Action]
   - Passage en PROJET_SOUMIS → insertion dans t_pv_navette (SENS = SOUMISSION, NUM_NAVETTE incrémenté) → notification PROJET_PV_SOUMIS envoyée au Président/CC destinataire.
 - Rectification sur retour [Écriture]

@@ -40,6 +40,10 @@ public interface PvExamenRepository extends JpaRepository<PvExamen, Integer> {
     @Query("select pv.idAvis from PvExamen pv where pv.idPv = :idPv")
     Optional<String> findIdAvisByPv(@Param("idPv") Integer idPv);
 
+    /** Membre attributaire d'un examen (via dispatch) — source de vérité de l'imCtrlMembre du PV (⚠️ règle ajoutée). */
+    @Query("select e.dispatch.imCtrlMembre from Examen e where e.idExamen = :idExamen")
+    Optional<String> findImCtrlMembreByExamen(@Param("idExamen") Integer idExamen);
+
     @Query("select pv from PvExamen pv where pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
     List<PvExamen> findVisiblesParLocalite(@Param("loc") String loc);
 

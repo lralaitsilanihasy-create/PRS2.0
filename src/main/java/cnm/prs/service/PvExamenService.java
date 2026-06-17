@@ -83,6 +83,8 @@ public class PvExamenService {
      */
     public PvExamenDto create(PvExamenDto dto) {
         PvExamen entity = PvExamenMapper.toEntity(dto);
+        // ⚠️ Règle ajoutée — l'imCtrlMembre est l'attributaire de l'examen (dispatch), jamais le corps.
+        entity.setImCtrlMembre(attributaireDeLExamen(dto.getIdExamen()));
         entity.setStatutPv(StatutPv.BROUILLON.name());
         entity.setNbNavettes(0);
         entity.setDateSoumissionInitiale(null);
@@ -109,7 +111,8 @@ public class PvExamenService {
         existing.setIdAvis(dto.getIdAvis());
         existing.setImCtrlPresident(dto.getImCtrlPresident());
         existing.setImCtrlCc(dto.getImCtrlCc());
-        existing.setImCtrlMembre(dto.getImCtrlMembre());
+        // ⚠️ Règle ajoutée — imCtrlMembre re-dérivé de l'attribution (dispatch), jamais le corps.
+        existing.setImCtrlMembre(attributaireDeLExamen(dto.getIdExamen()));
         existing.setSyntheseObservations(dto.getSyntheseObservations());
         existing.setReferencePv(dto.getReferencePv());
         return PvExamenMapper.toDto(repository.save(existing));
@@ -120,6 +123,14 @@ public class PvExamenService {
             throw new ResourceNotFoundException("PvExamen introuvable : " + id);
         }
         repository.deleteById(id);
+    }
+
+    /** Matricule du Membre attributaire de l'examen (dispatch) ; refuse si l'examen n'a pas d'attributaire. */
+    private String attributaireDeLExamen(Integer idExamen) {
+        return repository.findImCtrlMembreByExamen(idExamen)
+                .filter(im -> im != null && !im.isBlank())
+                .orElseThrow(() -> new BusinessRuleException(
+                        "PV impossible : l'examen " + idExamen + " n'a pas de Membre attributaire (dispatch)."));
     }
 
     // ----------------------------------------------------------------------

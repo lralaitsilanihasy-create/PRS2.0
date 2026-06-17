@@ -1649,6 +1649,30 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Création PV : imCtrlMembre dérivé de l'attribution (dispatch), le corps est ignoré")
+    void creationPv_imCtrlMembreDeriveDeLAttribution() throws Exception {
+        // Examen 1 → dispatch 1 → attributaire CTRMEM ; le corps tente d'usurper « USURP ».
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":60,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"USURP\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.imCtrlMembre").value("CTRMEM"));
+    }
+
+    @Test
+    @DisplayName("Création PV : examen sans Membre attributaire (dispatch) → 409")
+    void creationPv_examenSansAttributaire_409() throws Exception {
+        dossierRepository.save(dossier(60, "DISPATCHE"));
+        receptionRepository.save(reception(60, 60, "CTRCC1", true));
+        dispatchRepository.save(dispatch(60, 60, "CTRCC1", null)); // dispatch sans attributaire
+        examenRepository.save(examen(60, 60, "CTRMEM"));
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":61,\"idExamen\":60,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     @DisplayName("Circuit complet : Réception → PRET_DISPATCH → Dispatch → Examen → PV(navette → SIGNE) → Vérification → CLOTURE")
     void circuitComplet_boutEnBout() throws Exception {
         String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
