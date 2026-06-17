@@ -1931,7 +1931,7 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 
 | Champ (JSON) | Type | Obligatoire | Contraintes |
 |---|---|---|---|
-| imActeur | string | Oui | @NotBlank, max 7 |
+| imActeur | string | Oui | @NotBlank, max 7. **Non utilisé pour l'identité** : `signer` enregistre l'utilisateur authentifié (JWT), pas ce champ |
 | commentaire | string | Conditionnel | obligatoire pour `retourner` (sinon 409) |
 | role | string | Conditionnel | max 20 — obligatoire pour `signer` : `MEMBRE` / `PRESIDENT` / `CC` |
 
@@ -1950,6 +1950,13 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | POST | /api/pv-examens/{id}/signer | `PvActionRequest` | `PvExamenDto` | 200, 400, 403, 404, 409 | MEMBRE / CC / PRESIDENT |
 
 `{id}` = idPv (number). `soumettre` : BROUILLON|EN_RECTIFICATION→PROJET_SOUMIS ; `retourner` : PROJET_SOUMIS→EN_RECTIFICATION (`commentaire` obligatoire) ; `accepter` : PROJET_SOUMIS→PROJET_ACCEPTE ; `signer` : passe à SIGNE quand le Membre **et** (le Président **ou** le CC) ont signé.
+
+**`signer` — authentification de la signature (dans le service).** L'endpoint autorise largement (`MEMBRE`/`CHEF_COMMISSION`/`PRESIDENT`) mais le service vérifie que le **signataire authentifié** correspond au `role` signé et enregistre son identité (`IM_CTRL_MEMBRE`/`IM_CTRL_PRESIDENT`/`IM_CTRL_CC` = matricule du signataire) :
+- `role=MEMBRE` → l'appelant doit être le **Membre attributaire** du PV (`IM_CTRL_MEMBRE`), non déléguable → **403** sinon ;
+- `role=PRESIDENT` → profil **PRESIDENT** réel → **403** sinon ;
+- `role=CC` → profil **CHEF_COMMISSION** **et localité du dossier** → **403** sinon ;
+- co-signataire (Président/CC) **≠ Membre signataire** : auto-co-signature interdite → **409** ;
+- `signer` hors `PROJET_ACCEPTE` → **409**.
 
 **Exemple — requête (création) / signature**
 ```json

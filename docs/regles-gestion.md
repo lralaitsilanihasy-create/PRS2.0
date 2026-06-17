@@ -214,7 +214,7 @@ Sommet de la hiérarchie CNM. Supervise tous les Chefs de commission. Voit tous 
 - Acceptation du projet de PV [Action]
   - Valide le projet corrigé : passage en PROJET_ACCEPTE + insertion dans t_pv_navette (SENS = ACCEPTATION) + notification PROJET_PV_ACCEPTE vers le Membre. Le PV devient signable.
 - Co-signature définitive du PV [Écriture]
-  - Une fois le projet accepté, renseigne DATE_SIGNATURE_PRESIDENT dans t_pv_examen. Facultatif si c'est le CC qui co-signe — contrainte t_pv_examen_cosignataire_check garantit qu'au moins l'un des deux signe.
+  - Une fois le projet accepté, un Président réel co-signe en renseignant DATE_SIGNATURE_PRESIDENT **et IM_CTRL_PRESIDENT (= son matricule)** dans t_pv_examen. Le service authentifie le signataire : profil PRESIDENT requis (403 sinon), et le co-signataire doit être **différent du Membre signataire** (auto-co-signature interdite). Facultatif si c'est le CC qui co-signe — contrainte t_pv_examen_cosignataire_check garantit qu'au moins l'un des deux signe.
 - Suivi de tous les dossiers [Lecture]
   - Vue d'ensemble de tous les dossiers, toutes localités et toutes commissions.
 
@@ -300,7 +300,7 @@ Subordonné du Président. Rattaché à une localité définie — ne voit que l
 - Acceptation du projet de PV [Action]
   - Valide le projet : passage en PROJET_ACCEPTE + insertion dans t_pv_navette (SENS = ACCEPTATION) + notification PROJET_PV_ACCEPTE vers le Membre. Le PV devient signable.
 - Co-signature définitive du PV [Écriture]
-  - Une fois le projet accepté, renseigne DATE_SIGNATURE_CC dans t_pv_examen. Facultatif si c'est le Président qui co-signe — contrainte cosignataire garantit qu'au moins l'un des deux signe.
+  - Une fois le projet accepté, le CC **de la localité du dossier** co-signe en renseignant DATE_SIGNATURE_CC **et IM_CTRL_CC (= son matricule)**. Le service authentifie le signataire : profil CHEF_COMMISSION **et localité du dossier** requis (403 sinon), co-signataire **différent du Membre** (auto-co-signature interdite). Facultatif si c'est le Président qui co-signe — contrainte cosignataire garantit qu'au moins l'un des deux signe.
 
 **Module 11 — Gestion des retraits PRMP**
 
@@ -408,7 +408,8 @@ Subordonné direct du Chef de commission. Voit tous les dossiers de sa localité
 - Rectification sur retour [Écriture]
   - Si le Président/CC retourne le projet (EN_RECTIFICATION, SENS = RETOUR_RECTIF dans t_pv_navette), le Membre corrige la synthèse et/ou l'avis puis resoumet. Le cycle peut se répéter — NB_NAVETTES incrémenté à chaque retour.
 - Signature définitive du PV [Écriture]
-  - Quand le projet est accepté (PROJET_ACCEPTE), le Membre signe en renseignant DATE_SIGNATURE_MEMBRE dans t_pv_examen. Le PV passe à SIGNE quand DATE_SIGNATURE_MEMBRE ET (DATE_SIGNATURE_PRESIDENT ou DATE_SIGNATURE_CC) sont renseignées.
+  - Quand le projet est accepté (PROJET_ACCEPTE), **le Membre attributaire du PV** (IM_CTRL_MEMBRE) signe en renseignant DATE_SIGNATURE_MEMBRE dans t_pv_examen. Cette signature **n'est pas déléguable** : le service refuse (403) tout autre signataire que le Membre attributaire. Le PV passe à SIGNE quand DATE_SIGNATURE_MEMBRE ET (DATE_SIGNATURE_PRESIDENT ou DATE_SIGNATURE_CC) sont renseignées — le co-signataire devant être **une personne différente** du Membre (auto-co-signature interdite).
+  - **Identité du signataire** : pour chaque signature, le service enregistre l'identité de l'**utilisateur authentifié** (CurrentUser, principal JWT) dans IM_CTRL_MEMBRE / IM_CTRL_PRESIDENT / IM_CTRL_CC ; le champ `imActeur` du corps de requête n'est **pas** utilisé pour l'identité (non falsifiable).
 
 **Module 04 — Messagerie**
 
