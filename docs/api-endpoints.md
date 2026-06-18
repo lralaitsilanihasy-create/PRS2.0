@@ -552,44 +552,46 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 ---
 
 ## Demandes de retrait
-**Ressource** `/api/demande-retraits` — Création (POST) réservée à `PRMP` ; décision (PUT) réservée à `CHEF_COMMISSION` ; suppression à `ADMINISTRATEUR`. Lecture filtrée : une PRMP ne voit que ses demandes, un contrôleur celles de sa localité, Président/Admin tout.
+**Ressource** `/api/demande-retraits` — Création (POST) réservée à `PRMP` ; décision (`POST /{id}/accepter` | `/{id}/refuser`) réservée à `CHEF_COMMISSION` ou `PRESIDENT` (contrôle **rôle↔localité dans le service**) ; suppression à `ADMINISTRATEUR`. Lecture filtrée : une PRMP ne voit que ses demandes, un contrôleur celles de sa localité, Président/Admin tout.
 
-> À la création, `statut` est forcé à `EN_ATTENTE`. À la décision du CC (PUT avec `statut` = `APPROUVE`/`REJETE`), `obsDecision` et `imCtrlCc` deviennent **obligatoires** (sinon **409**).
+> ⚠️ **Identité & ID (règle ajoutée).** À la création : `idPrmp` = **utilisateur authentifié** (JWT, corps ignoré), `dateDemande` serveur, `statut` forcé `EN_ATTENTE`, `idDemandeRetrait` **auto-généré** (IDENTITY). Gardes (sinon **403/409**) : PRMP **propriétaire** du dossier ; dossier **`SOUMIS`/`PRET_DISPATCH`** ; pas de demande déjà **`EN_ATTENTE`**. Liste déroulante des dossiers éligibles : **`GET /api/dossiers/retirables`** (PRMP).
+
+> ⚠️ **Décision (règle ajoutée).** `POST /{id}/accepter` → statut `ACCEPTEE` + **dossier `BROUILLON`** ; `POST /{id}/refuser` (corps `{ "motif"? }`) → `REFUSEE`, dossier **inchangé**. Le décideur réel (CC **ou** Président) est enregistré dans `IM_CTRL_CC` depuis le **JWT**. Hors CC-localité/Président → **403** ; demande déjà traitée → **409**. Notifs PRMP : `RETRAIT_ACCEPTE` / `RETRAIT_REFUSE`.
 
 **Champs `DemandeRetraitDto`**
 
 | Champ (JSON) | Type | Obligatoire | Contraintes |
 |---|---|---|---|
-| idDemandeRetrait | number | Oui (PK, au POST) | clé primaire |
+| idDemandeRetrait | number | Non (auto-généré) | ID serveur (IDENTITY) ; ignoré en entrée |
 | idDossier | number | Oui | @NotNull |
-| idPrmp | string | Oui | @NotBlank, max 10 |
+| idPrmp | string | Non | max 10 — **ignoré** : dérivé du JWT |
 | motifRetrait | string | Oui | @NotBlank |
-| dateDemande | string (date-time) | Oui | @NotNull |
-| statut | string | Oui | @NotBlank, max 20 — `EN_ATTENTE` / `APPROUVE` / `REJETE` |
-| imCtrlCc | string | Conditionnel | max 7 — obligatoire à la décision |
-| dateDecision | string (date-time) | Non | |
-| obsDecision | string | Conditionnel | max 500 — obligatoire à la décision |
+| dateDemande | string (date-time) | Non | **ignoré** : posé côté serveur |
+| statut | string | Non | max 20 — `EN_ATTENTE` / `ACCEPTEE` / `REFUSEE` ; **ignoré** en entrée (forcé) |
+| imCtrlCc | string | — | max 7 — décideur (CC ou Président), posé serveur depuis le JWT |
+| dateDecision | string (date-time) | — | posé serveur à la décision |
+| obsDecision | string | — | max 500 — motif de refus (optionnel) |
 
 **Endpoints**
 
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
 |---|---|---|---|---|---|
-| GET | /api/demande-retraits | — | `DemandeRetraitDto[]` | 200 | Authentifié (filtré) |
+| GET | /api/demande-retraits | — | `DemandeRetraitDto[]` | 200 | Authentifié (filtré) — worklist PRMP |
+| GET | /api/demande-retraits/a-valider | — | `DemandeRetraitDto[]` | 200, 403 | CHEF_COMMISSION (localité) / PRESIDENT |
+| GET | /api/demande-retraits/historique | — | `DemandeRetraitDto[]` | 200, 403 | CHEF_COMMISSION (localité) / PRESIDENT |
 | GET | /api/demande-retraits/{id} | — | `DemandeRetraitDto` | 200, 403, 404 | Authentifié (filtré) |
-| POST | /api/demande-retraits | `DemandeRetraitDto` | `DemandeRetraitDto` | 201, 400, 403 | PRMP |
-| PUT | /api/demande-retraits/{id} | `DemandeRetraitDto` | `DemandeRetraitDto` | 200, 400, 404, 409 | CHEF_COMMISSION |
+| POST | /api/demande-retraits | `DemandeRetraitDto` | `DemandeRetraitDto` | 201, 400, 403, 409 | PRMP |
+| POST | /api/demande-retraits/{id}/accepter | — | `DemandeRetraitDto` | 200, 403, 404, 409 | CHEF_COMMISSION / PRESIDENT |
+| POST | /api/demande-retraits/{id}/refuser | `{ motif? }` | `DemandeRetraitDto` | 200, 403, 404, 409 | CHEF_COMMISSION / PRESIDENT |
 | DELETE | /api/demande-retraits/{id} | — | — | 204, 404 | ADMINISTRATEUR |
 
-`{id}` = idDemandeRetrait (number).
+`{id}` = idDemandeRetrait (number). Le `PUT /{id}` générique est **supprimé** au profit de `accepter`/`refuser`.
 
 **Exemple — requête (création, PRMP)**
 ```json
-{
-  "idDemandeRetrait": 45, "idDossier": 1023, "idPrmp": "PRMP001",
-  "motifRetrait": "Dossier incomplet, pièces manquantes",
-  "dateDemande": "2026-04-15T09:30:00", "statut": "EN_ATTENTE"
-}
+{ "idDossier": 1023, "motifRetrait": "Dossier incomplet, pièces manquantes" }
 ```
+*(le reste — `idPrmp`, `dateDemande`, `statut`, `idDemandeRetrait` — est dérivé/serveur, ignoré en entrée)*
 
 ---
 
@@ -1660,7 +1662,7 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | `CLOTURE_ELIGIBLE` | dossier clôturé éligible | Chargé de publication | DOSSIER |
 | `NOUVEAU_MESSAGE` | message reçu (messagerie) | destinataire | MESSAGE |
 
-*(Autres types existants : `NOUVELLE_INSCRIPTION`, `INSCRIPTION_VALIDEE/REFUSEE`, `DEMANDE_RETRAIT`, `RETRAIT_APPROUVE/REJETE`, `MODE_NON_DETERMINE`, `FIN_MANDAT`, `ALERTE_DELAI`, `DISPATCH_CC`.)*
+*(Autres types existants : `NOUVELLE_INSCRIPTION`, `INSCRIPTION_VALIDEE/REFUSEE`, `DEMANDE_RETRAIT`, `RETRAIT_ACCEPTE/REFUSE`, `MODE_NON_DETERMINE`, `FIN_MANDAT`, `ALERTE_DELAI`, `DISPATCH_CC`.)*
 
 **Exemple — réponse `/mes`**
 ```json

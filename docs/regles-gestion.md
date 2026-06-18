@@ -161,10 +161,11 @@ Acteur externe qui soumet ses PPM et marchés à la CNM. Suit l'avancement jusqu
 
 - Demande de retrait motivée [Action]
   - Demande de retrait d'un dossier déjà enregistré. Motif obligatoire (MOTIF_RETRAIT NOT NULL dans t_demande_retrait).
+  - ⚠️ **Règle ajoutée** : la PRMP demandeuse est **l'utilisateur authentifié** (JWT), jamais le corps ; l'`ID_DEMANDE_RETRAIT` est **auto-généré**. Gardes (sinon 403/409) : **être propriétaire** du dossier, dossier **`SOUMIS` ou `PRET_DISPATCH`**, et **pas de demande déjà `EN_ATTENTE`** pour ce dossier. Liste déroulante des dossiers retirables : `GET /api/dossiers/retirables`.
 - Suivi de la demande [Lecture]
-  - Consultation du statut : EN_ATTENTE / APPROUVE / REJETE.
-- Notification décision du CC [Lecture]
-  - Reçoit RETRAIT_APPROUVE ou RETRAIT_REJETE avec l'observation du CC.
+  - Consultation du statut : **EN_ATTENTE / ACCEPTEE / REFUSEE** (⚠️ règle ajoutée). Ses demandes : `GET /api/demande-retraits`.
+- Notification décision [Lecture]
+  - Reçoit **RETRAIT_ACCEPTE** ou **RETRAIT_REFUSE**. ⚠️ **Règle ajoutée** : si **accepté**, le dossier **repasse en `BROUILLON`** (et non `RETIRE`) ; si refusé, dossier inchangé (motif de refus optionnel).
 
 **Module 04 — Calendrier & notifications**
 
@@ -315,11 +316,13 @@ Subordonné du Président. Rattaché à une localité définie — ne voit que l
 **Module 11 — Gestion des retraits PRMP**
 
 - Notification demande de retrait [Lecture]
-  - Reçoit DEMANDE_RETRAIT dès qu'une PRMP de sa localité soumet une demande motivée.
+  - Reçoit DEMANDE_RETRAIT dès qu'une PRMP de sa localité soumet une demande motivée (le **Président** est également notifié). File à valider : `GET /api/demande-retraits/a-valider` (scopée à la localité du dossier) ; historique : `…/historique`.
 - Validation ou rejet du retrait [Action]
-  - Statue (APPROUVE / REJETE) avec observation. Si APPROUVE : t_dossier.STATUT = RETIRE.
+  - ⚠️ **Règle ajoutée** : décision via **`POST /{id}/accepter`** ou **`POST /{id}/refuser`** (le `PUT` générique est supprimé). **Seuls le CC de la localité du dossier ou le Président** peuvent statuer (contrôle rôle↔localité **dans le service**, sinon 403) ; le décideur réel (CC **ou** Président) est enregistré dans `IM_CTRL_CC` depuis le **JWT**. **Accepter → dossier `BROUILLON`** ; refuser → dossier inchangé + motif (optionnel). Demande déjà traitée → 409.
 - Notification décision à la PRMP [Auto]
-  - RETRAIT_APPROUVE ou RETRAIT_REJETE envoyé automatiquement à la PRMP.
+  - **RETRAIT_ACCEPTE** ou **RETRAIT_REFUSE** envoyé automatiquement à la PRMP.
+
+> ⚠️ **Statut `RETIRE` (t_dossier) — non produit.** Depuis cette règle, un retrait accepté ramène le dossier en `BROUILLON` ; **aucune transition ne pose plus `RETIRE`** (valeur conservée dans l'enum, référencée défensivement par la réception, mais état mort).
 
 **Module 07 — Statistiques non-conformité**
 
