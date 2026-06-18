@@ -2,18 +2,23 @@ package cnm.prs.service;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cnm.prs.dto.ModeAutorise;
 import cnm.prs.dto.ReglePassationDto;
 import cnm.prs.dto.SuggestionModeRequest;
 import cnm.prs.dto.SuggestionModeResponse;
+import cnm.prs.entity.ModePassation;
 import cnm.prs.entity.ReglePassation;
 import cnm.prs.entity.Seuil;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.ReglePassationMapper;
+import cnm.prs.repository.ModePassationRepository;
 import cnm.prs.repository.ReglePassationRepository;
 import cnm.prs.repository.SeuilRepository;
 
@@ -26,10 +31,13 @@ public class ReglePassationService {
 
     private final ReglePassationRepository repository;
     private final SeuilRepository seuilRepository;
+    private final ModePassationRepository modePassationRepository;
 
-    public ReglePassationService(ReglePassationRepository repository, SeuilRepository seuilRepository) {
+    public ReglePassationService(ReglePassationRepository repository, SeuilRepository seuilRepository,
+            ModePassationRepository modePassationRepository) {
         this.repository = repository;
         this.seuilRepository = seuilRepository;
+        this.modePassationRepository = modePassationRepository;
     }
 
     @Transactional(readOnly = true)
@@ -75,34 +83,50 @@ public class ReglePassationService {
      * @return la règle retenue, ou {@link Optional#empty()} si un critère est nul ou si aucun
      *         seuil/règle ne correspond (le mode reste alors indéterminé).
      */
+    /**
+     * Règles applicables (§3.1, Module 02), triées par priorité (asc, nulls last) puis idRegle —
+     * la <strong>première est le mode recommandé</strong>, l'ensemble est l'<strong>ensemble autorisé</strong>.
+     *
+     * @return liste (éventuellement vide si un critère est nul ou si aucun seuil/règle ne correspond)
+     */
     @Transactional(readOnly = true)
-    public Optional<ReglePassation> determinerRegle(Integer idSituation, BigDecimal montant,
+    public List<ReglePassation> determinerRegles(Integer idSituation, BigDecimal montant,
             Integer idNature, String idLocalite) {
         if (idSituation == null || montant == null || idNature == null || idLocalite == null) {
-            return Optional.empty();
+            return List.of();
         }
         List<Seuil> seuils = seuilRepository.findCorrespondants(idNature, idLocalite, montant);
         if (seuils.isEmpty()) {
-            return Optional.empty();
+            return List.of();
         }
         List<Integer> idSeuils = seuils.stream().map(Seuil::getIdSeuil).toList();
-        List<ReglePassation> regles = repository.findParSituationEtSeuils(idSituation, idSeuils);
-        return regles.isEmpty() ? Optional.empty() : Optional.of(regles.get(0));
+        return repository.findParSituationEtSeuils(idSituation, idSeuils);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ReglePassation> determinerRegle(Integer idSituation, BigDecimal montant,
+            Integer idNature, String idLocalite) {
+        return determinerRegles(idSituation, montant, idNature, idLocalite).stream().findFirst();
     }
 
     /**
-     * Détermination automatique du mode de passation (§3.1, Module 02) — outil de suggestion de
-     * la PRMP. Suggestion non contraignante.
-     *
-     * @throws ResourceNotFoundException si aucun seuil ou aucune règle ne correspond
+     * ⚠️ Règle ajoutée — renvoie l'<strong>ensemble des modes autorisés</strong> (libellés depuis
+     * {@code tr_mode}) pour (situation, nature, montant, localité), le <strong>mode recommandé</strong>
+     * (règle de plus haute priorité), et un indicateur {@code modeNonDetermine} si aucune règle ne
+     * correspond (ensemble vide → 200, pas 404 ; le frontend propose alors une saisie manuelle).
      */
     @Transactional(readOnly = true)
     public SuggestionModeResponse suggererMode(SuggestionModeRequest req) {
-        ReglePassation retenue = determinerRegle(req.idSituation(), req.montant(),
-                req.idNature(), req.idLocalite())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Aucune règle de passation correspondante (nature/localité/montant/situation)."));
-        return new SuggestionModeResponse(retenue.getIdMode(), retenue.getIdRegle(),
-                retenue.getIdSeuil(), retenue.getPriorite());
+        List<ReglePassation> regles = determinerRegles(req.idSituation(), req.montant(),
+                req.idNature(), req.idLocalite());
+        if (regles.isEmpty()) {
+            return new SuggestionModeResponse(null, List.of(), true);
+        }
+        List<Integer> idModes = regles.stream().map(ReglePassation::getIdMode).distinct().toList();
+        Map<Integer, String> libelles = modePassationRepository.findAllById(idModes).stream()
+                .collect(Collectors.toMap(ModePassation::getIdMode, ModePassation::getLibelle));
+        List<ModeAutorise> modesAutorises = idModes.stream()
+                .map(id -> new ModeAutorise(id, libelles.get(id))).toList();
+        return new SuggestionModeResponse(regles.get(0).getIdMode(), modesAutorises, false);
     }
 }

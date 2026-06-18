@@ -1,9 +1,6 @@
 package cnm.prs.service;
 
-import java.math.BigDecimal;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,10 +17,12 @@ import cnm.prs.entity.ReglePassation;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.TypeNotification;
 import cnm.prs.exception.BadRequestException;
+import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.MarcheMapper;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.MarchePrevisionRepository;
+import cnm.prs.repository.ModePassationRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
@@ -63,12 +62,14 @@ public class MarcheService {
     private final NotificationService notificationService;
     private final DossierIntegriteService dossierIntegrite;
     private final MarchePrevisionRepository marchePrevisionRepository;
+    private final ModePassationRepository modePassationRepository;
 
     public MarcheService(MarcheRepository repository, PpmRepository ppmRepository,
             PrmpRepository prmpRepository, DossierRepository dossierRepository,
             ReglePassationService reglePassationService,
             NotificationService notificationService, DossierIntegriteService dossierIntegrite,
-            MarchePrevisionRepository marchePrevisionRepository) {
+            MarchePrevisionRepository marchePrevisionRepository,
+            ModePassationRepository modePassationRepository) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.prmpRepository = prmpRepository;
@@ -77,6 +78,7 @@ public class MarcheService {
         this.notificationService = notificationService;
         this.dossierIntegrite = dossierIntegrite;
         this.marchePrevisionRepository = marchePrevisionRepository;
+        this.modePassationRepository = modePassationRepository;
     }
 
     /**
@@ -133,8 +135,8 @@ public class MarcheService {
         dossierIntegrite.exigerTypePpm(dto.getIdDossier());
         Marche entity = MarcheMapper.toEntity(dto);
         entity.setIdDetail(repository.nextIdMarche().intValue());   // ⚠️ PK serveur (séquence) ; id client ignoré
-        // Le mode est toujours imposé par le calcul automatique (le client ne le choisit pas).
-        appliquerModeAutomatique(entity);
+        // ⚠️ Règle ajoutée — mode CHOISI par la PRMP, validé contre l'ensemble autorisé (sinon recommandé).
+        validerOuAppliquerMode(entity);
         return MarcheMapper.toDto(repository.save(entity));
     }
 
@@ -142,11 +144,6 @@ public class MarcheService {
         Marche existing = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Marche introuvable : " + id));
         dossierIntegrite.exigerBrouillonModifiable(existing.getIdDossier());
-
-        boolean recalcul = !Objects.equals(existing.getIdNature(), dto.getIdNature())
-                || !Objects.equals(existing.getIdSituation(), dto.getIdSituation())
-                || !Objects.equals(existing.getIdPpm(), dto.getIdPpm())
-                || montantChange(existing.getMontEstim(), dto.getMontEstim());
 
         existing.setIdDossier(dto.getIdDossier());
         existing.setIdPpm(dto.getIdPpm());
@@ -159,10 +156,9 @@ public class MarcheService {
         existing.setStatut(dto.getStatut());
         existing.setIdSituation(dto.getIdSituation());
         existing.setIdNature(dto.getIdNature());
-        // idMode n'est pas pris du client : conservé tel quel, ou recalculé si un critère a changé.
-        if (recalcul) {
-            appliquerModeAutomatique(existing);
-        }
+        existing.setIdMode(dto.getIdMode());   // mode choisi (validé ci-dessous ; recommandé si null)
+        // ⚠️ Règle ajoutée — valide le mode choisi contre l'ensemble autorisé, ou applique le recommandé.
+        validerOuAppliquerMode(existing);
         return MarcheMapper.toDto(repository.save(existing));
     }
 
@@ -177,22 +173,42 @@ public class MarcheService {
     }
 
     /**
-     * Détermine et applique le mode de passation du marché à partir des quatre critères
-     * (situation, nature, montant, localité). La localité provient de la PRMP du PPM.
+     * ⚠️ Règle ajoutée — la PRMP <strong>choisit</strong> le mode parmi l'ensemble autorisé ; le serveur
+     * <strong>valide</strong> :
+     * <ul>
+     *   <li>mode fourni &amp; dans l'ensemble autorisé → conservé ;</li>
+     *   <li>mode fourni, ensemble non vide &amp; mode absent → <strong>409</strong> ;</li>
+     *   <li>mode fourni &amp; aucune règle → accepté s'il existe dans {@code tr_mode} (saisie manuelle), sinon 409 ;</li>
+     *   <li>aucun mode → mode recommandé (1ʳᵉ règle) ; si aucune règle → {@code null} + alerte MODE_NON_DETERMINE.</li>
+     * </ul>
      *
-     * @throws BadRequestException si la localité de la PRMP ne peut être résolue (refus, §point 3)
+     * @throws BadRequestException   si la localité du dossier ne peut être résolue (refus, §point 3)
+     * @throws BusinessRuleException si le mode choisi n'est pas autorisé / inconnu
      */
-    private void appliquerModeAutomatique(Marche marche) {
+    private void validerOuAppliquerMode(Marche marche) {
         String localite = resoudreLocaliteDossier(marche);
-        Optional<Integer> mode = reglePassationService
-                .determinerRegle(marche.getIdSituation(), marche.getMontEstim(),
-                        marche.getIdNature(), localite)
-                .map(ReglePassation::getIdMode);
+        List<Integer> autorises = reglePassationService
+                .determinerRegles(marche.getIdSituation(), marche.getMontEstim(), marche.getIdNature(), localite)
+                .stream().map(ReglePassation::getIdMode).distinct().toList();
+        Integer choisi = marche.getIdMode();
 
-        if (mode.isPresent()) {
-            marche.setIdMode(mode.get());
+        if (choisi != null) {
+            if (autorises.contains(choisi)) {
+                return;                                       // choix valide
+            }
+            if (autorises.isEmpty()) {                        // aucune règle → saisie manuelle (D-d)
+                if (!modePassationRepository.existsById(choisi)) {
+                    throw new BusinessRuleException("Mode de passation inconnu : " + choisi + ".");
+                }
+                return;
+            }
+            throw new BusinessRuleException(
+                    "Mode de passation non autorisé pour ces paramètres ; choisir parmi " + autorises + ".");
+        }
+        // Aucun mode choisi → recommandé, ou null + alerte si aucune règle.
+        if (!autorises.isEmpty()) {
+            marche.setIdMode(autorises.get(0));
         } else {
-            // Aucune règle correspondante : mode null + alerte (option B).
             marche.setIdMode(null);
             alerterModeNonDetermine(marche, localite);
         }
@@ -230,11 +246,4 @@ public class MarcheService {
                         + "). Le mode doit être renseigné manuellement.");
     }
 
-    /** Comparaison de montants tolérante à l'échelle (BigDecimal) et aux nulls. */
-    private static boolean montantChange(BigDecimal a, BigDecimal b) {
-        if (a == null || b == null) {
-            return a != b;
-        }
-        return a.compareTo(b) != 0;
-    }
 }

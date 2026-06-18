@@ -234,7 +234,7 @@ class CnmWorkflowIntegrationTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("Mode de passation auto : create impose le mode, update recalcule, sans règle → null + alerte, localité PRMP absente → 400")
+    @DisplayName("Mode de passation : sans choix → recommandé, mode valide accepté, hors ensemble → 409, sans règle → null + alerte, localité absente → 400")
     void determinationAutomatiqueModePassation() throws Exception {
         // Référentiels : natures, situations, modes.
         natureRepository.save(new Nature(1, "Travaux", null));
@@ -260,16 +260,28 @@ class CnmWorkflowIntegrationTest {
 
         String tok = tokenPrmp;
 
-        // 1) Création : mode imposé = 2 (AOR). idMode=99 ET idDetail=7001 envoyés par le client sont ignorés.
+        // 1) Création SANS mode choisi → mode RECOMMANDÉ appliqué = 2 (AOR). idDetail=7001 envoyé est ignoré (PK serveur).
         String r1 = mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idDetail\":7001,\"idDossier\":50,\"idPpm\":50,\"montEstim\":500000000,"
-                        + "\"idNature\":1,\"idSituation\":1,\"idMode\":99,\"statut\":\"PREVU\"}"))
+                        + "\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.idMode").value(2))
                 .andReturn().getResponse().getContentAsString();
         int idMarche1 = com.jayway.jsonpath.JsonPath.read(r1, "$.idDetail");
         org.junit.jupiter.api.Assertions.assertNotEquals(7001, idMarche1);  // id client ignoré
         org.junit.jupiter.api.Assertions.assertTrue(idMarche1 >= 300001);   // PK serveur (séquence)
+
+        // 1b) Mode CHOISI valide (2 dans l'ensemble autorise {2}) -> accepte.
+        mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":50,\"idPpm\":50,\"montEstim\":500000000,"
+                        + "\"idNature\":1,\"idSituation\":1,\"idMode\":2,\"statut\":\"PREVU\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idMode").value(2));
+        // 1c) Mode CHOISI hors ensemble autorise ({2}) -> 409.
+        mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":50,\"idPpm\":50,\"montEstim\":500000000,"
+                        + "\"idNature\":1,\"idSituation\":1,\"idMode\":99,\"statut\":\"PREVU\"}"))
+                .andExpect(status().isConflict());
 
         // 2) Situation = urgence → mode 3 (Gré à gré), même nature/montant/localité.
         mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
@@ -305,6 +317,45 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idDetail\":7004,\"idDossier\":51,\"idPpm\":51,\"montEstim\":500000000,"
                         + "\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Mode de passation : suggestion-mode renvoie l'ensemble autorisé + recommandé + indicateur ; choix dans l'ensemble accepté")
+    void mode_ensembleAutoriseEtSuggestion() throws Exception {
+        natureRepository.save(new Nature(1, "Travaux", null));
+        situationRepository.save(new Situation(1, "Normale", null));
+        modePassationRepository.save(new ModePassation(2, "AOR", null, null, null, null));
+        modePassationRepository.save(new ModePassation(4, "Cotation", null, null, null, null));
+        seuilRepository.save(seuil(902, "ANT", 1, "200000001", "1000000000"));
+        reglePassationRepository.save(regle(902, 1, 902, 2)); // priorité 1 → recommandé (mode 2)
+        reglePassationRepository.save(regle(904, 1, 902, 4)); // priorité 2 → mode 4 également autorisé
+
+        // suggestion-mode : ensemble {2 (recommandé), 4}, modeNonDetermine=false, libellés depuis tr_mode.
+        mvc.perform(post("/api/regle-passations/suggestion-mode").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idSituation\":1,\"montant\":500000000,\"idNature\":1,\"idLocalite\":\"ANT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.modeRecommande").value(2))
+                .andExpect(jsonPath("$.modeNonDetermine").value(false))
+                .andExpect(jsonPath("$.modesAutorises[?(@.idMode==2)].libelle", hasItem("AOR")))
+                .andExpect(jsonPath("$.modesAutorises[?(@.idMode==4)].libelle", hasItem("Cotation")));
+
+        // suggestion-mode : aucun seuil (montant 50M) → ensemble vide + modeNonDetermine=true (200, pas 404).
+        mvc.perform(post("/api/regle-passations/suggestion-mode").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idSituation\":1,\"montant\":50000000,\"idNature\":1,\"idLocalite\":\"ANT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.modeNonDetermine").value(true))
+                .andExpect(jsonPath("$.modesAutorises.length()").value(0));
+
+        // Création : mode CHOISI 4 (dans l'ensemble {2,4}) → accepté.
+        Dossier d = dossier(52, "BROUILLON"); d.setIdTypeDossier("PPM"); d.setIdPrmp("PRMP001"); d.setIdLocalite("ANT");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(52, 52, "PRMP001"));
+        mvc.perform(post("/api/marches").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":52,\"idPpm\":52,\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"idMode\":4,\"statut\":\"PREVU\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idMode").value(4));
     }
 
     private static Seuil seuil(Integer id, String localite, Integer nature, String min, String max) {

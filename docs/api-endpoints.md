@@ -852,7 +852,7 @@ dossier/PPM (désormais réservée Admin).
 
 *(plus de `idDossier`/`idPpm` : attribués par le serveur.)*
 
-**`SaisieMarcheLigne`** : `designationMarche`, `numCompte`, `montEstim`, `financement`, `statut`, `idSituation`, `idNature`. `idDetail` est **facultatif** — **null à la création** (PK serveur), renseigné seulement pour **identifier une ligne existante** lors de l'édition (réconciliation). `idDossier`/`idPpm`/`idMode` sont renseignés par le service (mode déterminé automatiquement, §3.1 M02).
+**`SaisieMarcheLigne`** : `designationMarche`, `numCompte`, `montEstim`, `financement`, `statut`, `idSituation`, `idNature`. `idDetail` est **facultatif** — **null à la création** (PK serveur), renseigné seulement pour **identifier une ligne existante** lors de l'édition (réconciliation). `idDossier`/`idPpm` sont renseignés par le service. ⚠️ **`idMode`** = mode **choisi** par la PRMP (facultatif), validé contre l'ensemble autorisé (hors ensemble → **409**) ; absent → mode **recommandé** (§3.1 M02).
 
 **`SaisieDossierRequest`** (DAO/MAOO, sans contenu) : `idTypeDossier` (oui, ≠ `PPM` sinon **409**), **`idEntiteContract` (oui)**. *(plus de `idDossier` : attribué par le serveur.)*
 
@@ -1325,16 +1325,15 @@ dossier/PPM (désormais réservée Admin).
 > dans la ressource dédiée **Marchés — dates prévisionnelles** (`/api/marche-previsions`),
 > en relation 1,N avec le marché.
 >
-> **Mode de passation [Auto] (§3.1, Module 02).** À la **création**, `idMode` est **toujours
-> déterminé automatiquement** à partir de 4 critères — `idSituation`, `idNature`, `montEstim`
-> et la **localité du dossier** (`t_dossier.ID_LOCALITE`, dérivée de l'entité contractante) — via
-> `t_regle_passation`/`t_seuil` ; toute valeur `idMode` envoyée par le client est **ignorée**. À la
-> **mise à jour**, le mode est **recalculé** uniquement si `idNature`, `montEstim`, `idSituation` ou
-> `idPpm` change. Si **aucune règle** ne correspond → le marché est créé avec `idMode = null` et une
-> notification `MODE_NON_DETERMINE` est émise à la PRMP. Si la **localité du dossier est introuvable**
-> → **400**.
+> **Mode de passation (§3.1, Module 02) — ⚠️ règle ajoutée : la PRMP choisit, le serveur valide.**
+> Pour (`idSituation`, `idNature`, `montEstim`, **localité du dossier**), `t_regle_passation`/`t_seuil`
+> calcule l'**ensemble des modes autorisés** + un **recommandé** (cf. `suggestion-mode`). À la **création
+> et à la mise à jour** : `idMode` **fourni** et dans l'ensemble → conservé ; **hors ensemble** → **409**
+> (« choisir parmi … ») ; fourni mais **aucune règle** → accepté s'il existe dans `tr_mode` (saisie
+> manuelle) ; **absent** → mode **recommandé**. Aucune règle et aucun mode → `idMode = null` + notification
+> `MODE_NON_DETERMINE`. Localité du dossier introuvable → **400**.
 
-**Exemple — requête** (pas de `idMode` : il est déterminé automatiquement)
+**Exemple — requête** (`idMode` facultatif : mode choisi ; absent → recommandé)
 ```json
 {
   "idDetail": 1205, "idDossier": 320, "idPpm": 45,
@@ -2139,7 +2138,7 @@ GET /api/rapports/dossiers/excel                   (Chef de commission : forcé 
 ---
 
 ## Règles de passation
-**Ressource** `/api/regle-passations` — Référentiel : lecture ouverte ; écriture `ADMINISTRATEUR`. L'endpoint `suggestion-mode` est réservé à `PRMP` (non soumis au verrou Admin).
+**Ressource** `/api/regle-passations` — Référentiel : lecture ouverte ; écriture `ADMINISTRATEUR`. L'endpoint `suggestion-mode` est réservé à `PRMP` (non soumis au verrou Admin). ⚠️ **Règle ajoutée** : la PRMP **choisit** le mode parmi l'**ensemble autorisé** que ce calcul renvoie ; le serveur **valide** ce choix à la création/édition d'un marché (mode hors ensemble → **409**).
 
 **Champs `ReglePassationDto`**
 
@@ -2160,14 +2159,13 @@ GET /api/rapports/dossiers/excel                   (Chef de commission : forcé 
 | idNature | number | Oui | @NotNull |
 | idLocalite | string | Oui | @NotBlank, max 5 |
 
-**Champs `SuggestionModeResponse`** (réponse)
+**Champs `SuggestionModeResponse`** (réponse) — ⚠️ règle ajoutée : **ensemble autorisé** + recommandé.
 
 | Champ (JSON) | Type | Description |
 |---|---|---|
-| idMode | number | mode de passation suggéré |
-| idRegle | number | règle appliquée |
-| idSeuil | number | seuil correspondant |
-| priorite | number | priorité de la règle |
+| modeRecommande | number | mode recommandé (règle de plus haute priorité) ; `null` si aucune règle |
+| modesAutorises | array | modes autorisés `[{ idMode, libelle }]`, **recommandé en tête** |
+| modeNonDetermine | boolean | `true` si aucune règle ne correspond (ensemble vide → saisie manuelle) |
 
 **Endpoints**
 
@@ -2178,9 +2176,9 @@ GET /api/rapports/dossiers/excel                   (Chef de commission : forcé 
 | POST | /api/regle-passations | `ReglePassationDto` | `ReglePassationDto` | 201, 400, 403 | ADMINISTRATEUR |
 | PUT | /api/regle-passations/{id} | `ReglePassationDto` | `ReglePassationDto` | 200, 400, 404 | ADMINISTRATEUR |
 | DELETE | /api/regle-passations/{id} | — | — | 204, 404 | ADMINISTRATEUR |
-| POST | /api/regle-passations/suggestion-mode | `SuggestionModeRequest` | `SuggestionModeResponse` | 200, 400, 404 | PRMP |
+| POST | /api/regle-passations/suggestion-mode | `SuggestionModeRequest` | `SuggestionModeResponse` | 200, 400 | PRMP |
 
-`{id}` = idRegle (number). `suggestion-mode` → 404 si aucun seuil/règle ne correspond ; suggestion non contraignante.
+`{id}` = idRegle (number). `suggestion-mode` → **200 même sans règle** (`modesAutorises:[]`, `modeNonDetermine:true`) — plus de 404 ; non contraignant : la PRMP choisit, le serveur valide.
 
 **Exemple — requête (création) / suggestion-mode / réponse**
 ```json
@@ -2190,7 +2188,7 @@ GET /api/rapports/dossiers/excel                   (Chef de commission : forcé 
 { "idSituation": 2, "montant": 120000000.0, "idNature": 5, "idLocalite": "ANT" }
 ```
 ```json
-{ "idMode": 4, "idRegle": 18, "idSeuil": 9, "priorite": 1 }
+{ "modeRecommande": 4, "modesAutorises": [ { "idMode": 4, "libelle": "Cotation" }, { "idMode": 2, "libelle": "AOR" } ], "modeNonDetermine": false }
 ```
 
 ---

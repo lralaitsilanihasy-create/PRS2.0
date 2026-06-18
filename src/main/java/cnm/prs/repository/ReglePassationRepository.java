@@ -19,7 +19,7 @@ public interface ReglePassationRepository extends JpaRepository<ReglePassation, 
     @Query("""
             select r from ReglePassation r
             where r.idSituation = :idSituation and r.idSeuil in :idSeuils
-            order by r.priorite asc
+            order by r.priorite asc nulls last, r.idRegle asc
             """)
     List<ReglePassation> findParSituationEtSeuils(@Param("idSituation") Integer idSituation,
             @Param("idSeuils") List<Integer> idSeuils);

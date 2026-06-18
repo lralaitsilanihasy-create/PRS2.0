@@ -138,8 +138,8 @@ Acteur externe qui soumet ses PPM et marchés à la CNM. Suit l'avancement jusqu
 
 - Création et mise à jour du PPM [Écriture]
   - En-tête, exercice, signataire, marchés, lots, tranches, SOA bénéficiaires.
-- Détermination automatique du mode [Auto]
-  - Suggestion via t_regle_passation selon situation, montant, nature et localité. Aperçu sans enregistrement : `POST /api/regle-passations/suggestion-mode`.
+- Choix du mode parmi l'ensemble autorisé [Action]
+  - ⚠️ **Règle ajoutée** : pour (situation, nature, montant, localité), `t_regle_passation` calcule l'**ensemble des modes autorisés** (libellés `tr_mode`) avec un **recommandé** (règle la plus prioritaire). La PRMP **choisit** dans cet ensemble ; le serveur **valide** (mode hors ensemble → **409**) ; aucun choix → **recommandé** appliqué ; aucune règle → saisie manuelle (alerte `MODE_NON_DETERMINE`). Aperçu sans enregistrement : `POST /api/regle-passations/suggestion-mode` (renvoie l'ensemble + recommandé + `modeNonDetermine`).
 - Identifiants attribués par le serveur [Auto]
   - ⚠️ **Règle ajoutée** : les PK dossier / PPM / marché sont **allouées par une séquence serveur** (`seq_dossier`/`seq_ppm`/`seq_marche`) ; tout id envoyé par le client est **ignoré** (plus de « identifiant en doublon »). Le formulaire ne saisit plus d'id. **Dette documentée** : séquence applicative (et non `IDENTITY`) pour éviter une refonte massive des fixtures de test sur ces 3 tables centrales ; bascule `IDENTITY` possible plus tard.
 - Suppression d'un marché / d'un PPM [Écriture]

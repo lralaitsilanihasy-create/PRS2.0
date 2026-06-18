@@ -30,5 +30,9 @@ public record SaisieMarcheLigne(
 
         Integer idSituation,
 
-        Integer idNature) {
+        Integer idNature,
+
+        // idMode : mode de passation CHOISI par la PRMP (facultatif) ; null → mode recommandé.
+        // Le serveur valide qu'il appartient à l'ensemble autorisé (sinon 409).
+        Integer idMode) {
 }

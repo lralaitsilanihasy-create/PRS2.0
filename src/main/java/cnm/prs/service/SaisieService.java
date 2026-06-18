@@ -142,6 +142,7 @@ public class SaisieService {
         m.setStatut(ligne.statut());
         m.setIdSituation(ligne.idSituation());
         m.setIdNature(ligne.idNature());
+        m.setIdMode(ligne.idMode());   // mode choisi (validé en service)
         return m;
     }
 
