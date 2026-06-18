@@ -824,6 +824,13 @@ dossier à soumettre : la façade crée le `t_dossier` (statut **`BROUILLON`**, 
 et son contenu **en une transaction** (rollback si une étape échoue). Remplace la création brute de
 dossier/PPM (désormais réservée Admin).
 
+> ⚠️ **Règle ajoutée — PK attribuées par le serveur.** Les identifiants `dossier`/`PPM`/`marché` sont
+> **alloués par une séquence serveur** (`seq_dossier`/`seq_ppm`/`seq_marche`) ; tout id envoyé par le
+> client est **ignoré**. Les payloads de création **n'envoient plus** `idDossier`/`idPpm`/`idDetail` ;
+> l'id figure **en sortie** (réponse). **Dette documentée** : choix d'une séquence applicative (et non
+> `IDENTITY` JPA) pour éviter une refonte massive des fixtures sur 3 tables centrales — migration vers
+> `IDENTITY` possible ultérieurement.
+
 **Endpoints**
 
 | Méthode | URL | Corps | Réponse | Statuts | Rôle |
@@ -836,18 +843,18 @@ dossier/PPM (désormais réservée Admin).
 
 | Champ | Type | Obligatoire |
 |---|---|---|
-| idDossier | number | Oui |
-| **idEntiteContract** | number | **Oui** — entité contractante concernée |
-| idPpm | number | Oui |
+| **idEntiteContract** | number | **Oui** — entité contractante concernée (fixe la localité) |
 | exercice | number | Oui |
 | signataire | string | Oui (max 50) |
 | dateSignature | string (date) | Oui |
 | reference | string | Oui (max 100) |
 | marches | `SaisieMarcheLigne[]` | Non |
 
-**`SaisieMarcheLigne`** : `idDetail` (oui), `designationMarche`, `numCompte`, `montEstim`, `financement`, `statut`, `idSituation`, `idNature`. `idDossier`/`idPpm`/`idMode` sont renseignés par le service (mode déterminé automatiquement, §3.1 M02).
+*(plus de `idDossier`/`idPpm` : attribués par le serveur.)*
 
-**`SaisieDossierRequest`** (DAO/MAOO, sans contenu) : `idDossier` (oui), `idTypeDossier` (oui, ≠ `PPM` sinon **409**), **`idEntiteContract` (oui)**.
+**`SaisieMarcheLigne`** : `designationMarche`, `numCompte`, `montEstim`, `financement`, `statut`, `idSituation`, `idNature`. `idDetail` est **facultatif** — **null à la création** (PK serveur), renseigné seulement pour **identifier une ligne existante** lors de l'édition (réconciliation). `idDossier`/`idPpm`/`idMode` sont renseignés par le service (mode déterminé automatiquement, §3.1 M02).
+
+**`SaisieDossierRequest`** (DAO/MAOO, sans contenu) : `idTypeDossier` (oui, ≠ `PPM` sinon **409**), **`idEntiteContract` (oui)**. *(plus de `idDossier` : attribué par le serveur.)*
 
 **`EditionPpmRequest`** (`PUT /api/saisies/ppm/{idDossier}`) — édite un **brouillon** PPM en une transaction :
 `exercice`, `signataire`, `dateSignature`, `reference` (en-tête, tous obligatoires) + `marches` (liste désirée). Les lignes sont **réconciliées par `idDetail`** : ajout des nouvelles, mise à jour des existantes (mode **recalculé**), **retrait** des absentes. La localité/le type/le propriétaire/l'entité ne changent pas. Dossier non BROUILLON → **409** ; non-propriétaire → **403**.

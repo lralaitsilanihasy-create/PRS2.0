@@ -199,6 +199,7 @@ public class DossierService {
 
     public DossierDto create(DossierDto dto) {
         Dossier entity = DossierMapper.toEntity(dto);
+        entity.setIdDossier(repository.nextIdDossier().intValue()); // ⚠️ PK serveur (séquence) ; id client ignoré
         return DossierMapper.toDto(repository.save(entity));
     }
 

@@ -139,7 +139,9 @@ Acteur externe qui soumet ses PPM et marchés à la CNM. Suit l'avancement jusqu
 - Création et mise à jour du PPM [Écriture]
   - En-tête, exercice, signataire, marchés, lots, tranches, SOA bénéficiaires.
 - Détermination automatique du mode [Auto]
-  - Suggestion via t_regle_passation selon situation, montant, nature et localité.
+  - Suggestion via t_regle_passation selon situation, montant, nature et localité. Aperçu sans enregistrement : `POST /api/regle-passations/suggestion-mode`.
+- Identifiants attribués par le serveur [Auto]
+  - ⚠️ **Règle ajoutée** : les PK dossier / PPM / marché sont **allouées par une séquence serveur** (`seq_dossier`/`seq_ppm`/`seq_marche`) ; tout id envoyé par le client est **ignoré** (plus de « identifiant en doublon »). Le formulaire ne saisit plus d'id. **Dette documentée** : séquence applicative (et non `IDENTITY`) pour éviter une refonte massive des fixtures de test sur ces 3 tables centrales ; bascule `IDENTITY` possible plus tard.
 - Suppression d'un marché / d'un PPM [Écriture]
   - ⚠️ **Règle ajoutée** : possible **uniquement** si le **dossier rattaché est en BROUILLON** et **propriété** de la PRMP (sinon **403** « Vous n'êtes pas le propriétaire… » / **409** « Opération impossible : le dossier n'est pas un brouillon »). Supprimer un **marché** efface **en cascade** ses **dates prévisionnelles** (`t_marche_prevision`) ; supprimer un **PPM** efface **en cascade** ses **marchés** et leurs prévisions — le tout dans la **même transaction** (la cascade ne touche **que** les enfants de la cible). *(Côté SGBD, un filet de sécurité distingue désormais les violations FK / doublon / valeur obligatoire.)*
 

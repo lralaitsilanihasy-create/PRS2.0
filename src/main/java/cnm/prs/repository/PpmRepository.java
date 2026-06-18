@@ -45,4 +45,8 @@ public interface PpmRepository extends JpaRepository<Ppm, Integer> {
               and d.idLocalite = :localite
             """)
     boolean existsVisibleParLocalite(@Param("idPpm") Integer idPpm, @Param("localite") String localite);
+
+    /** Prochaine PK PPM, allouée par la séquence serveur (Voie B — l'id client est ignoré). */
+    @Query(value = "select nextval('seq_ppm')", nativeQuery = true)
+    Long nextIdPpm();
 }

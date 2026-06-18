@@ -91,6 +91,7 @@ public class PpmService {
         dossierIntegrite.exigerBrouillonModifiable(dto.getIdDossier());
         dossierIntegrite.exigerTypePpm(dto.getIdDossier());
         Ppm entity = PpmMapper.toEntity(dto);
+        entity.setIdPpm(repository.nextIdPpm().intValue());         // ⚠️ PK serveur (séquence) ; id client ignoré
         return PpmMapper.toDto(repository.save(entity));
     }
 

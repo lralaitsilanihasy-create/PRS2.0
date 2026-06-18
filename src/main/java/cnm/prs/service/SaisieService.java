@@ -64,25 +64,25 @@ public class SaisieService {
         String idPrmp = prmpCourante();
         // Localité dérivée de l'entité contractante choisie (parmi les entités de la PRMP).
         String localite = dossierIntegrite.localiteDeLEntiteDeLaPrmp(req.idEntiteContract(), idPrmp);
-        creerDossier(req.idDossier(), TYPE_PPM, localite, idPrmp, req.idEntiteContract());
+        Dossier dossier = creerDossier(TYPE_PPM, localite, idPrmp, req.idEntiteContract());  // PK séquence
+        Integer idDossier = dossier.getIdDossier();
 
         PpmDto ppm = new PpmDto();
-        ppm.setIdPpm(req.idPpm());
-        ppm.setIdDossier(req.idDossier());
+        ppm.setIdDossier(idDossier);
         ppm.setIdPrmp(idPrmp);
         ppm.setExercice(req.exercice());
         ppm.setSignataire(req.signataire());
         ppm.setDateSignature(req.dateSignature());
         ppm.setReference(req.reference());
         ppm.setIdLocalite(localite);
-        ppmService.create(ppm);
+        Integer idPpm = ppmService.create(ppm).getIdPpm();          // PK séquence (retournée)
 
         if (req.marches() != null) {
             for (SaisieMarcheLigne ligne : req.marches()) {
-                marcheService.create(toMarcheDto(ligne, req.idDossier(), req.idPpm()));
+                marcheService.create(toMarcheDto(ligne, idDossier, idPpm));   // idDetail alloué par MarcheService
             }
         }
-        return DossierMapper.toDto(dossierRepository.findById(req.idDossier()).orElseThrow());
+        return DossierMapper.toDto(dossierRepository.findById(idDossier).orElseThrow());
     }
 
     /**
@@ -152,14 +152,14 @@ public class SaisieService {
         }
         String idPrmp = prmpCourante();
         String localite = dossierIntegrite.localiteDeLEntiteDeLaPrmp(req.idEntiteContract(), idPrmp);
-        Dossier d = creerDossier(req.idDossier(), req.idTypeDossier(), localite, idPrmp, req.idEntiteContract());
+        Dossier d = creerDossier(req.idTypeDossier(), localite, idPrmp, req.idEntiteContract());
         return DossierMapper.toDto(d);
     }
 
-    private Dossier creerDossier(Integer idDossier, String type, String idLocalite, String idPrmp,
+    private Dossier creerDossier(String type, String idLocalite, String idPrmp,
             Integer idEntiteContract) {
         Dossier d = new Dossier();
-        d.setIdDossier(idDossier);
+        d.setIdDossier(dossierRepository.nextIdDossier().intValue());   // PK serveur (séquence)
         d.setIdTypeDossier(type);
         d.setIdLocalite(idLocalite);
         d.setIdPrmp(idPrmp);

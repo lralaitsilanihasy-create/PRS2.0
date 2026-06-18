@@ -41,6 +41,8 @@ import cnm.prs.entity.DelegationProfil;
 import cnm.prs.entity.DemandeRetrait;
 import cnm.prs.entity.Dispatch;
 import cnm.prs.entity.Dossier;
+import java.util.List;
+
 import cnm.prs.entity.Examen;
 import cnm.prs.entity.Localite;
 import cnm.prs.entity.Marche;
@@ -258,12 +260,16 @@ class CnmWorkflowIntegrationTest {
 
         String tok = tokenPrmp;
 
-        // 1) Création : mode imposé = 2 (AOR). Le idMode=99 envoyé par le client est ignoré.
-        mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
+        // 1) Création : mode imposé = 2 (AOR). idMode=99 ET idDetail=7001 envoyés par le client sont ignorés.
+        String r1 = mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idDetail\":7001,\"idDossier\":50,\"idPpm\":50,\"montEstim\":500000000,"
                         + "\"idNature\":1,\"idSituation\":1,\"idMode\":99,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.idMode").value(2));
+                .andExpect(jsonPath("$.idMode").value(2))
+                .andReturn().getResponse().getContentAsString();
+        int idMarche1 = com.jayway.jsonpath.JsonPath.read(r1, "$.idDetail");
+        org.junit.jupiter.api.Assertions.assertNotEquals(7001, idMarche1);  // id client ignoré
+        org.junit.jupiter.api.Assertions.assertTrue(idMarche1 >= 300001);   // PK serveur (séquence)
 
         // 2) Situation = urgence → mode 3 (Gré à gré), même nature/montant/localité.
         mvc.perform(post("/api/marches").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
@@ -282,7 +288,7 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.typeNotif=='MODE_NON_DETERMINE')]", hasSize(1)));
 
         // 4) Mise à jour : le montant passe à 1,5 Md → recalcul → mode 1 (AOO).
-        mvc.perform(put("/api/marches/7001").header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(put("/api/marches/" + idMarche1).header("Authorization", tok).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idDossier\":50,\"idPpm\":50,\"montEstim\":1500000000,"
                         + "\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}"))
                 .andExpect(status().isOk())
@@ -2301,27 +2307,30 @@ class CnmWorkflowIntegrationTest {
         reglePassationRepository.save(regle(902, 1, 902, 2));
         String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
 
-        // Localité dérivée de l'entité 1 (= ANT) ; pas de idLocalite dans le corps.
-        String body = "{\"idDossier\":60,\"idEntiteContract\":1,\"idPpm\":60,\"exercice\":2026,"
+        // Localité dérivée de l'entité 1 (= ANT) ; AUCUN id (dossier/PPM/marché) dans le corps → alloués serveur.
+        String body = "{\"idEntiteContract\":1,\"exercice\":2026,"
                 + "\"signataire\":\"RABE\",\"dateSignature\":\"2026-01-10\",\"reference\":\"PPM-60\","
-                + "\"marches\":[{\"idDetail\":600,\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
-        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                + "\"marches\":[{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+        String resp = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.statut").value("BROUILLON"))
                 .andExpect(jsonPath("$.idTypeDossier").value("PPM"))
                 .andExpect(jsonPath("$.idLocalite").value("ANT"))
-                .andExpect(jsonPath("$.idPrmp").value("PRMP001"));
+                .andExpect(jsonPath("$.idPrmp").value("PRMP001"))
+                .andReturn().getResponse().getContentAsString();
+        int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
+        org.junit.jupiter.api.Assertions.assertTrue(idDoss >= 100001);   // PK serveur (séquence), pas de collision avec les seeds
         // La ligne de marché a son mode déterminé automatiquement (AOR = 2).
-        mvc.perform(get("/api/marches/600").header("Authorization", tokenPrmp))
-                .andExpect(jsonPath("$.idMode").value(2));
+        mvc.perform(get("/api/marches").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].idMode", hasItem(2)));
         // Le brouillon est invisible du Secrétaire.
-        mvc.perform(get("/api/dossiers/60").header("Authorization", tokenSec))
+        mvc.perform(get("/api/dossiers/" + idDoss).header("Authorization", tokenSec))
                 .andExpect(status().isForbidden());
         // Soumission → SOUMIS → devient visible.
-        mvc.perform(post("/api/dossiers/60/soumettre").header("Authorization", tokenPrmp))
+        mvc.perform(post("/api/dossiers/" + idDoss + "/soumettre").header("Authorization", tokenPrmp))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("SOUMIS"));
-        mvc.perform(get("/api/dossiers/60").header("Authorization", tokenSec))
+        mvc.perform(get("/api/dossiers/" + idDoss).header("Authorization", tokenSec))
                 .andExpect(status().isOk());
     }
 
@@ -2330,17 +2339,30 @@ class CnmWorkflowIntegrationTest {
     void saisieDossier_dao() throws Exception {
         mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDossier\":61,\"idTypeDossier\":\"DAO\",\"idEntiteContract\":1}"))
+                .content("{\"idTypeDossier\":\"DAO\",\"idEntiteContract\":1}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.statut").value("BROUILLON"))
                 .andExpect(jsonPath("$.idTypeDossier").value("DAO"))
                 .andExpect(jsonPath("$.idLocalite").value("ANT"))      // dérivée de l'entité 1
-                .andExpect(jsonPath("$.idEntiteContract").value(1));
+                .andExpect(jsonPath("$.idEntiteContract").value(1))
+                .andExpect(jsonPath("$.idDossier").isNumber());        // PK attribuée par le serveur (séquence)
         // Le type PPM est refusé par cette façade (utiliser /api/saisies/ppm).
         mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDossier\":62,\"idTypeDossier\":\"PPM\",\"idEntiteContract\":1}"))
+                .content("{\"idTypeDossier\":\"PPM\",\"idEntiteContract\":1}"))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Auto-PK : un id envoyé par le client est IGNORÉ ; le serveur attribue depuis la séquence")
+    void autopk_idClientIgnore() throws Exception {
+        String resp = mvc.perform(post("/api/dossiers").header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idDossier\":777,\"statut\":\"BROUILLON\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        int id = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
+        org.junit.jupiter.api.Assertions.assertNotEquals(777, id);          // id client ignoré
+        org.junit.jupiter.api.Assertions.assertTrue(id >= 100001);          // PK serveur (séquence seq_dossier)
     }
 
     @Test
@@ -2406,7 +2428,7 @@ class CnmWorkflowIntegrationTest {
         // La façade de saisie est réservée PRMP : un Membre → 403.
         mvc.perform(post("/api/saisies/dossier").header("Authorization", tokenMembre)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDossier\":66,\"idTypeDossier\":\"DAO\",\"idEntiteContract\":1}"))
+                .content("{\"idTypeDossier\":\"DAO\",\"idEntiteContract\":1}"))
                 .andExpect(status().isForbidden());
     }
 
@@ -2478,32 +2500,46 @@ class CnmWorkflowIntegrationTest {
         reglePassationRepository.save(regle(902, 1, 902, 2));
         reglePassationRepository.save(regle(903, 1, 903, 1));
 
-        // Saisie initiale : 700 (150M → 4), 701 (500M → 2), entité 1 (ANT).
-        String creation = "{\"idDossier\":120,\"idEntiteContract\":1,\"idPpm\":120,\"exercice\":2026,"
+        // Saisie initiale (sans id) : marché 150M (→ mode 4) et 500M (→ mode 2), entité 1 (ANT).
+        String creation = "{\"idEntiteContract\":1,\"exercice\":2026,"
                 + "\"signataire\":\"RABE\",\"dateSignature\":\"2026-01-10\",\"reference\":\"PPM-120-v1\","
-                + "\"marches\":[{\"idDetail\":700,\"montEstim\":150000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"},"
-                + "{\"idDetail\":701,\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
-        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                + "\"marches\":[{\"montEstim\":150000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"},"
+                + "{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+        String cresp = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON).content(creation))
-                .andExpect(status().isCreated());
-        mvc.perform(get("/api/marches/700").header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(4));
-        mvc.perform(get("/api/marches/701").header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(2));
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int idDoss = com.jayway.jsonpath.JsonPath.read(cresp, "$.idDossier");
 
-        // Édition : en-tête + 700→1,5 Md (mode 1), 701 retiré, 702 ajouté (500M → 2).
+        // Le frontend lit les marchés du brouillon pour connaître leurs PK serveur (réconciliation par idDetail).
+        String m1 = mvc.perform(get("/api/marches").header("Authorization", tokenPrmp))
+                .andReturn().getResponse().getContentAsString();
+        List<Integer> ids = com.jayway.jsonpath.JsonPath.read(m1, "$[?(@.idDossier==" + idDoss + ")].idDetail");
+        int idM150 = Math.min(ids.get(0), ids.get(1));   // créé en premier (150M)
+        int idM500 = Math.max(ids.get(0), ids.get(1));   // créé en second (500M)
+        mvc.perform(get("/api/marches/" + idM150).header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(4));
+        mvc.perform(get("/api/marches/" + idM500).header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(2));
+
+        // Édition : en-tête + idM150 → 1,5 Md (mode 1), idM500 retiré, nouvelle ligne 500M ajoutée (sans id → mode 2).
         String edition = "{\"exercice\":2027,\"signataire\":\"RABE Maj\",\"dateSignature\":\"2026-02-01\",\"reference\":\"PPM-120-v2\","
-                + "\"marches\":[{\"idDetail\":700,\"montEstim\":1500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"},"
-                + "{\"idDetail\":702,\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
-        mvc.perform(put("/api/saisies/ppm/120").header("Authorization", tokenPrmp)
+                + "\"marches\":[{\"idDetail\":" + idM150 + ",\"montEstim\":1500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"},"
+                + "{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+        mvc.perform(put("/api/saisies/ppm/" + idDoss).header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON).content(edition))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statut").value("BROUILLON"));
-        // En-tête mis à jour, lignes réconciliées (700 recalculé→1, 702 créé→2, 701 supprimé→404 en dernier).
-        mvc.perform(get("/api/ppms/120").header("Authorization", tokenPrmp))
-                .andExpect(jsonPath("$.reference").value("PPM-120-v2"))
-                .andExpect(jsonPath("$.exercice").value(2027));
-        mvc.perform(get("/api/marches/700").header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(1));
-        mvc.perform(get("/api/marches/702").header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(2));
-        mvc.perform(get("/api/marches/701").header("Authorization", tokenPrmp)).andExpect(status().isNotFound());
+        // En-tête mis à jour.
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].reference", hasItem("PPM-120-v2")))
+                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].exercice", hasItem(2027)));
+        // idM150 recalculé → 1 ; idM500 supprimé → 404 ; la nouvelle ligne 500M (PK ≠ idM500) a le mode 2.
+        mvc.perform(get("/api/marches/" + idM150).header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(1));
+        mvc.perform(get("/api/marches/" + idM500).header("Authorization", tokenPrmp)).andExpect(status().isNotFound());
+        String m2 = mvc.perform(get("/api/marches").header("Authorization", tokenPrmp))
+                .andReturn().getResponse().getContentAsString();
+        List<Integer> idsV2 = com.jayway.jsonpath.JsonPath.read(m2, "$[?(@.idDossier==" + idDoss + ")].idDetail");
+        int idNew = idsV2.get(0).intValue() == idM150 ? idsV2.get(1) : idsV2.get(0);
+        org.junit.jupiter.api.Assertions.assertNotEquals(idM500, idNew);
+        mvc.perform(get("/api/marches/" + idNew).header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(2));
     }
 
     @Test
@@ -2511,21 +2547,28 @@ class CnmWorkflowIntegrationTest {
     void editionPpm_gardes() throws Exception {
         String tokenAutrePrmp = bearer("PRMPZZ", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMPZZ", "ANT");
         String edition = "{\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R\",\"marches\":[]}";
-        // 2 brouillons PPM (sans lignes) de PRMP001, entité 1.
-        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDossier\":121,\"idEntiteContract\":1,\"idPpm\":121,\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R121\"}"))
-                .andExpect(status().isCreated());
-        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDossier\":122,\"idEntiteContract\":1,\"idPpm\":122,\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R122\"}"))
-                .andExpect(status().isCreated());
-        marcheRepository.save(marche(1220, 122, 122)); // un PPM doit comporter au moins un marché avant soumission
-        mvc.perform(post("/api/dossiers/122/soumettre").header("Authorization", tokenPrmp)).andExpect(status().isOk());
+        // Brouillon PPM (121) de PRMP001 — pour le test de propriété.
+        String r121 = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idEntiteContract\":1,\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R121\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int idDoss121 = com.jayway.jsonpath.JsonPath.read(r121, "$.idDossier");
+        // Brouillon PPM (122) de PRMP001 — soumis ensuite (donc non éditable).
+        String r122 = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idEntiteContract\":1,\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R122\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int idDoss122 = com.jayway.jsonpath.JsonPath.read(r122, "$.idDossier");
+        String ppmsJson = mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andReturn().getResponse().getContentAsString();
+        int idPpm122 = ((List<Integer>) com.jayway.jsonpath.JsonPath.read(ppmsJson,
+                "$[?(@.idDossier==" + idDoss122 + ")].idPpm")).get(0);
+        marcheRepository.save(marche(1220, idDoss122, idPpm122)); // un PPM doit comporter au moins un marché avant soumission
+        mvc.perform(post("/api/dossiers/" + idDoss122 + "/soumettre").header("Authorization", tokenPrmp)).andExpect(status().isOk());
         // Dossier soumis → non éditable.
-        mvc.perform(put("/api/saisies/ppm/122").header("Authorization", tokenPrmp)
+        mvc.perform(put("/api/saisies/ppm/" + idDoss122).header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON).content(edition))
                 .andExpect(status().isConflict());
         // Brouillon d'une autre PRMP → 403.
-        mvc.perform(put("/api/saisies/ppm/121").header("Authorization", tokenAutrePrmp)
+        mvc.perform(put("/api/saisies/ppm/" + idDoss121).header("Authorization", tokenAutrePrmp)
                 .contentType(MediaType.APPLICATION_JSON).content(edition))
                 .andExpect(status().isForbidden());
     }

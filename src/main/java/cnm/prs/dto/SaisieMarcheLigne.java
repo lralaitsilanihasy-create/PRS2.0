@@ -2,7 +2,6 @@ package cnm.prs.dto;
 
 import java.math.BigDecimal;
 
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -11,7 +10,8 @@ import jakarta.validation.constraints.Size;
  */
 public record SaisieMarcheLigne(
 
-        @NotNull
+        // idDetail : null à la création (PK allouée par le serveur) ; renseigné pour identifier une
+        // ligne existante lors de l'édition d'un brouillon (réconciliation par idDetail).
         Integer idDetail,
 
         @Size(max = 500)

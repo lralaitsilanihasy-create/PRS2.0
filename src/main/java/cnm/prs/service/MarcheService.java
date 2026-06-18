@@ -132,6 +132,7 @@ public class MarcheService {
         dossierIntegrite.exigerBrouillonModifiable(dto.getIdDossier());
         dossierIntegrite.exigerTypePpm(dto.getIdDossier());
         Marche entity = MarcheMapper.toEntity(dto);
+        entity.setIdDetail(repository.nextIdMarche().intValue());   // ⚠️ PK serveur (séquence) ; id client ignoré
         // Le mode est toujours imposé par le calcul automatique (le client ne le choisit pas).
         appliquerModeAutomatique(entity);
         return MarcheMapper.toDto(repository.save(entity));

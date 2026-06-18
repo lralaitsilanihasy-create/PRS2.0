@@ -16,13 +16,7 @@ import jakarta.validation.constraints.Size;
 public record SaisiePpmRequest(
 
         @NotNull
-        Integer idDossier,
-
-        @NotNull
         Integer idEntiteContract,
-
-        @NotNull
-        Integer idPpm,
 
         @NotNull
         Integer exercice,

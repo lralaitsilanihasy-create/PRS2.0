@@ -11,9 +11,6 @@ import jakarta.validation.constraints.Size;
  */
 public record SaisieDossierRequest(
 
-        @NotNull
-        Integer idDossier,
-
         @NotBlank
         @Size(max = 10)
         String idTypeDossier,

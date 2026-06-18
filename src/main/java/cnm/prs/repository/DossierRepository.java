@@ -225,4 +225,8 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
                           where m.idDossier = d.idDossier and m.idPpm = p2.idPpm and p2.idPrmp = :idPrmp))
             """)
     List<Dossier> findRetirablesPourPrmp(@Param("idPrmp") String idPrmp);
+
+    /** Prochaine PK dossier, allouée par la séquence serveur (Voie B — l'id client est ignoré). */
+    @Query(value = "select nextval('seq_dossier')", nativeQuery = true)
+    Long nextIdDossier();
 }
