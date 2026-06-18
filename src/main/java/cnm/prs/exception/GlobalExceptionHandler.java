@@ -77,10 +77,27 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex, WebRequest request) {
-        return build(HttpStatus.CONFLICT,
-                "Violation d'une contrainte de données : identifiant en doublon, valeur obligatoire manquante "
-                        + "ou référence inexistante.",
-                request, null);
+        // Distingue la cause racine (SQLSTATE PostgreSQL) au lieu d'un message fourre-tout.
+        String sqlState = sqlState(ex);
+        return switch (sqlState == null ? "" : sqlState) {
+            case "23503" -> build(HttpStatus.CONFLICT,          // foreign_key_violation
+                    "Suppression impossible : cette donnée est référencée par des enregistrements liés.", request, null);
+            case "23505" -> build(HttpStatus.CONFLICT,          // unique_violation
+                    "Doublon : un enregistrement avec cette clé existe déjà.", request, null);
+            case "23502" -> build(HttpStatus.BAD_REQUEST,       // not_null_violation
+                    "Valeur obligatoire manquante.", request, null);
+            default -> build(HttpStatus.CONFLICT, "Violation d'une contrainte de données.", request, null);
+        };
+    }
+
+    /** Remonte la chaîne des causes jusqu'à un {@link java.sql.SQLException} pour lire son SQLSTATE. */
+    private static String sqlState(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException se) {
+                return se.getSQLState();
+            }
+        }
+        return null;
     }
 
     @ExceptionHandler(Exception.class)

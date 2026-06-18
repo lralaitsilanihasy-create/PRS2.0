@@ -23,6 +23,7 @@ import cnm.prs.exception.BadRequestException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.MarcheMapper;
 import cnm.prs.repository.DossierRepository;
+import cnm.prs.repository.MarchePrevisionRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
@@ -61,11 +62,13 @@ public class MarcheService {
     private final ReglePassationService reglePassationService;
     private final NotificationService notificationService;
     private final DossierIntegriteService dossierIntegrite;
+    private final MarchePrevisionRepository marchePrevisionRepository;
 
     public MarcheService(MarcheRepository repository, PpmRepository ppmRepository,
             PrmpRepository prmpRepository, DossierRepository dossierRepository,
             ReglePassationService reglePassationService,
-            NotificationService notificationService, DossierIntegriteService dossierIntegrite) {
+            NotificationService notificationService, DossierIntegriteService dossierIntegrite,
+            MarchePrevisionRepository marchePrevisionRepository) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.prmpRepository = prmpRepository;
@@ -73,6 +76,7 @@ public class MarcheService {
         this.reglePassationService = reglePassationService;
         this.notificationService = notificationService;
         this.dossierIntegrite = dossierIntegrite;
+        this.marchePrevisionRepository = marchePrevisionRepository;
     }
 
     /**
@@ -166,6 +170,8 @@ public class MarcheService {
                 .orElseThrow(() -> new ResourceNotFoundException("Marche introuvable : " + id));
         // Une ligne ne se retire que d'un dossier en brouillon, propriété de la PRMP courante.
         dossierIntegrite.exigerBrouillonModifiable(existing.getIdDossier());
+        // Cascade applicative : supprimer d'abord les dates prévisionnelles de CE marché (sous-lignes intrinsèques).
+        marchePrevisionRepository.deleteByIdDetail(id);
         repository.deleteById(id);
     }
 

@@ -7,10 +7,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.PpmDto;
+import cnm.prs.entity.Marche;
 import cnm.prs.entity.Ppm;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.PpmMapper;
+import cnm.prs.repository.MarchePrevisionRepository;
+import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.security.CurrentUser;
 import cnm.prs.security.Visibilite;
@@ -24,10 +27,15 @@ public class PpmService {
 
     private final PpmRepository repository;
     private final DossierIntegriteService dossierIntegrite;
+    private final MarcheRepository marcheRepository;
+    private final MarchePrevisionRepository marchePrevisionRepository;
 
-    public PpmService(PpmRepository repository, DossierIntegriteService dossierIntegrite) {
+    public PpmService(PpmRepository repository, DossierIntegriteService dossierIntegrite,
+            MarcheRepository marcheRepository, MarchePrevisionRepository marchePrevisionRepository) {
         this.repository = repository;
         this.dossierIntegrite = dossierIntegrite;
+        this.marcheRepository = marcheRepository;
+        this.marchePrevisionRepository = marchePrevisionRepository;
     }
 
     /**
@@ -110,9 +118,16 @@ public class PpmService {
     }
 
     public void delete(Integer id) {
-        if (!repository.existsById(id)) {
-            throw new ResourceNotFoundException("Ppm introuvable : " + id);
+        Ppm existing = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Ppm introuvable : " + id));
+        // Un PPM ne se supprime que sur un dossier en brouillon, propriété de la PRMP courante.
+        dossierIntegrite.exigerBrouillonModifiable(existing.getIdDossier());
+        // Cascade applicative : SES marchés et LEURS prévisions, puis le PPM — en une transaction.
+        List<Marche> marches = marcheRepository.findByIdPpm(id);
+        for (Marche m : marches) {
+            marchePrevisionRepository.deleteByIdDetail(m.getIdDetail());
         }
+        marcheRepository.deleteAll(marches);
         repository.deleteById(id);
     }
 }

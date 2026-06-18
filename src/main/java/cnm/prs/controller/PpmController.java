@@ -56,7 +56,8 @@ public class PpmController {
         return service.update(id, dto);
     }
 
-    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    // Suppression d'un PPM de brouillon : PRMP propriétaire (miroir du marché) ; garde BROUILLON+propriété en service.
+    @PreAuthorize("hasRole('PRMP')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Integer id) {
         service.delete(id);

@@ -86,7 +86,7 @@ public class DossierIntegriteService {
         exigerProprietaire(dossier);
         if (!StatutDossier.BROUILLON.name().equals(dossier.getStatut())) {
             throw new BusinessRuleException(
-                    "Le dossier n'est pas un brouillon (statut « " + dossier.getStatut() + " ») : édition impossible.");
+                    "Opération impossible : le dossier n'est pas un brouillon (statut « " + dossier.getStatut() + " »).");
         }
         return dossier;
     }
@@ -95,7 +95,7 @@ public class DossierIntegriteService {
     public void exigerProprietaire(Dossier dossier) {
         String courant = CurrentUser.ref().orElse(null);
         if (dossier.getIdPrmp() != null && !dossier.getIdPrmp().equals(courant)) {
-            throw new AccessDeniedException("Ce dossier ne fait pas partie de vos dossiers (§3.1).");
+            throw new AccessDeniedException("Vous n'êtes pas le propriétaire de ce dossier (§3.1).");
         }
     }
 

@@ -44,6 +44,7 @@ import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Examen;
 import cnm.prs.entity.Localite;
 import cnm.prs.entity.Marche;
+import cnm.prs.entity.MarchePrevision;
 import cnm.prs.entity.ModePassation;
 import cnm.prs.entity.Nature;
 import cnm.prs.entity.Ppm;
@@ -74,6 +75,7 @@ import cnm.prs.repository.DispatchRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenRepository;
 import cnm.prs.repository.LocaliteRepository;
+import cnm.prs.repository.MarchePrevisionRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.ModePassationRepository;
 import cnm.prs.repository.NatureRepository;
@@ -126,6 +128,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private ExamenRepository examenRepository;
     @Autowired private PpmRepository ppmRepository;
     @Autowired private MarcheRepository marcheRepository;
+    @Autowired private MarchePrevisionRepository marchePrevisionRepository;
     @Autowired private DemandeRetraitRepository demandeRetraitRepository;
     @Autowired private DelegationProfilRepository delegationProfilRepository;
     @Autowired private NatureRepository natureRepository;
@@ -1614,6 +1617,90 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.idDemandeRetrait==" + drId + ")]", hasSize(1)));
         mvc.perform(get("/api/demande-retraits/a-valider").header("Authorization", tokenCc))
                 .andExpect(jsonPath("$[?(@.idDemandeRetrait==" + drId + ")]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Suppression marché — dossier BROUILLON avec prévisions → 204, marché + prévisions supprimés")
+    void marche_delete_brouillonAvecPrevisions_supprime() throws Exception {
+        Dossier d = dossier(180, "BROUILLON"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        ppmRepository.save(ppm(280, 180, "PRMP001"));
+        marcheRepository.save(marche(380, 180, 280));
+        marchePrevisionRepository.save(new MarchePrevision(480, 380, "LANCEMENT", LocalDate.of(2026, 6, 1), null));
+        marchePrevisionRepository.save(new MarchePrevision(481, 380, "DAO", LocalDate.of(2026, 6, 2), null));
+
+        mvc.perform(delete("/api/marches/380").header("Authorization", tokenPrmp)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(marcheRepository.existsById(380));
+        org.junit.jupiter.api.Assertions.assertTrue(marchePrevisionRepository.findByIdDetail(380).isEmpty());
+    }
+
+    @Test
+    @DisplayName("Suppression marché — dossier SOUMIS → 409 (pas un brouillon)")
+    void marche_delete_dossierSoumis_409() throws Exception {
+        Dossier d = dossier(181, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        ppmRepository.save(ppm(281, 181, "PRMP001"));
+        marcheRepository.save(marche(381, 181, 281));
+        mvc.perform(delete("/api/marches/381").header("Authorization", tokenPrmp)).andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Suppression PPM — BROUILLON propriétaire avec marchés → 204, cascade marchés + prévisions")
+    void ppm_delete_brouillonProprioAvecMarches_cascade() throws Exception {
+        Dossier d = dossier(182, "BROUILLON"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        ppmRepository.save(ppm(282, 182, "PRMP001"));
+        marcheRepository.save(marche(382, 182, 282));
+        marchePrevisionRepository.save(new MarchePrevision(482, 382, "LANCEMENT", LocalDate.of(2026, 6, 1), null));
+
+        mvc.perform(delete("/api/ppms/282").header("Authorization", tokenPrmp)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(ppmRepository.existsById(282));
+        org.junit.jupiter.api.Assertions.assertFalse(marcheRepository.existsById(382));
+        org.junit.jupiter.api.Assertions.assertTrue(marchePrevisionRepository.findByIdDetail(382).isEmpty());
+    }
+
+    @Test
+    @DisplayName("Suppression PPM — non propriétaire → 403")
+    void ppm_delete_nonProprietaire_403() throws Exception {
+        prmpRepository.save(prmp("PRMP002", "ANT"));
+        Dossier d = dossier(183, "BROUILLON"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP002"); dossierRepository.save(d);
+        ppmRepository.save(ppm(283, 183, "PRMP002"));
+        mvc.perform(delete("/api/ppms/283").header("Authorization", tokenPrmp)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Suppression PPM — dossier SOUMIS → 409")
+    void ppm_delete_dossierSoumis_409() throws Exception {
+        Dossier d = dossier(184, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        ppmRepository.save(ppm(284, 184, "PRMP001"));
+        mvc.perform(delete("/api/ppms/284").header("Authorization", tokenPrmp)).andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Suppression — portée limitée : autre marché du même PPM et autre PPM de la même PRMP restent intacts")
+    void suppression_voisinsIntacts() throws Exception {
+        Dossier d = dossier(170, "BROUILLON"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        ppmRepository.save(ppm(200, 170, "PRMP001"));
+        ppmRepository.save(ppm(201, 170, "PRMP001"));               // PPM voisin
+        marcheRepository.save(marche(300, 170, 200));
+        marcheRepository.save(marche(301, 170, 200));               // marché voisin (même PPM)
+        marcheRepository.save(marche(302, 170, 201));               // marché du PPM voisin
+        marchePrevisionRepository.save(new MarchePrevision(400, 300, "LANCEMENT", LocalDate.of(2026, 6, 1), null));
+        marchePrevisionRepository.save(new MarchePrevision(401, 301, "LANCEMENT", LocalDate.of(2026, 6, 1), null));
+        marchePrevisionRepository.save(new MarchePrevision(402, 302, "LANCEMENT", LocalDate.of(2026, 6, 1), null));
+
+        // Supprime le marché 300 → 300 + prévision 400 partis ; 301/401 et 302/402 intacts.
+        mvc.perform(delete("/api/marches/300").header("Authorization", tokenPrmp)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(marcheRepository.existsById(300));
+        org.junit.jupiter.api.Assertions.assertTrue(marchePrevisionRepository.findByIdDetail(300).isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(marcheRepository.existsById(301));
+        org.junit.jupiter.api.Assertions.assertFalse(marchePrevisionRepository.findByIdDetail(301).isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(marcheRepository.existsById(302));
+
+        // Supprime le PPM 200 → 200 + marché restant 301 + prévision 401 partis ; PPM 201 + marché 302 + prévision 402 intacts.
+        mvc.perform(delete("/api/ppms/200").header("Authorization", tokenPrmp)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(ppmRepository.existsById(200));
+        org.junit.jupiter.api.Assertions.assertFalse(marcheRepository.existsById(301));
+        org.junit.jupiter.api.Assertions.assertTrue(ppmRepository.existsById(201));
+        org.junit.jupiter.api.Assertions.assertTrue(marcheRepository.existsById(302));
+        org.junit.jupiter.api.Assertions.assertFalse(marchePrevisionRepository.findByIdDetail(302).isEmpty());
     }
 
     // ------------------------------------------------------------------

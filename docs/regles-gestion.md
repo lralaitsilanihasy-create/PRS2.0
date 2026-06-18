@@ -140,6 +140,8 @@ Acteur externe qui soumet ses PPM et marchés à la CNM. Suit l'avancement jusqu
   - En-tête, exercice, signataire, marchés, lots, tranches, SOA bénéficiaires.
 - Détermination automatique du mode [Auto]
   - Suggestion via t_regle_passation selon situation, montant, nature et localité.
+- Suppression d'un marché / d'un PPM [Écriture]
+  - ⚠️ **Règle ajoutée** : possible **uniquement** si le **dossier rattaché est en BROUILLON** et **propriété** de la PRMP (sinon **403** « Vous n'êtes pas le propriétaire… » / **409** « Opération impossible : le dossier n'est pas un brouillon »). Supprimer un **marché** efface **en cascade** ses **dates prévisionnelles** (`t_marche_prevision`) ; supprimer un **PPM** efface **en cascade** ses **marchés** et leurs prévisions — le tout dans la **même transaction** (la cascade ne touche **que** les enfants de la cible). *(Côté SGBD, un filet de sécurité distingue désormais les violations FK / doublon / valeur obligatoire.)*
 
 **Module 03 — Soumission & retours**
 

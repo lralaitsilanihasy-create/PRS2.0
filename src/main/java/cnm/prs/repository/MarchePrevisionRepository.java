@@ -12,4 +12,7 @@ public interface MarchePrevisionRepository extends JpaRepository<MarchePrevision
 
     /** Dates prévisionnelles d'un marché donné. */
     List<MarchePrevision> findByIdDetail(Integer idDetail);
+
+    /** Supprime les dates prévisionnelles d'un marché (cascade applicative à la suppression du marché). */
+    long deleteByIdDetail(Integer idDetail);
 }

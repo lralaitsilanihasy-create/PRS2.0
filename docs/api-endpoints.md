@@ -58,7 +58,8 @@ bruts. Récapitulatif des écritures **désormais restreintes** :
 |---|---|---|
 | `POST /api/saisies/ppm`, `POST /api/saisies/dossier` | *(n'existaient pas)* | **`PRMP`** (façade de saisie) |
 | `POST /api/dossiers`, `PUT /api/dossiers/{id}` | authentifié | **`ADMINISTRATEUR`** |
-| `POST /api/ppms`, `DELETE /api/ppms/{id}` | authentifié | **`ADMINISTRATEUR`** |
+| `POST /api/ppms` | authentifié | **`ADMINISTRATEUR`** |
+| `DELETE /api/ppms/{id}` | authentifié | **`PRMP`** (propriétaire ; dossier en brouillon) |
 | `PUT /api/ppms/{id}` | authentifié | **`PRMP`** ou `ADMINISTRATEUR` |
 | `POST`/`PUT`/`DELETE /api/marches` | authentifié | **`PRMP`** (édition d'un brouillon PPM) |
 | `POST /api/dossiers/{id}/soumettre` | `PRMP` | `PRMP` **propriétaire**, `BROUILLON → SOUMIS` |
@@ -1276,7 +1277,7 @@ dossier/PPM (désormais réservée Admin).
 ---
 
 ## Marchés
-**Ressource** `/api/marches` — Lecture **scopée au périmètre de l'appelant** (⚠️ changement de portée, voir note). **Écriture (POST/PUT/DELETE) réservée `PRMP`** : édition des lignes d'un dossier **PPM en BROUILLON** dont elle est propriétaire (sinon 403/409). Le **mode** est déterminé automatiquement (cf. note ci-dessous).
+**Ressource** `/api/marches` — Lecture **scopée au périmètre de l'appelant** (⚠️ changement de portée, voir note). **Écriture (POST/PUT/DELETE) réservée `PRMP`** : édition des lignes d'un dossier **PPM en BROUILLON** dont elle est propriétaire (sinon 403/409). Le **mode** est déterminé automatiquement (cf. note ci-dessous). ⚠️ **Règle ajoutée** : à la **suppression** (`DELETE`), les **dates prévisionnelles** du marché (`t_marche_prevision`) sont supprimées **en cascade applicative** (même transaction).
 
 > **⚠️ Scoping serveur (changement de portée, §1/§3.1).** `GET /api/marches` ne renvoie **plus toute
 > la table** : Président/Administrateur → tout ; **PRMP → ses marchés** (ceux de ses PPM) ; contrôleur
@@ -1309,7 +1310,7 @@ dossier/PPM (désormais réservée Admin).
 | GET | /api/marches/{id} | — | `MarcheDto` | 200, 403, 404 | Authentifié (dans son périmètre) |
 | POST | /api/marches | `MarcheDto` | `MarcheDto` | 201, 400 | Authentifié |
 | PUT | /api/marches/{id} | `MarcheDto` | `MarcheDto` | 200, 400, 404 | Authentifié |
-| DELETE | /api/marches/{id} | — | — | 204, 404 | Authentifié |
+| DELETE | /api/marches/{id} | — | — | 204, 403, 404, 409 | PRMP (propriétaire, brouillon) — ⚠️ cascade prévisions |
 
 `{id}` = idDetail (number).
 
@@ -1744,7 +1745,7 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 ---
 
 ## PPM
-**Ressource** `/api/ppms` — Lecture **scopée au périmètre de l'appelant** (⚠️ changement de portée, voir note). **`POST` réservé `ADMINISTRATEUR`** (la saisie passe par `/api/saisies/ppm`) ; **`PUT` réservé `PRMP`/`ADMINISTRATEUR`** (édition de l'en-tête d'un brouillon) ; `DELETE` réservé `ADMINISTRATEUR`. Un PPM ne se rattache qu'à un dossier de **type PPM, en BROUILLON, propriété de la PRMP** (sinon **409**/**403**).
+**Ressource** `/api/ppms` — Lecture **scopée au périmètre de l'appelant** (⚠️ changement de portée, voir note). **`POST` réservé `ADMINISTRATEUR`** (la saisie passe par `/api/saisies/ppm`) ; **`PUT` réservé `PRMP`/`ADMINISTRATEUR`** (édition de l'en-tête d'un brouillon) ; **`DELETE` réservé `PRMP` propriétaire** — uniquement si le **dossier rattaché est en BROUILLON** (sinon **403**/**409**), avec ⚠️ **cascade** des marchés du PPM **et** de leurs dates prévisionnelles (même transaction). Un PPM ne se rattache qu'à un dossier de **type PPM, en BROUILLON, propriété de la PRMP** (sinon **409**/**403**).
 
 > **⚠️ Scoping serveur (changement de portée, §1/§3.1).** `GET /api/ppms` ne renvoie **plus toute la
 > table** : Président/Administrateur → tout ; **PRMP → les siens** (`t_ppm.ID_PRMP`, brouillons compris) ;
@@ -1781,7 +1782,7 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | GET | /api/ppms/{id} | — | `PpmDto` | 200, 403, 404 | Authentifié (dans son périmètre) |
 | POST | /api/ppms | `PpmDto` | `PpmDto` | 201, 400 | Authentifié |
 | PUT | /api/ppms/{id} | `PpmDto` | `PpmDto` | 200, 400, 404 | Authentifié |
-| DELETE | /api/ppms/{id} | — | — | 204, 404 | Authentifié |
+| DELETE | /api/ppms/{id} | — | — | 204, 403, 404, 409 | PRMP (propriétaire, brouillon) — ⚠️ cascade marchés + prévisions |
 
 `{id}` = idPpm (number).
 
