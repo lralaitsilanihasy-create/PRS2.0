@@ -316,7 +316,7 @@ Subordonné du Président. Rattaché à une localité définie — ne voit que l
 **Module 11 — Gestion des retraits PRMP**
 
 - Notification demande de retrait [Lecture]
-  - Reçoit DEMANDE_RETRAIT dès qu'une PRMP de sa localité soumet une demande motivée (le **Président** est également notifié). File à valider : `GET /api/demande-retraits/a-valider` (scopée à la localité du dossier) ; historique : `…/historique`.
+  - Reçoit DEMANDE_RETRAIT_A_VALIDER dès qu'une PRMP de sa localité soumet une demande motivée (le **Président** est également notifié). File à valider : `GET /api/demande-retraits/a-valider` (scopée à la localité du dossier) ; historique : `…/historique`.
 - Validation ou rejet du retrait [Action]
   - ⚠️ **Règle ajoutée** : décision via **`POST /{id}/accepter`** ou **`POST /{id}/refuser`** (le `PUT` générique est supprimé). **Seuls le CC de la localité du dossier ou le Président** peuvent statuer (contrôle rôle↔localité **dans le service**, sinon 403) ; le décideur réel (CC **ou** Président) est enregistré dans `IM_CTRL_CC` depuis le **JWT**. **Accepter → dossier `BROUILLON`** ; refuser → dossier inchangé + motif (optionnel). Demande déjà traitée → 409.
 - Notification décision à la PRMP [Auto]
@@ -338,7 +338,7 @@ Subordonné du Président. Rattaché à une localité définie — ne voit que l
 **Module 04 — Messagerie**
 
 - Notifications reçues [Lecture]
-  - PRET_DISPATCH, DISPATCH_CC, DEMANDE_RETRAIT et autres alertes de sa localité.
+  - PRET_DISPATCH, DISPATCH_CC, DEMANDE_RETRAIT_A_VALIDER et autres alertes de sa localité.
 - Messagerie interne [Action]
   - Échange avec le Président, ses Membres et ses Vérificateurs.
 

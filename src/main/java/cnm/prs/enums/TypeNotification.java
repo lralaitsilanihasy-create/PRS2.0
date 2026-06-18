@@ -14,8 +14,8 @@ public enum TypeNotification {
     /** Copie de dispatch reçue par le CC (§3.3). */
     DISPATCH_CC,
 
-    /** Demande de retrait soumise par une PRMP — vers le CC (§3.3). */
-    DEMANDE_RETRAIT,
+    /** Demande de retrait à valider, soumise par une PRMP — vers le CC de la localité + Président (§3.3). */
+    DEMANDE_RETRAIT_A_VALIDER,
 
     /** Retrait accepté par le décideur (CC localité ou Président) — vers la PRMP (§3.1, §3.3). */
     RETRAIT_ACCEPTE,

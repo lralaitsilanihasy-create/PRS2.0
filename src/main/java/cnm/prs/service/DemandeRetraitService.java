@@ -129,7 +129,7 @@ public class DemandeRetraitService {
             destinataires.addAll(controleurDirectory.chefsCommission(localite));
         }
         for (Controleur c : destinataires) {
-            notificationService.emettre(demande.getIdDossier(), TypeNotification.DEMANDE_RETRAIT,
+            notificationService.emettre(demande.getIdDossier(), TypeNotification.DEMANDE_RETRAIT_A_VALIDER,
                     c.getImControleur(), c.getEmailCont(), titre, corps);
         }
     }

@@ -1434,7 +1434,7 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Demande de retrait — création OK : identité JWT, EN_ATTENTE, notif DEMANDE_RETRAIT au CC + Président")
+    @DisplayName("Demande de retrait — création OK : identité JWT, EN_ATTENTE, notif DEMANDE_RETRAIT_A_VALIDER au CC + Président")
     void retrait_creation_ok() throws Exception {
         Dossier d = dossier(120, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
         dossierRepository.save(d);
@@ -1445,8 +1445,8 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$.statut").value("EN_ATTENTE"))
                 .andExpect(jsonPath("$.idPrmp").value("PRMP001"));
         mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
-                .andExpect(jsonPath("$[?(@.typeNotif=='DEMANDE_RETRAIT')].destinataireIm", hasItem("CTRCC1")))
-                .andExpect(jsonPath("$[?(@.typeNotif=='DEMANDE_RETRAIT')].destinataireIm", hasItem("CTRPRE")));
+                .andExpect(jsonPath("$[?(@.typeNotif=='DEMANDE_RETRAIT_A_VALIDER')].destinataireIm", hasItem("CTRCC1")))
+                .andExpect(jsonPath("$[?(@.typeNotif=='DEMANDE_RETRAIT_A_VALIDER')].destinataireIm", hasItem("CTRPRE")));
     }
 
     @Test

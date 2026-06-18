@@ -1662,7 +1662,7 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | `CLOTURE_ELIGIBLE` | dossier clôturé éligible | Chargé de publication | DOSSIER |
 | `NOUVEAU_MESSAGE` | message reçu (messagerie) | destinataire | MESSAGE |
 
-*(Autres types existants : `NOUVELLE_INSCRIPTION`, `INSCRIPTION_VALIDEE/REFUSEE`, `DEMANDE_RETRAIT`, `RETRAIT_ACCEPTE/REFUSE`, `MODE_NON_DETERMINE`, `FIN_MANDAT`, `ALERTE_DELAI`, `DISPATCH_CC`.)*
+*(Autres types existants : `NOUVELLE_INSCRIPTION`, `INSCRIPTION_VALIDEE/REFUSEE`, `DEMANDE_RETRAIT_A_VALIDER`, `RETRAIT_ACCEPTE/REFUSE`, `MODE_NON_DETERMINE`, `FIN_MANDAT`, `ALERTE_DELAI`, `DISPATCH_CC`.)*
 
 **Exemple — réponse `/mes`**
 ```json
