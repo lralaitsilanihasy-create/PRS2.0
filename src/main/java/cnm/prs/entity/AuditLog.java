@@ -31,7 +31,7 @@ public class AuditLog {
     @Column(name = "DATE_ACTION", nullable = false)
     private LocalDateTime dateAction;
 
-    @Column(name = "IM_ACTEUR", length = 7)
+    @Column(name = "IM_ACTEUR", length = 10)
     private String imActeur;
 
     @Column(name = "NOM_TABLE", length = 50)
@@ -40,7 +40,7 @@ public class AuditLog {
     @Column(name = "ID_ENREGISTREMENT", length = 20)
     private String idEnregistrement;
 
-    @Column(name = "TYPE_ACTION", length = 10)
+    @Column(name = "TYPE_ACTION", length = 30)
     private String typeAction;
 
     @Column(name = "CHAMP_MODIFIE", length = 50)

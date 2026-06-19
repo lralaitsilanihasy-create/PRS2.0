@@ -18,6 +18,13 @@ public interface VerificationRepository extends JpaRepository<Verification, Inte
     @Query("select (count(v) > 0) from Verification v where v.idVerification = :id and v.reception.ctrlRecept.idLocalite = :loc")
     boolean existsDansLocalite(@Param("id") Integer id, @Param("loc") String loc);
 
+    /** Passages (vérifications) d'un dossier, le plus récent d'abord — pour retrouver la dernière vérification. */
+    @Query("""
+            select v from Verification v where v.reception.idDossier = :idDossier
+            order by v.dateVerif desc, v.idVerification desc
+            """)
+    List<Verification> findPassagesDuDossier(@Param("idDossier") Integer idDossier);
+
     /** Nombre de dossiers conformes : ayant une vérification avec OBS_LEVEES = true (§3.2). */
     @Query("select count(distinct v.reception.idDossier) from Verification v where v.obsLevees = true")
     long compterDossiersConformes();

@@ -1,6 +1,7 @@
 package cnm.prs.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
@@ -11,9 +12,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.DossierDto;
+import cnm.prs.entity.AuditLog;
 import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Ppm;
+import cnm.prs.entity.Prmp;
+import cnm.prs.entity.Verification;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.TypeNotification;
@@ -21,8 +25,11 @@ import cnm.prs.exception.BadRequestException;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.DossierMapper;
+import cnm.prs.repository.AuditLogRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.PpmRepository;
+import cnm.prs.repository.PrmpRepository;
+import cnm.prs.repository.VerificationRepository;
 import cnm.prs.security.CurrentUser;
 
 /**
@@ -37,15 +44,22 @@ public class DossierService {
     private final ControleurDirectory controleurDirectory;
     private final NotificationService notificationService;
     private final DossierIntegriteService dossierIntegrite;
+    private final VerificationRepository verificationRepository;
+    private final AuditLogRepository auditLogRepository;
+    private final PrmpRepository prmpRepository;
 
     public DossierService(DossierRepository repository, PpmRepository ppmRepository,
             ControleurDirectory controleurDirectory, NotificationService notificationService,
-            DossierIntegriteService dossierIntegrite) {
+            DossierIntegriteService dossierIntegrite, VerificationRepository verificationRepository,
+            AuditLogRepository auditLogRepository, PrmpRepository prmpRepository) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.controleurDirectory = controleurDirectory;
         this.notificationService = notificationService;
         this.dossierIntegrite = dossierIntegrite;
+        this.verificationRepository = verificationRepository;
+        this.auditLogRepository = auditLogRepository;
+        this.prmpRepository = prmpRepository;
     }
 
     /**
@@ -304,5 +318,76 @@ public class DossierService {
             notificationService.emettre(dossier.getIdDossier(), TypeNotification.DOSSIER_SOUMIS,
                     cc.getImControleur(), cc.getEmailCont(), titre, corps);
         }
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — resoumission par la PRMP d'un dossier {@code EN_ATTENTE_DECISION_PRMP} après
+     * rectification. Motif obligatoire (sinon 400) ; transition → {@code EN_VERIFICATION} ; notifie le
+     * vérificateur du dossier ; trace l'événement dans {@code t_audit_log} ; enregistre le motif sur la
+     * dernière vérification (passage) pour qu'il soit visible côté vérificateur.
+     */
+    public DossierDto resoumettre(Integer idDossier, String motifRectification) {
+        if (motifRectification == null || motifRectification.isBlank()) {
+            throw new BadRequestException("Le motif de rectification est obligatoire.");
+        }
+        Dossier dossier = repository.findById(idDossier)
+                .orElseThrow(() -> new ResourceNotFoundException("Dossier introuvable : " + idDossier));
+        String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank())
+                .orElseThrow(() -> new AccessDeniedException("Utilisateur PRMP non identifié."));
+        dossierIntegrite.exigerProprietaire(dossier);
+        if (!StatutDossier.EN_ATTENTE_DECISION_PRMP.name().equals(dossier.getStatut())) {
+            throw new BusinessRuleException(
+                    "Resoumission impossible : le dossier n'est pas en attente de décision PRMP (statut « "
+                            + dossier.getStatut() + " »).");
+        }
+        dossier.setStatut(StatutDossier.EN_VERIFICATION.name());
+        repository.save(dossier);
+
+        // Dernière vérification (le passage obsLevees=false qui a déclenché l'attente).
+        Verification derniere = verificationRepository.findPassagesDuDossier(idDossier).stream()
+                .findFirst().orElse(null);
+        if (derniere != null) {
+            derniere.setMotifRectif(motifRectification);   // visible dans les passages côté vérificateur
+            verificationRepository.save(derniere);
+        }
+        notifierRectification(dossier, derniere, idPrmp, motifRectification);
+        tracerRectification(dossier, idPrmp, motifRectification);
+        return DossierMapper.toDto(dossier);
+    }
+
+    /** Notifie le vérificateur du dossier (dernier vérificateur ; sinon les vérificateurs de la localité). */
+    private void notifierRectification(Dossier dossier, Verification derniere, String idPrmp, String motif) {
+        String nomPrmp = prmpRepository.findById(idPrmp)
+                .map(p -> ((p.getPrenomsPrmp() == null ? "" : p.getPrenomsPrmp() + " ")
+                        + (p.getNomPrmp() == null ? "" : p.getNomPrmp())).trim())
+                .filter(s -> !s.isBlank()).orElse(idPrmp);
+        String ref = dossier.getRefeDossier() != null ? dossier.getRefeDossier() : ("n° " + dossier.getIdDossier());
+        String titre = "Dossier rectifié par la PRMP — à re-vérifier";
+        String corps = "Dossier " + ref + " — la PRMP " + nomPrmp + " a rectifié le dossier le "
+                + LocalDate.now() + ". Motif : " + motif + ". Le dossier revient en vérification.";
+        String imVerif = derniere == null ? null : derniere.getImCtrlVerif();
+        if (imVerif != null && !imVerif.isBlank()) {
+            notificationService.emettre(dossier.getIdDossier(), TypeNotification.RECTIFICATION_PRMP,
+                    imVerif, null, titre, corps);
+        } else {
+            for (Controleur v : controleurDirectory.verificateurs(dossier.getIdLocalite())) {
+                notificationService.emettre(dossier.getIdDossier(), TypeNotification.RECTIFICATION_PRMP,
+                        v.getImControleur(), v.getEmailCont(), titre, corps);
+            }
+        }
+    }
+
+    /** Trace la rectification dans {@code t_audit_log} (NOM_TABLE=t_dossier, TYPE_ACTION=RECTIFICATION_PRMP). */
+    private void tracerRectification(Dossier dossier, String idPrmp, String motif) {
+        AuditLog log = new AuditLog();
+        log.setIdLog(auditLogRepository.findMaxId() + 1);
+        log.setDateAction(LocalDateTime.now());
+        log.setImActeur(idPrmp);                          // <id PRMP>
+        log.setNomTable("t_dossier");
+        log.setIdEnregistrement(String.valueOf(dossier.getIdDossier()));
+        log.setTypeAction("RECTIFICATION_PRMP");
+        log.setChampModifie("motifRectification");
+        log.setNouvelleValeur(motif);
+        auditLogRepository.save(log);
     }
 }

@@ -49,6 +49,10 @@ public class Verification {
     @Column(name = "OBS_LEVEES")
     private Boolean obsLevees;
 
+    /** ⚠️ Règle ajoutée — motif de rectification saisi par la PRMP à la resoumission (visible côté vérificateur). */
+    @Column(name = "MOTIF_RECTIF", length = 255)
+    private String motifRectif;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_PV", insertable = false, updatable = false)
     @JsonIgnore

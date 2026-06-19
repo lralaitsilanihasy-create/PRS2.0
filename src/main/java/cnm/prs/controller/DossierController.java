@@ -20,6 +20,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import jakarta.validation.Valid;
 
 import cnm.prs.dto.DossierDto;
+import cnm.prs.dto.DossierResoumissionRequest;
 import cnm.prs.service.DossierService;
 
 /**
@@ -126,5 +127,12 @@ public class DossierController {
     @PostMapping("/{id}/soumettre")
     public DossierDto soumettre(@PathVariable Integer id) {
         return service.soumettre(id);
+    }
+
+    /** Resoumission PRMP d'un dossier rectifié (EN_ATTENTE_DECISION_PRMP → EN_VERIFICATION). Motif obligatoire. */
+    @PreAuthorize("hasRole('PRMP')")
+    @PostMapping("/{id}/resoumettre")
+    public DossierDto resoumettre(@PathVariable Integer id, @Valid @RequestBody DossierResoumissionRequest req) {
+        return service.resoumettre(id, req.motifRectification());
     }
 }

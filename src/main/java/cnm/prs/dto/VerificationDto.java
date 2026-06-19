@@ -32,4 +32,8 @@ public class VerificationDto {
     private String observation;
 
     private Boolean obsLevees;
+
+    /** Motif de rectification saisi par la PRMP à la resoumission (visible côté vérificateur ; posé serveur). */
+    @Size(max = 255)
+    private String motifRectif;
 }

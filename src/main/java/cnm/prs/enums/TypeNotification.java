@@ -72,5 +72,8 @@ public enum TypeNotification {
     PV_POUR_INFO,
 
     /** Observations de vérification non levées à traiter — vers la PRMP du dossier (⚠️ règle ajoutée). */
-    OBSERVATION_VERIFICATION
+    OBSERVATION_VERIFICATION,
+
+    /** Dossier rectifié par la PRMP et resoumis — vers le vérificateur du dossier (⚠️ règle ajoutée). */
+    RECTIFICATION_PRMP
 }

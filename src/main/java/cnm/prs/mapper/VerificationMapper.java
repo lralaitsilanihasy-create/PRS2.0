@@ -23,6 +23,7 @@ public final class VerificationMapper {
         dto.setDateVerif(entity.getDateVerif());
         dto.setObservation(entity.getObservation());
         dto.setObsLevees(entity.getObsLevees());
+        dto.setMotifRectif(entity.getMotifRectif());
         return dto;
     }
 

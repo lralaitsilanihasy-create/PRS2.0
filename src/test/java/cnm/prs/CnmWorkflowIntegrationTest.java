@@ -1949,6 +1949,57 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(1)));
     }
 
+    /** Amène le dossier 1 à EN_ATTENTE_DECISION_PRMP (PV FAVR signé + vérif obsLevees=false par CTRVER). */
+    private void dossier1EnAttenteDecisionPrmp(int idPv, String tokenVer) throws Exception {
+        signerPvAvecAvis(idPv, "FAVR");
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":" + idPv + ",\"observation\":\"averina\",\"obsLevees\":false}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("Resoumission PRMP : EN_ATTENTE_DECISION_PRMP → EN_VERIFICATION + notif vérificateur + audit + motif visible")
+    void resoumission_retourEnVerification() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        dossier1EnAttenteDecisionPrmp(85, tokenVer);
+
+        mvc.perform(post("/api/dossiers/1/resoumettre").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"motifRectification\":\"corrige\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("EN_VERIFICATION"));
+        // Notif RECTIFICATION_PRMP au vérificateur du dossier (CTRVER).
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='RECTIFICATION_PRMP')].destinataireIm", hasItem("CTRVER")));
+        // Motif visible sur le passage côté vérificateur.
+        mvc.perform(get("/api/verifications").header("Authorization", tokenVer))
+                .andExpect(jsonPath("$[?(@.idPv==85)].motifRectif", hasItem("corrige")));
+        // Le vérificateur peut de nouveau vérifier (dossier de retour en EN_VERIFICATION).
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":85,\"observation\":\"ok\",\"obsLevees\":true}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenVer))
+                .andExpect(jsonPath("$.statut").value("CLOTURE"));
+    }
+
+    @Test
+    @DisplayName("Resoumission PRMP : motif vide → 400")
+    void resoumission_motifVide_400() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        dossier1EnAttenteDecisionPrmp(86, tokenVer);
+        mvc.perform(post("/api/dossiers/1/resoumettre").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"motifRectification\":\"\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Resoumission PRMP : dossier hors EN_ATTENTE_DECISION_PRMP (EN_VERIFICATION) → 409")
+    void resoumission_horsAttente_409() throws Exception {
+        signerPvAvecAvis(87, "FAVR"); // dossier 1 → EN_VERIFICATION (pas EN_ATTENTE)
+        mvc.perform(post("/api/dossiers/1/resoumettre").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"motifRectification\":\"corrige\"}"))
+                .andExpect(status().isConflict());
+    }
+
     @Test
     @DisplayName("Vérification : identité enregistrée = JWT (CurrentUser.ref), jamais le corps ; ID auto-généré")
     void verif_identiteDepuisJwt() throws Exception {
