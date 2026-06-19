@@ -1,6 +1,7 @@
 package cnm.prs.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -8,17 +9,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.VerificationDto;
+import cnm.prs.entity.AuditLog;
 import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Dossier;
+import cnm.prs.entity.Prmp;
+import cnm.prs.entity.Reception;
 import cnm.prs.entity.Verification;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.StatutPv;
 import cnm.prs.enums.TypeNotification;
+import cnm.prs.enums.TypeObjet;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.VerificationMapper;
+import cnm.prs.repository.AuditLogRepository;
 import cnm.prs.repository.DossierRepository;
+import cnm.prs.repository.PrmpRepository;
 import cnm.prs.repository.PvExamenRepository;
 import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.repository.VerificationRepository;
@@ -38,16 +45,21 @@ public class VerificationService {
     private final PvExamenRepository pvExamenRepository;
     private final ControleurDirectory controleurDirectory;
     private final NotificationService notificationService;
+    private final AuditLogRepository auditLogRepository;
+    private final PrmpRepository prmpRepository;
 
     public VerificationService(VerificationRepository repository, ReceptionRepository receptionRepository,
             DossierRepository dossierRepository, PvExamenRepository pvExamenRepository,
-            ControleurDirectory controleurDirectory, NotificationService notificationService) {
+            ControleurDirectory controleurDirectory, NotificationService notificationService,
+            AuditLogRepository auditLogRepository, PrmpRepository prmpRepository) {
         this.repository = repository;
         this.receptionRepository = receptionRepository;
         this.dossierRepository = dossierRepository;
         this.pvExamenRepository = pvExamenRepository;
         this.controleurDirectory = controleurDirectory;
         this.notificationService = notificationService;
+        this.auditLogRepository = auditLogRepository;
+        this.prmpRepository = prmpRepository;
     }
 
     @Transactional(readOnly = true)
@@ -74,7 +86,7 @@ public class VerificationService {
         entity.setImCtrlVerif(verificateurAuthentifie());  // identité = JWT, jamais le corps
         entity.setDateVerif(LocalDate.now());              // date serveur
         Verification saved = repository.save(entity);
-        declencherCloture(saved);
+        traiterApresPassage(saved);
         return VerificationMapper.toDto(saved);
     }
 
@@ -117,8 +129,11 @@ public class VerificationService {
         Integer idDossier = pvExamenRepository.findIdDossierByPv(idPv).orElse(null);
         String statut = idDossier == null ? null
                 : dossierRepository.findById(idDossier).map(Dossier::getStatut).orElse(null);
-        if (StatutDossier.CLOTURE.name().equals(statut)) {
-            throw new BusinessRuleException("Vérification impossible : le dossier est déjà clôturé.");
+        // ⚠️ Règle ajoutée — la vérification n'est possible que sur un dossier EN_VERIFICATION :
+        // une fois EN_ATTENTE_DECISION_PRMP (obs. non levées) ou CLOTURE, le vérificateur ne peut plus agir.
+        if (!StatutDossier.EN_VERIFICATION.name().equals(statut)) {
+            throw new BusinessRuleException(
+                    "Vérification impossible : le dossier n'est pas en vérification (statut « " + statut + " »).");
         }
     }
 
@@ -136,7 +151,7 @@ public class VerificationService {
         existing.setObservation(dto.getObservation());
         existing.setObsLevees(dto.getObsLevees());
         Verification saved = repository.save(existing);
-        declencherCloture(saved);
+        traiterApresPassage(saved);
         return VerificationMapper.toDto(saved);
     }
 
@@ -148,33 +163,71 @@ public class VerificationService {
     }
 
     /**
-     * Comportement {@code [Auto]} (§2.8 / §3.6) : lorsque les observations sont levées
-     * ({@code OBS_LEVEES = true}), le dossier rattaché passe automatiquement au statut
-     * {@code CLOTURE}. Le dossier est atteint via la réception
-     * ({@code idReception → t_reception.ID_DOSSIER}).
-     *
-     * <p>NB : le cas {@code OBS_LEVEES = false} (« nouveau passage, NUM_PASSAGE + 1 »,
-     * §3.6) n'est pas automatisé ici — la valeur de TYPE_PASSAGE d'un passage de retour
-     * n'est pas spécifiée dans les règles (ambiguïté signalée au Lot 2).</p>
+     * Comportement {@code [Auto]} (§3.6) après un passage de vérification, sur un dossier
+     * {@code EN_VERIFICATION} (idempotent : les autres statuts ne sont pas réécrits) :
+     * <ul>
+     *   <li>{@code OBS_LEVEES = true} → dossier {@code CLOTURE} + alerte clôture éligible ;</li>
+     *   <li>⚠️ règle ajoutée — {@code OBS_LEVEES = false} → dossier {@code EN_ATTENTE_DECISION_PRMP} :
+     *       l'observation est transmise à la PRMP ({@code OBSERVATION_VERIFICATION}) et l'événement est
+     *       tracé dans {@code t_audit_log}. Le vérificateur ne peut plus agir tant que la PRMP n'a pas statué.</li>
+     * </ul>
      */
-    private void declencherCloture(Verification verification) {
-        if (!Boolean.TRUE.equals(verification.getObsLevees()) || verification.getIdReception() == null) {
+    private void traiterApresPassage(Verification verification) {
+        if (verification.getIdReception() == null) {
             return;
         }
-        receptionRepository.findById(verification.getIdReception()).ifPresent(reception -> {
-            if (reception.getIdDossier() == null) {
+        Integer idDossier = receptionRepository.findById(verification.getIdReception())
+                .map(Reception::getIdDossier).orElse(null);
+        if (idDossier == null) {
+            return;
+        }
+        dossierRepository.findById(idDossier).ifPresent(dossier -> {
+            if (!StatutDossier.EN_VERIFICATION.name().equals(dossier.getStatut())) {
                 return;
             }
-            dossierRepository.findById(reception.getIdDossier()).ifPresent(dossier -> {
-                // ⚠️ Règle ajoutée — la clôture par observations levées ne s'applique qu'à un dossier
-                // EN_VERIFICATION (les autres statuts ne sont pas réécrits).
-                if (StatutDossier.EN_VERIFICATION.name().equals(dossier.getStatut())) {
-                    dossier.setStatut(StatutDossier.CLOTURE.name());
-                    dossierRepository.save(dossier);
-                    notifierClotureEligible(dossier.getIdDossier());
-                }
-            });
+            if (Boolean.TRUE.equals(verification.getObsLevees())) {
+                dossier.setStatut(StatutDossier.CLOTURE.name());
+                dossierRepository.save(dossier);
+                notifierClotureEligible(dossier.getIdDossier());
+            } else {
+                dossier.setStatut(StatutDossier.EN_ATTENTE_DECISION_PRMP.name());
+                dossierRepository.save(dossier);
+                notifierObservationPrmp(dossier, verification);
+                tracerObservationNonLevee(dossier, verification);
+            }
         });
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — transmet l'observation non levée à la PRMP du dossier (via PV → PPM → PRMP) :
+     * référence dossier, vérificateur, texte de l'observation, date.
+     */
+    private void notifierObservationPrmp(Dossier dossier, Verification v) {
+        String ref = dossier.getRefeDossier() != null ? dossier.getRefeDossier() : ("n° " + dossier.getIdDossier());
+        String titre = "Observations de vérification à traiter";
+        String corps = "Dossier " + ref + " — le vérificateur " + v.getImCtrlVerif()
+                + " a relevé des observations non levées le " + v.getDateVerif()
+                + " : « " + (v.getObservation() == null ? "" : v.getObservation())
+                + " ». Veuillez rectifier le dossier puis décider de la suite.";
+        for (String idPrmp : pvExamenRepository.findIdPrmpByPv(v.getIdPv())) {
+            String email = prmpRepository.findById(idPrmp).map(Prmp::getEmailPrmp).orElse(null);
+            notificationService.emettrePrmp(TypeNotification.OBSERVATION_VERIFICATION, idPrmp, email,
+                    dossier.getIdDossier(), TypeObjet.DOSSIER, dossier.getIdDossier(), titre, corps);
+        }
+    }
+
+    /** ⚠️ Règle ajoutée — trace l'observation non levée dans {@code t_audit_log} (D1, option a). */
+    private void tracerObservationNonLevee(Dossier dossier, Verification v) {
+        AuditLog log = new AuditLog();
+        log.setIdLog(auditLogRepository.findMaxId() + 1);
+        log.setDateAction(LocalDateTime.now());
+        log.setImActeur(v.getImCtrlVerif());
+        log.setNomTable("t_verification");
+        log.setIdEnregistrement(v.getIdVerification() == null ? null : String.valueOf(v.getIdVerification()));
+        log.setTypeAction("UPDATE");                       // TYPE_ACTION length 10 — libellé complet en CHAMP_MODIFIE
+        log.setChampModifie("OBSERVATION_NON_LEVEE");
+        log.setNouvelleValeur(v.getObservation());
+        auditLogRepository.save(log);
     }
 
     /**

@@ -229,4 +229,15 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
     /** Prochaine PK dossier, allouée par la séquence serveur (Voie B — l'id client est ignoré). */
     @Query(value = "select nextval('seq_dossier')", nativeQuery = true)
     Long nextIdDossier();
+
+    /**
+     * File « en attente PRMP » du Vérificateur (⚠️ règle ajoutée), lecture seule : dossiers
+     * {@code EN_ATTENTE_DECISION_PRMP} de la localité (observations non levées, en attente de décision PRMP).
+     */
+    @Query("""
+            select d from Dossier d where d.statut = 'EN_ATTENTE_DECISION_PRMP'
+              and exists (select 1 from Reception r
+                          where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :loc)
+            """)
+    List<Dossier> findEnAttentePrmpParLocalite(@Param("loc") String loc);
 }

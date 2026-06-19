@@ -69,5 +69,8 @@ public enum TypeNotification {
     PV_A_VERIFIER,
 
     /** PV signé, dossier auto-clôturé — vers le Vérificateur pour information/lecture seule (⚠️ règle ajoutée). */
-    PV_POUR_INFO
+    PV_POUR_INFO,
+
+    /** Observations de vérification non levées à traiter — vers la PRMP du dossier (⚠️ règle ajoutée). */
+    OBSERVATION_VERIFICATION
 }

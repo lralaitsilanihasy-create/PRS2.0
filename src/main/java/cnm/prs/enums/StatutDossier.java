@@ -49,6 +49,13 @@ public enum StatutDossier {
      */
     EN_VERIFICATION,
 
+    /**
+     * ⚠️ Règle ajoutée — observations de vérification NON levées : le dossier sort du circuit
+     * vérificateur et attend que la PRMP prenne connaissance des observations, rectifie, puis
+     * décide de la suite (renvoyer en vérification ou clôturer). Non re-vérifiable par le vérificateur.
+     */
+    EN_ATTENTE_DECISION_PRMP,
+
     /** §3.3 — retrait approuvé par le Chef de commission. */
     RETIRE,
 

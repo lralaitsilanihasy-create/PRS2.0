@@ -80,6 +80,13 @@ public class DossierController {
         return service.verifies(pageable);
     }
 
+    /** File « En attente PRMP » du Vérificateur (lecture seule) : dossiers EN_ATTENTE_DECISION_PRMP de sa localité. */
+    @PreAuthorize("@perm.peutExercer('VERIFICATEUR') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/en-attente-prmp")
+    public List<DossierDto> enAttentePrmp() {
+        return service.enAttentePrmp();
+    }
+
     /** Liste déroulante « dossiers retirables » de la PRMP (SOUMIS/PRET_DISPATCH dont elle est propriétaire). */
     @PreAuthorize("hasRole('PRMP')")
     @GetMapping("/retirables")

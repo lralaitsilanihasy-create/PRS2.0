@@ -168,6 +168,14 @@ public class DossierService {
         return repository.findVerifiesParLocalite(localite, pageable).map(DossierMapper::toDto);
     }
 
+    /** File « En attente PRMP » du Vérificateur (lecture seule) : dossiers EN_ATTENTE_DECISION_PRMP de sa localité. */
+    @Transactional(readOnly = true)
+    public List<DossierDto> enAttentePrmp() {
+        String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+        return localite == null ? List.of()
+                : repository.findEnAttentePrmpParLocalite(localite).stream().map(DossierMapper::toDto).toList();
+    }
+
     /** Liste déroulante « dossiers retirables » de la PRMP connectée (SOUMIS/PRET_DISPATCH dont elle est propriétaire). */
     @Transactional(readOnly = true)
     public List<DossierDto> retirables() {

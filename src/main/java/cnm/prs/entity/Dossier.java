@@ -45,7 +45,7 @@ public class Dossier {
     @Column(name = "DATE_REF")
     private LocalDate dateRef;
 
-    @Column(name = "STATUT", length = 20)
+    @Column(name = "STATUT", length = 30)
     private String statut;
 
     /** Localité du dossier (§1). Renseignée à la soumission ; rend le dossier visible/réceptionnable
