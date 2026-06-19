@@ -2046,11 +2046,14 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(get("/api/dossiers/1/historique-echanges").header("Authorization", tokenVer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(5))
-                .andExpect(jsonPath("$[?(@.type=='OBSERVATION' && @.texte=='obs1' && @.obsLevees==false)]", hasSize(1)))
-                .andExpect(jsonPath("$[?(@.type=='OBSERVATION' && @.texte=='obs2' && @.obsLevees==false)]", hasSize(1)))
-                .andExpect(jsonPath("$[?(@.type=='OBSERVATION' && @.texte=='final' && @.obsLevees==true)]", hasSize(1)))
-                .andExpect(jsonPath("$[?(@.type=='RECTIFICATION' && @.texte=='rect1' && @.acteur=='PRMP001')]", hasSize(1)))
-                .andExpect(jsonPath("$[?(@.type=='RECTIFICATION' && @.texte=='rect2')]", hasSize(1)));
+                // Fil entrelacé (chaîne de réponse) : obs1, rect1, obs2, rect2, final.
+                .andExpect(jsonPath("$[0].type").value("OBSERVATION")).andExpect(jsonPath("$[0].texte").value("obs1"))
+                .andExpect(jsonPath("$[1].type").value("RECTIFICATION")).andExpect(jsonPath("$[1].texte").value("rect1"))
+                .andExpect(jsonPath("$[1].acteur").value("PRMP001"))
+                .andExpect(jsonPath("$[2].type").value("OBSERVATION")).andExpect(jsonPath("$[2].texte").value("obs2"))
+                .andExpect(jsonPath("$[3].type").value("RECTIFICATION")).andExpect(jsonPath("$[3].texte").value("rect2"))
+                .andExpect(jsonPath("$[4].type").value("OBSERVATION")).andExpect(jsonPath("$[4].texte").value("final"))
+                .andExpect(jsonPath("$[4].obsLevees").value(true));
         // Accessible aussi par la PRMP.
         mvc.perform(get("/api/dossiers/1/historique-echanges").header("Authorization", tokenPrmp))
                 .andExpect(status().isOk())

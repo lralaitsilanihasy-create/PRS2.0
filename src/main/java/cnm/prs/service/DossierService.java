@@ -2,9 +2,10 @@ package cnm.prs.service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 
@@ -408,30 +409,35 @@ public class DossierService {
         if (!StatutDossier.CLOTURE.name().equals(dossier.getStatut())) {
             throw new AccessDeniedException("Historique disponible uniquement pour un dossier clôturé.");
         }
+        // Vérifications (passages) par ordre de création croissant (la requête renvoie DESC).
+        List<Verification> passages = verificationRepository.findPassagesDuDossier(idDossier).stream()
+                .sorted(Comparator.comparing(Verification::getIdVerification))
+                .toList();
+        // Rectifications PRMP par horodatage croissant → file de réponse.
+        Deque<AuditLog> rectifications = new ArrayDeque<>(
+                auditLogRepository.findRectificationsDossier(String.valueOf(idDossier)));
+
+        // ⚠️ Fil entrelacé par chaîne de réponse : chaque vérification, puis (si elle porte un motif) la
+        // rectification PRMP qui lui répond — la k-ᵉ vérification motivée ↔ la k-ᵉ rectification.
         List<EchangeDto> echanges = new ArrayList<>();
-        // Observations (passages) en ordre de création croissant (findPassagesDuDossier renvoie DESC).
-        List<Verification> passages = new ArrayList<>(verificationRepository.findPassagesDuDossier(idDossier));
-        Collections.reverse(passages);
         for (Verification v : passages) {
             echanges.add(new EchangeDto("OBSERVATION",
                     v.getDateVerif() == null ? null : v.getDateVerif().toString(),
                     v.getImCtrlVerif(), v.getObservation(), v.getObsLevees()));
+            if (v.getMotifRectif() != null && !v.getMotifRectif().isBlank() && !rectifications.isEmpty()) {
+                echanges.add(toRectificationEchange(rectifications.poll()));
+            }
         }
-        // Rectifications PRMP (audit), déjà triées ASC.
-        for (AuditLog a : auditLogRepository.findRectificationsDossier(String.valueOf(idDossier))) {
-            echanges.add(new EchangeDto("RECTIFICATION",
-                    a.getDateAction() == null ? null : a.getDateAction().toString(),
-                    a.getImActeur(), a.getNouvelleValeur(), null));
+        // Sécurité : rectifications restantes (appariement imparfait sur données anciennes) en fin.
+        while (!rectifications.isEmpty()) {
+            echanges.add(toRectificationEchange(rectifications.poll()));
         }
-        echanges.sort(Comparator.comparing(this::cleTemps));   // tri stable ASC (date)
         return echanges;
     }
 
-    /** Clé temporelle : OBSERVATION = date jour → début de journée ; RECTIFICATION = horodatage ISO. */
-    private LocalDateTime cleTemps(EchangeDto e) {
-        if (e.date() == null) {
-            return LocalDateTime.MIN;
-        }
-        return e.date().length() > 10 ? LocalDateTime.parse(e.date()) : LocalDate.parse(e.date()).atStartOfDay();
+    private EchangeDto toRectificationEchange(AuditLog a) {
+        return new EchangeDto("RECTIFICATION",
+                a.getDateAction() == null ? null : a.getDateAction().toString(),
+                a.getImActeur(), a.getNouvelleValeur(), null);
     }
 }
