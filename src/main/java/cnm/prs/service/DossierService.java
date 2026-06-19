@@ -2,6 +2,9 @@ package cnm.prs.service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -12,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.DossierDto;
+import cnm.prs.dto.EchangeDto;
 import cnm.prs.entity.AuditLog;
 import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Dossier;
@@ -389,5 +393,45 @@ public class DossierService {
         log.setChampModifie("motifRectification");
         log.setNouvelleValeur(motif);
         auditLogRepository.save(log);
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — historique complet des échanges d'un dossier <strong>clôturé</strong> (§3.6),
+     * trié date ASC : observations du vérificateur (t_verification, dont le passage final obsLevees=true)
+     * + rectifications de la PRMP (t_audit_log). Accès PRMP / Vérificateur / Admin (rôle au contrôleur) ;
+     * 403 si le dossier n'est pas {@code CLOTURE}.
+     */
+    @Transactional(readOnly = true)
+    public List<EchangeDto> historiqueEchanges(Integer idDossier) {
+        Dossier dossier = repository.findById(idDossier)
+                .orElseThrow(() -> new ResourceNotFoundException("Dossier introuvable : " + idDossier));
+        if (!StatutDossier.CLOTURE.name().equals(dossier.getStatut())) {
+            throw new AccessDeniedException("Historique disponible uniquement pour un dossier clôturé.");
+        }
+        List<EchangeDto> echanges = new ArrayList<>();
+        // Observations (passages) en ordre de création croissant (findPassagesDuDossier renvoie DESC).
+        List<Verification> passages = new ArrayList<>(verificationRepository.findPassagesDuDossier(idDossier));
+        Collections.reverse(passages);
+        for (Verification v : passages) {
+            echanges.add(new EchangeDto("OBSERVATION",
+                    v.getDateVerif() == null ? null : v.getDateVerif().toString(),
+                    v.getImCtrlVerif(), v.getObservation(), v.getObsLevees()));
+        }
+        // Rectifications PRMP (audit), déjà triées ASC.
+        for (AuditLog a : auditLogRepository.findRectificationsDossier(String.valueOf(idDossier))) {
+            echanges.add(new EchangeDto("RECTIFICATION",
+                    a.getDateAction() == null ? null : a.getDateAction().toString(),
+                    a.getImActeur(), a.getNouvelleValeur(), null));
+        }
+        echanges.sort(Comparator.comparing(this::cleTemps));   // tri stable ASC (date)
+        return echanges;
+    }
+
+    /** Clé temporelle : OBSERVATION = date jour → début de journée ; RECTIFICATION = horodatage ISO. */
+    private LocalDateTime cleTemps(EchangeDto e) {
+        if (e.date() == null) {
+            return LocalDateTime.MIN;
+        }
+        return e.date().length() > 10 ? LocalDateTime.parse(e.date()) : LocalDate.parse(e.date()).atStartOfDay();
     }
 }

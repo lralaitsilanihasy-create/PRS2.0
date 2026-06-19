@@ -21,6 +21,7 @@ import jakarta.validation.Valid;
 
 import cnm.prs.dto.DossierDto;
 import cnm.prs.dto.DossierResoumissionRequest;
+import cnm.prs.dto.EchangeDto;
 import cnm.prs.service.DossierService;
 
 /**
@@ -134,5 +135,12 @@ public class DossierController {
     @PostMapping("/{id}/resoumettre")
     public DossierDto resoumettre(@PathVariable Integer id, @Valid @RequestBody DossierResoumissionRequest req) {
         return service.resoumettre(id, req.motifRectification());
+    }
+
+    /** Historique d'échanges d'un dossier clôturé (observations + rectifications PRMP), trié date ASC. */
+    @PreAuthorize("hasRole('PRMP') or @perm.peutExercer('VERIFICATEUR') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/{id}/historique-echanges")
+    public List<EchangeDto> historiqueEchanges(@PathVariable Integer id) {
+        return service.historiqueEchanges(id);
     }
 }

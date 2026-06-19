@@ -2017,6 +2017,55 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Historique d'échanges (dossier clôturé) : observations + rectifications PRMP ; accessible PRMP et vérificateur")
+    void historique_echanges_dossierCloture() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        signerPvAvecAvis(90, "FAVR"); // dossier 1 → EN_VERIFICATION
+        // Passage 1 : obs non levées → resoumission (rect1).
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":90,\"observation\":\"obs1\",\"obsLevees\":false}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/dossiers/1/resoumettre").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"motifRectification\":\"rect1\"}"))
+                .andExpect(status().isOk());
+        // Passage 2 : obs non levées → resoumission (rect2).
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":90,\"observation\":\"obs2\",\"obsLevees\":false}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/dossiers/1/resoumettre").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"motifRectification\":\"rect2\"}"))
+                .andExpect(status().isOk());
+        // Passage final : obs levées → CLOTURE.
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":90,\"observation\":\"final\",\"obsLevees\":true}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/dossiers/1").header("Authorization", tokenVer))
+                .andExpect(jsonPath("$.statut").value("CLOTURE"));
+
+        // Historique : 3 observations (dont la clôture obsLevees=true) + 2 rectifications.
+        mvc.perform(get("/api/dossiers/1/historique-echanges").header("Authorization", tokenVer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(5))
+                .andExpect(jsonPath("$[?(@.type=='OBSERVATION' && @.texte=='obs1' && @.obsLevees==false)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.type=='OBSERVATION' && @.texte=='obs2' && @.obsLevees==false)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.type=='OBSERVATION' && @.texte=='final' && @.obsLevees==true)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.type=='RECTIFICATION' && @.texte=='rect1' && @.acteur=='PRMP001')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.type=='RECTIFICATION' && @.texte=='rect2')]", hasSize(1)));
+        // Accessible aussi par la PRMP.
+        mvc.perform(get("/api/dossiers/1/historique-echanges").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(5));
+    }
+
+    @Test
+    @DisplayName("Historique d'échanges : dossier non clôturé (EN_VERIFICATION) → 403")
+    void historique_echanges_horsCloture_403() throws Exception {
+        signerPvAvecAvis(91, "FAVR"); // dossier 1 → EN_VERIFICATION (pas CLOTURE)
+        mvc.perform(get("/api/dossiers/1/historique-echanges").header("Authorization", tokenPrmp))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     @DisplayName("Vérification : identité enregistrée = JWT (CurrentUser.ref), jamais le corps ; ID auto-généré")
     void verif_identiteDepuisJwt() throws Exception {
         String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");

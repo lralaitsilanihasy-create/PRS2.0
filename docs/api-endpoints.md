@@ -776,8 +776,16 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 | DELETE | /api/dossiers/{id} | — | — | 204, 404 | Authentifié |
 | POST | /api/dossiers/{id}/soumettre | — | `DossierDto` | 200, 400, 403, 404, 409 | **PRMP** |
 | POST | /api/dossiers/{id}/resoumettre | `DossierResoumissionRequest` | `DossierDto` | 200, 400, 403, 404, 409 | **PRMP** propriétaire |
+| GET | /api/dossiers/{id}/historique-echanges | — | `EchangeDto[]` | 200, 403, 404 | **PRMP** / **VERIFICATEUR** (titulaire/délégué) / **ADMINISTRATEUR** |
 
 `{id}` = idDossier (number). **`DossierResoumissionRequest`** = `{ motifRectification }` (String, **@NotBlank**, max 255).
+
+> ⚠️ **Historique d'échanges (règle ajoutée).** `GET /api/dossiers/{id}/historique-echanges` retourne l'historique
+> complet d'un dossier **`CLOTURE`** (sinon **403**), trié **date ASC** : les observations du vérificateur (source
+> `t_verification`, dont le passage final `obsLevees=true` qui a déclenché la clôture) et les rectifications de la PRMP
+> (source `t_audit_log`, `TYPE_ACTION=RECTIFICATION_PRMP`). **`EchangeDto`** = `{ type (`OBSERVATION` | `RECTIFICATION`),
+> date (jour pour OBSERVATION, date-heure pour RECTIFICATION), acteur (matricule vérificateur ou idPrmp), texte
+> (observation ou motif), obsLevees (renseigné pour OBSERVATION, `null` pour RECTIFICATION) }`.
 
 > **Filtre serveur `?statut=` (nouveau).** `GET /api/dossiers?statut=SOUMIS` restreint la liste à ce
 > statut **côté serveur**, en **conservant le périmètre** (localité / PRMP). Statut inconnu → **400**.
