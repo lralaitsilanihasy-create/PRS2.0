@@ -1930,23 +1930,39 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Worklist : obs. non levées → dossier dans /en-attente-prmp (vérificateur), hors /a-verifier, visible PRMP via ?statut")
+    @DisplayName("Worklist : obs. non levées → dossier dans /en-attente-prmp ET conservé dans /a-verifier (lecture seule), visible PRMP via ?statut")
     void verif_obsNonLevees_attentePrmp_worklist() throws Exception {
         String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
         signerPvAvecAvis(84, "FAVR"); // dossier 1 → EN_VERIFICATION
         mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idReception\":1,\"idPv\":84,\"observation\":\"averina\",\"obsLevees\":false}"))
                 .andExpect(status().isCreated());
-        // Vérificateur : le dossier est dans « En attente PRMP », plus dans « à vérifier ».
+        // Vérificateur : le dossier est dans « En attente PRMP » ET reste dans « à vérifier » (lecture seule).
         mvc.perform(get("/api/dossiers/en-attente-prmp").header("Authorization", tokenVer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(1)));
         mvc.perform(get("/api/dossiers/a-verifier").header("Authorization", tokenVer))
-                .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(0)));
+                .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(1)));   // conservé (EN_ATTENTE_DECISION_PRMP)
         // PRMP propriétaire : le dossier apparaît via le filtre de statut.
         mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp).param("statut", "EN_ATTENTE_DECISION_PRMP"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Worklist : un dossier EN_ATTENTE_DECISION_PRMP est en lecture seule — vérification refusée 409")
+    void verif_attentePrmp_lectureSeule_409() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        signerPvAvecAvis(88, "FAVR"); // dossier 1 → EN_VERIFICATION
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":88,\"observation\":\"averina\",\"obsLevees\":false}"))
+                .andExpect(status().isCreated()); // → dossier 1 EN_ATTENTE_DECISION_PRMP
+        // Le dossier reste dans « à vérifier » mais toute nouvelle vérification est refusée (lecture seule).
+        mvc.perform(get("/api/dossiers/a-verifier").header("Authorization", tokenVer))
+                .andExpect(jsonPath("$[?(@.idDossier==1)]", hasSize(1)));
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":88,\"observation\":\"encore\",\"obsLevees\":true}"))
+                .andExpect(status().isConflict());
     }
 
     /** Amène le dossier 1 à EN_ATTENTE_DECISION_PRMP (PV FAVR signé + vérif obsLevees=false par CTRVER). */

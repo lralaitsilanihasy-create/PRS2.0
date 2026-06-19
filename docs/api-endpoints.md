@@ -767,7 +767,7 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 | GET | /api/dossiers/a-receptionner | — | `DossierDto[]` | 200, 403 | `SECRETAIRE` (titulaire/délégué) ou `ADMINISTRATEUR` |
 | GET | /api/dossiers/a-examiner | — | `DossierDto[]` | 200, 403 | `MEMBRE` (titulaire/délégué) ou `ADMINISTRATEUR` |
 | GET | /api/dossiers/examines | — | `Page<DossierDto>` | 200, 403 | `MEMBRE` (titulaire/délégué) ou `ADMINISTRATEUR` |
-| GET | /api/dossiers/a-verifier | — | `DossierDto[]` | 200, 403 | `VERIFICATEUR` (titulaire/délégué) ou `ADMINISTRATEUR` |
+| GET | /api/dossiers/a-verifier | — | `DossierDto[]` | 200, 403 | `VERIFICATEUR` (titulaire/délégué) ou `ADMINISTRATEUR` — EN_VERIFICATION + EN_ATTENTE_DECISION_PRMP |
 | GET | /api/dossiers/verifies | — | `Page<DossierDto>` | 200, 403 | `VERIFICATEUR` (titulaire/délégué) ou `ADMINISTRATEUR` |
 | GET | /api/dossiers/en-attente-prmp | — | `DossierDto[]` | 200, 403 | `VERIFICATEUR` (titulaire/délégué) ou `ADMINISTRATEUR` — lecture seule |
 | GET | /api/dossiers/{id} | — | `DossierDto` | 200, 403, 404 | Authentifié (filtré) |
@@ -796,15 +796,17 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 > et **exclusives** : à la création de l'examen, un dossier quitte « à examiner » pour « examinés ». Un
 > Membre ne voit que **ses** dossiers (ceux d'un autre Membre n'y figurent pas).
 
-> ⚠️ **Files du Vérificateur (§3.6, règle ajoutée).** `GET /api/dossiers/a-verifier` = dossiers
-> **`EN_VERIFICATION`** (PV signé d'avis `FAVR`, à vérifier) ; `GET /api/dossiers/verifies` =
-> **historique** paginé, **lecture seule**, des dossiers **`CLOTURE` ayant un PV `SIGNE`** — **y compris
-> les auto-clôturés** à la signature (`FAV`/`DEF`/`NSP`). Les deux sont **scopées à la localité** du
-> vérificateur (contrôleur réceptionnaire) et **partitionnent** les PV signés (`EN_VERIFICATION` ⊎ `CLOTURE`).
+> ⚠️ **Files du Vérificateur (§3.6, règle ajoutée).** `GET /api/dossiers/a-verifier` = dossiers **encore
+> actifs** côté vérification : **`EN_VERIFICATION`** (à vérifier) **OU** **`EN_ATTENTE_DECISION_PRMP`** (en
+> lecture seule — le dossier **ne disparaît pas** de la liste tant qu'il n'est pas clôturé ; toute
+> vérification est refusée **409** tant que la PRMP n'a pas statué, cf. badge « En attente PRMP » côté UI).
+> `GET /api/dossiers/verifies` = **historique** paginé, **lecture seule**, des dossiers **`CLOTURE` ayant un
+> PV `SIGNE`** — **y compris les auto-clôturés** à la signature (`FAV`/`DEF`/`NSP`). Les deux sont **scopées
+> à la localité** du vérificateur (contrôleur réceptionnaire). Seul **`CLOTURE`** quitte « à vérifier » (→ `/verifies`).
 
 > ⚠️ **File « En attente PRMP » du Vérificateur (règle ajoutée), lecture seule.** `GET /api/dossiers/en-attente-prmp`
-> = dossiers **`EN_ATTENTE_DECISION_PRMP`** de sa localité (observations non levées transmises à la PRMP). Le
-> vérificateur ne peut ni modifier ni soumettre de nouvelle vérification tant que la PRMP n'a pas statué.
+> = dossiers **`EN_ATTENTE_DECISION_PRMP`** de sa localité (sous-vue dédiée ; ces dossiers figurent aussi dans
+> `/a-verifier`). Le vérificateur ne peut ni modifier ni soumettre de nouvelle vérification tant que la PRMP n'a pas statué.
 
 > ⚠️ **Resoumission après rectification (règle ajoutée).** `POST /api/dossiers/{id}/resoumettre` (réservé **PRMP
 > propriétaire**) — corps `{ "motifRectification": "…" }` (**obligatoire**, non vide, sinon **400**). N'agit que

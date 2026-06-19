@@ -192,11 +192,13 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             Pageable pageable);
 
     /**
-     * File « à vérifier » du Vérificateur (§3.6, ⚠️ règle ajoutée) : dossiers EN_VERIFICATION
-     * (PV signé « favorable avec réserves ») de la localité, via le contrôleur réceptionnaire.
+     * File « à vérifier » du Vérificateur (§3.6, ⚠️ règle ajoutée) : dossiers de la localité encore
+     * actifs côté vérification — {@code EN_VERIFICATION} (à vérifier) <strong>ou</strong>
+     * {@code EN_ATTENTE_DECISION_PRMP} (lecture seule, vérification refusée 409 tant que la PRMP n'a pas
+     * statué). Le dossier ne quitte la liste qu'une fois {@code CLOTURE} (→ {@code /verifies}).
      */
     @Query("""
-            select d from Dossier d where d.statut = 'EN_VERIFICATION'
+            select d from Dossier d where d.statut in ('EN_VERIFICATION', 'EN_ATTENTE_DECISION_PRMP')
               and exists (select 1 from Reception r
                           where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :loc)
             """)
