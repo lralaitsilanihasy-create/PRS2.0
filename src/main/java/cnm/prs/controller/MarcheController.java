@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -53,6 +54,14 @@ public class MarcheController {
     @PutMapping("/{id}")
     public MarcheDto update(@PathVariable Integer id, @Valid @RequestBody MarcheDto dto) {
         return service.update(id, dto);
+    }
+
+    // Édition restreinte (rectification) : PRMP propriétaire, uniquement si dossier EN_ATTENTE_DECISION_PRMP.
+    // Les champs d'identité présents dans le corps (idDossier, idPpm) sont ignorés (figés serveur).
+    @PreAuthorize("hasRole('PRMP')")
+    @PatchMapping("/{id}/rectifier")
+    public MarcheDto rectifier(@PathVariable Integer id, @Valid @RequestBody MarcheDto dto) {
+        return service.modifierEnAttenteRectification(id, dto);
     }
 
     @PreAuthorize("hasRole('PRMP')")

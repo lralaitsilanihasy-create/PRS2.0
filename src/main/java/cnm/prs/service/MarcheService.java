@@ -63,13 +63,15 @@ public class MarcheService {
     private final DossierIntegriteService dossierIntegrite;
     private final MarchePrevisionRepository marchePrevisionRepository;
     private final ModePassationRepository modePassationRepository;
+    private final AuditLogService auditLogService;
 
     public MarcheService(MarcheRepository repository, PpmRepository ppmRepository,
             PrmpRepository prmpRepository, DossierRepository dossierRepository,
             ReglePassationService reglePassationService,
             NotificationService notificationService, DossierIntegriteService dossierIntegrite,
             MarchePrevisionRepository marchePrevisionRepository,
-            ModePassationRepository modePassationRepository) {
+            ModePassationRepository modePassationRepository,
+            AuditLogService auditLogService) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.prmpRepository = prmpRepository;
@@ -79,6 +81,7 @@ public class MarcheService {
         this.dossierIntegrite = dossierIntegrite;
         this.marchePrevisionRepository = marchePrevisionRepository;
         this.modePassationRepository = modePassationRepository;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -160,6 +163,34 @@ public class MarcheService {
         // ⚠️ Règle ajoutée — valide le mode choisi contre l'ensemble autorisé, ou applique le recommandé.
         validerOuAppliquerMode(existing);
         return MarcheMapper.toDto(repository.save(existing));
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — édition restreinte (rectification) d'une ligne de marché dont le dossier est
+     * {@code EN_ATTENTE_DECISION_PRMP}. La PRMP propriétaire corrige le contenu sans repasser par le
+     * brouillon ; le <strong>statut du dossier reste inchangé</strong>. Identité figée (idDossier, idPpm) ;
+     * mode revalidé. Tracé : MODIFICATION_RECTIFICATION / t_marche.
+     */
+    public MarcheDto modifierEnAttenteRectification(Integer id, MarcheDto dto) {
+        Marche existing = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Marche introuvable : " + id));
+        dossierIntegrite.exigerEnAttenteDecisionPrmpModifiable(existing.getIdDossier());
+        // Identité figée : idDossier, idPpm conservés ; seul le contenu est modifié.
+        existing.setDesignationMarche(dto.getDesignationMarche());
+        existing.setNumCompte(dto.getNumCompte());
+        existing.setMontEstim(dto.getMontEstim());
+        existing.setAncienMontEstim(dto.getAncienMontEstim());
+        existing.setNouvMontEstim(dto.getNouvMontEstim());
+        existing.setFinancement(dto.getFinancement());
+        existing.setStatut(dto.getStatut());
+        existing.setIdSituation(dto.getIdSituation());
+        existing.setIdNature(dto.getIdNature());
+        existing.setIdMode(dto.getIdMode());
+        validerOuAppliquerMode(existing);   // mode revalidé contre l'ensemble autorisé (recommandé si null)
+        Marche saved = repository.save(existing);
+        auditLogService.enregistrer(CurrentUser.ref().orElse(null), "t_marche",
+                String.valueOf(id), "MODIFICATION_RECTIFICATION", null);
+        return MarcheMapper.toDto(saved);
     }
 
     public void delete(Integer id) {

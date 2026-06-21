@@ -1342,9 +1342,17 @@ dossier/PPM (désormais réservée Admin).
 | GET | /api/marches/{id} | — | `MarcheDto` | 200, 403, 404 | Authentifié (dans son périmètre) |
 | POST | /api/marches | `MarcheDto` | `MarcheDto` | 201, 400 | Authentifié |
 | PUT | /api/marches/{id} | `MarcheDto` | `MarcheDto` | 200, 400, 404 | Authentifié |
+| PATCH | /api/marches/{id}/rectifier | `MarcheDto` | `MarcheDto` | 200, 403, 404, 409 | PRMP (propriétaire) |
 | DELETE | /api/marches/{id} | — | — | 204, 403, 404, 409 | PRMP (propriétaire, brouillon) — ⚠️ cascade prévisions |
 
 `{id}` = idDetail (number).
+
+> ⚠️ **Édition restreinte (rectification) — règle ajoutée.** `PATCH /api/marches/{id}/rectifier` permet à la
+> PRMP propriétaire de corriger une ligne de marché dont le **dossier est `EN_ATTENTE_DECISION_PRMP`**, **sans
+> repasser par le brouillon**. Statut du dossier **inchangé** (reste `EN_ATTENTE_DECISION_PRMP` jusqu'à
+> `POST /api/dossiers/{id}/resoumettre`). Hors `EN_ATTENTE_DECISION_PRMP` → **409** ; non-propriétaire → **403** ;
+> profil **PRMP strict** (Admin/vérificateur → **403**). Identité **figée** (idDossier, idPpm — ignorés dans le
+> corps) ; mode de passation **revalidé**. Tracé `t_audit_log` (`MODIFICATION_RECTIFICATION`, `NOM_TABLE=t_marche`).
 
 > Les **dates prévisionnelles** ne sont plus portées par le marché : elles sont
 > dans la ressource dédiée **Marchés — dates prévisionnelles** (`/api/marche-previsions`),
@@ -1815,9 +1823,19 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | GET | /api/ppms/{id} | — | `PpmDto` | 200, 403, 404 | Authentifié (dans son périmètre) |
 | POST | /api/ppms | `PpmDto` | `PpmDto` | 201, 400 | Authentifié |
 | PUT | /api/ppms/{id} | `PpmDto` | `PpmDto` | 200, 400, 404 | Authentifié |
+| PATCH | /api/ppms/{id}/rectifier | `PpmDto` | `PpmDto` | 200, 403, 404, 409 | PRMP (propriétaire) |
 | DELETE | /api/ppms/{id} | — | — | 204, 403, 404, 409 | PRMP (propriétaire, brouillon) — ⚠️ cascade marchés + prévisions |
 
 `{id}` = idPpm (number).
+
+> ⚠️ **Édition restreinte (rectification) — règle ajoutée.** `PATCH /api/ppms/{id}/rectifier` permet à la PRMP
+> propriétaire de corriger l'en-tête d'un PPM dont le **dossier est `EN_ATTENTE_DECISION_PRMP`**, **sans repasser
+> par le brouillon**. Statut du dossier **inchangé** (reste `EN_ATTENTE_DECISION_PRMP` jusqu'à
+> `POST /api/dossiers/{id}/resoumettre`). Hors `EN_ATTENTE_DECISION_PRMP` → **409** ; non-propriétaire → **403** ;
+> profil **PRMP strict** (Admin/vérificateur → **403**). Identité **figée** (idDossier, idPrmp, idLocalite —
+> ignorés dans le corps). Tracé `t_audit_log` (`MODIFICATION_RECTIFICATION`, `NOM_TABLE=t_ppm`).
+> *(DAO/MAOO : sans contenu éditable, donc non concernés. Les lignes de marché se corrigent via
+> `PATCH /api/marches/{id}/rectifier` ; pas d'ajout/suppression de lignes en rectification.)*
 
 **Exemple — requête**
 ```json

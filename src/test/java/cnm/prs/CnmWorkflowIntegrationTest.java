@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -2993,6 +2994,98 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idDossier\":308,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
                 .andExpect(jsonPath("$.reference").value("00002/PPM/CRM-ANT/2026"));
+    }
+
+    @Test
+    @DisplayName("Rectification PPM : PATCH sur dossier EN_ATTENTE_DECISION_PRMP -> 200, champ mis a jour, statut inchange")
+    void rectifier_ppm_ok() throws Exception {
+        Dossier d = dossier(400, "EN_ATTENTE_DECISION_PRMP"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(400, 400, "PRMP001"));
+
+        mvc.perform(patch("/api/ppms/400/rectifier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":400,\"exercice\":2026,\"signataire\":\"Sign\",\"dateSignature\":\"2026-01-10\","
+                        + "\"reference\":\"PPM-REF-400\",\"libelle\":\"Libelle rectifie\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.libelle").value("Libelle rectifie"));
+        mvc.perform(get("/api/dossiers/400").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.statut").value("EN_ATTENTE_DECISION_PRMP"));
+    }
+
+    @Test
+    @DisplayName("Rectification PPM hors attente : dossier EN_VERIFICATION -> 409")
+    void rectifier_ppm_horsAttente_409() throws Exception {
+        Dossier d = dossier(402, "EN_VERIFICATION"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(420, 402, "PRMP001"));
+
+        mvc.perform(patch("/api/ppms/420/rectifier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":402,\"exercice\":2026,\"signataire\":\"S\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Rectification PPM par verificateur -> 403")
+    void rectifier_ppm_verificateur_403() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        Dossier d = dossier(403, "EN_ATTENTE_DECISION_PRMP"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(430, 403, "PRMP001"));
+
+        mvc.perform(patch("/api/ppms/430/rectifier").header("Authorization", tokenVer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":403,\"exercice\":2026,\"signataire\":\"S\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Rectification marche : PATCH sur dossier EN_ATTENTE_DECISION_PRMP -> 200, objet mis a jour, statut inchange")
+    void rectifier_marche_ok() throws Exception {
+        Dossier d = dossier(401, "EN_ATTENTE_DECISION_PRMP"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(410, 401, "PRMP001"));
+        marcheRepository.save(marche(411, 401, 410));
+        modePassationRepository.save(new ModePassation(2, "AOR", null, null, null, null));
+
+        mvc.perform(patch("/api/marches/411/rectifier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":401,\"idPpm\":410,\"designationMarche\":\"Objet rectifie\","
+                        + "\"montEstim\":5000000,\"idMode\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.designationMarche").value("Objet rectifie"));
+        mvc.perform(get("/api/dossiers/401").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.statut").value("EN_ATTENTE_DECISION_PRMP"));
+    }
+
+    @Test
+    @DisplayName("Rectification marche hors attente : dossier EN_VERIFICATION -> 409")
+    void rectifier_marche_horsAttente_409() throws Exception {
+        Dossier d = dossier(404, "EN_VERIFICATION"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(440, 404, "PRMP001"));
+        marcheRepository.save(marche(441, 404, 440));
+
+        mvc.perform(patch("/api/marches/441/rectifier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":404,\"idPpm\":440,\"designationMarche\":\"X\",\"montEstim\":1000}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Rectification marche par verificateur -> 403")
+    void rectifier_marche_verificateur_403() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        Dossier d = dossier(405, "EN_ATTENTE_DECISION_PRMP"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(450, 405, "PRMP001"));
+        marcheRepository.save(marche(451, 405, 450));
+
+        mvc.perform(patch("/api/marches/451/rectifier").header("Authorization", tokenVer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":405,\"idPpm\":450,\"designationMarche\":\"X\",\"montEstim\":1000}"))
+                .andExpect(status().isForbidden());
     }
 
     // ------------------------------------------------------------------

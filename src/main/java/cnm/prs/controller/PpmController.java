@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -54,6 +55,14 @@ public class PpmController {
     @PutMapping("/{id}")
     public PpmDto update(@PathVariable Integer id, @Valid @RequestBody PpmDto dto) {
         return service.update(id, dto);
+    }
+
+    // Édition restreinte (rectification) : PRMP propriétaire, uniquement si dossier EN_ATTENTE_DECISION_PRMP.
+    // Les champs d'identité présents dans le corps (idDossier, idPrmp, idLocalite) sont ignorés (figés serveur).
+    @PreAuthorize("hasRole('PRMP')")
+    @PatchMapping("/{id}/rectifier")
+    public PpmDto rectifier(@PathVariable Integer id, @Valid @RequestBody PpmDto dto) {
+        return service.modifierEnAttenteRectification(id, dto);
     }
 
     // Suppression d'un PPM de brouillon : PRMP propriétaire (miroir du marché) ; garde BROUILLON+propriété en service.

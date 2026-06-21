@@ -113,6 +113,18 @@ Acteur externe qui soumet ses PPM et marchés à la CNM. Suit l'avancement jusqu
 - Le périmètre de visibilité de la PRMP est donc la **propriété** de ses dossiers
   (`t_dossier.ID_PRMP`), pas une localité.
 
+**Rectification en attente de décision PRMP (⚠️ règle ajoutée)**
+
+- Sur un dossier au statut **`EN_ATTENTE_DECISION_PRMP`** (observations de vérification non levées), la PRMP
+  propriétaire peut **corriger le contenu sans repasser par le brouillon**, via une **édition restreinte** :
+  - `PATCH /api/ppms/{id}/rectifier` — en-tête du PPM ;
+  - `PATCH /api/marches/{id}/rectifier` — ligne de marché (mode de passation **revalidé**).
+- Le **statut reste `EN_ATTENTE_DECISION_PRMP`** jusqu'à la **resoumission** (`POST /api/dossiers/{id}/resoumettre`
+  → `EN_VERIFICATION`). Hors `EN_ATTENTE_DECISION_PRMP` → **409**. Profil **PRMP strict** (Admin/vérificateur → 403).
+- **Identité figée** (PPM : idDossier/idPrmp/idLocalite ; Marché : idDossier/idPpm) et **édition en place**
+  (pas d'ajout/suppression de lignes — ces opérations restent réservées au `BROUILLON`). Tracé `t_audit_log`
+  (`MODIFICATION_RECTIFICATION`). DAO/MAOO : sans contenu éditable, non concernés.
+
 **Inscription et validation du compte**
 
 - **Auto-inscription** (route publique, `multipart/form-data`) : la PRMP renseigne son identité,

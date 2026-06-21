@@ -91,6 +91,26 @@ public class DossierIntegriteService {
         return dossier;
     }
 
+    /**
+     * Charge un dossier <strong>rectifiable</strong> (édition restreinte) : il existe, appartient à la
+     * PRMP courante et est au statut {@code EN_ATTENTE_DECISION_PRMP}. La PRMP corrige le contenu sans
+     * repasser par le brouillon ; le statut reste {@code EN_ATTENTE_DECISION_PRMP} jusqu'à la resoumission.
+     *
+     * @throws ResourceNotFoundException si le dossier n'existe pas
+     * @throws AccessDeniedException     si le dossier ne lui appartient pas (→ 403)
+     * @throws BusinessRuleException     si le dossier n'est pas EN_ATTENTE_DECISION_PRMP (→ 409)
+     */
+    public Dossier exigerEnAttenteDecisionPrmpModifiable(Integer idDossier) {
+        Dossier dossier = charger(idDossier);
+        exigerProprietaire(dossier);
+        if (!StatutDossier.EN_ATTENTE_DECISION_PRMP.name().equals(dossier.getStatut())) {
+            throw new BusinessRuleException(
+                    "Rectification impossible : le dossier n'est pas en attente de décision PRMP (statut « "
+                            + dossier.getStatut() + " »).");
+        }
+        return dossier;
+    }
+
     /** Exige que le dossier appartienne à la PRMP courante (si une PRMP propriétaire est connue). */
     public void exigerProprietaire(Dossier dossier) {
         String courant = CurrentUser.ref().orElse(null);

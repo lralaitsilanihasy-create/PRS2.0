@@ -29,13 +29,16 @@ public class PpmService {
     private final DossierIntegriteService dossierIntegrite;
     private final MarcheRepository marcheRepository;
     private final MarchePrevisionRepository marchePrevisionRepository;
+    private final AuditLogService auditLogService;
 
     public PpmService(PpmRepository repository, DossierIntegriteService dossierIntegrite,
-            MarcheRepository marcheRepository, MarchePrevisionRepository marchePrevisionRepository) {
+            MarcheRepository marcheRepository, MarchePrevisionRepository marchePrevisionRepository,
+            AuditLogService auditLogService) {
         this.repository = repository;
         this.dossierIntegrite = dossierIntegrite;
         this.marcheRepository = marcheRepository;
         this.marchePrevisionRepository = marchePrevisionRepository;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -116,6 +119,36 @@ public class PpmService {
         existing.setIdPrmp(dto.getIdPrmp());
         existing.setMotifMaj(dto.getMotifMaj());
         return PpmMapper.toDto(repository.save(existing));
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — édition restreinte (rectification) de l'en-tête d'un PPM dont le dossier est
+     * {@code EN_ATTENTE_DECISION_PRMP}. La PRMP propriétaire corrige le contenu sans repasser par le
+     * brouillon ; le <strong>statut du dossier reste inchangé</strong>. Identité figée
+     * (idDossier, idPrmp, idLocalite). Tracé : MODIFICATION_RECTIFICATION / t_ppm.
+     */
+    public PpmDto modifierEnAttenteRectification(Integer id, PpmDto dto) {
+        Ppm existing = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Ppm introuvable : " + id));
+        dossierIntegrite.exigerEnAttenteDecisionPrmpModifiable(existing.getIdDossier());
+        // Identité figée : idDossier, idPrmp, idLocalite conservés ; seul le contenu est modifié.
+        existing.setExercice(dto.getExercice());
+        existing.setSignataire(dto.getSignataire());
+        existing.setDateSignature(dto.getDateSignature());
+        existing.setDatePpmInit(dto.getDatePpmInit());
+        existing.setNumMajPrec(dto.getNumMajPrec());
+        existing.setDateMajPrec(dto.getDateMajPrec());
+        existing.setNumMaj(dto.getNumMaj());
+        existing.setDateMaj(dto.getDateMaj());
+        existing.setReference(dto.getReference());
+        existing.setLibelle(dto.getLibelle());
+        existing.setDateReceptionCnm(dto.getDateReceptionCnm());
+        existing.setVu(dto.getVu());
+        existing.setMotifMaj(dto.getMotifMaj());
+        Ppm saved = repository.save(existing);
+        auditLogService.enregistrer(CurrentUser.ref().orElse(null), "t_ppm",
+                String.valueOf(id), "MODIFICATION_RECTIFICATION", null);
+        return PpmMapper.toDto(saved);
     }
 
     public void delete(Integer id) {
