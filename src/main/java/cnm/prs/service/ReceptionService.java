@@ -118,6 +118,7 @@ public class ReceptionService {
         exigerLocaliteDossier(dto.getIdDossier());
         validatePassage(dto);
         Reception entity = ReceptionMapper.toEntity(dto);
+        entity.setIdReception(repository.nextIdReception().intValue());   // PK serveur (sequence), id client ignore (Voie B)
         Reception saved = repository.save(entity);
         String reference = genererReference(saved);   // (regle ajoutee) reference officielle a la reception
         declencherPretDispatch(saved);

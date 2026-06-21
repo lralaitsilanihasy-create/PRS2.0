@@ -32,4 +32,8 @@ public interface ReceptionRepository extends JpaRepository<Reception, Integer> {
 
     /** Vrai si le dossier a déjà au moins une réception (test « déjà réceptionné » sans charger l'historique). */
     boolean existsByIdDossier(Integer idDossier);
+
+    /** Prochaine PK réception, allouée par la séquence serveur (Voie B — l'id client est ignoré). */
+    @Query(value = "select nextval('seq_reception')", nativeQuery = true)
+    Long nextIdReception();
 }

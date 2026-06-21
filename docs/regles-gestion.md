@@ -382,6 +382,7 @@ Subordonné direct du Chef de commission. Partage sa localité avec son CC. Réc
     - `annee_exercice` : exercice du PPM du dossier, sinon année courante.
     - La référence est **persistée sur le dossier** (`REFE_DOSSIER`, elle remplace la référence provisoire de soumission) et **retournée** dans `ReceptionDto.reference`.
     - Compteurs **isolés par contexte** : `CRM-ANT`, `CRM-TMS` et `CNM` ont chacun leur propre suite. Exemples : `00001/PPM/CNM/2026`, `00001/PPM/CRM-ANT/2026`, `00002/PPM/CRM-ANT/2026`, `00001/PPM/CRM-TMS/2026`.
+  - ⚠️ **Règle ajoutée — plus de N° de réception saisi.** L'identifiant technique `idReception` (PK de `t_reception`) n'est **plus saisi** par le secrétaire : il est **alloué par le serveur** (séquence `seq_reception`, Voie B — tout id client est ignoré), comme les PK dossier/PPM/marché. Il reste retourné dans la réponse (référencé par le dispatch). Le contrôle de doublon de PK sur ce champ devient sans objet.
 - Vérification de complétude [Écriture]
   - COMPLET = true/false avec consignation des observations initiales.
 - Déclenchement PRET_DISPATCH [Auto]

@@ -2065,12 +2065,17 @@ GET /api/rapports/dossiers/excel                   (Chef de commission : forcé 
 > La référence est **persistée** sur le dossier (`REFE_DOSSIER`, remplace la réf. provisoire de soumission).
 > Exemples : `00001/PPM/CNM/2026`, `00001/PPM/CRM-ANT/2026`, `00002/PPM/CRM-ANT/2026`, `00001/PPM/CRM-TMS/2026`.
 > *(Dossier sans `type_dossier` → `reference` non générée, la réception reste valide.)*
+>
+> **PK technique auto (⚠️ règle ajoutée).** Le secrétaire ne saisit plus de « N° de réception » : `idReception`
+> est **allouée par le serveur** (`seq_reception`, Voie B) et **tout id fourni en entrée est ignoré**. Elle reste
+> **présente en réponse** (le dispatch la référence). Le client n'a donc plus à l'envoyer ; il n'y a plus de
+> conflit de doublon de PK sur ce champ.
 
 **Champs `ReceptionDto`**
 
 | Champ (JSON) | Type | Obligatoire | Contraintes |
 |---|---|---|---|
-| idReception | number | Oui (PK, au POST) | clé primaire |
+| idReception | number | Non (alloué serveur) | PK technique — **allouée par séquence** (`seq_reception`), ignorée si fournie en entrée ; **présente en réponse** (référencée par le dispatch) |
 | idDossier | number | Oui | @NotNull |
 | numPassage | number | Oui | @NotNull (≥ 1) |
 | typePassage | string | Oui | @NotBlank, max 10 — `INITIAL` ⟺ numPassage=1 |

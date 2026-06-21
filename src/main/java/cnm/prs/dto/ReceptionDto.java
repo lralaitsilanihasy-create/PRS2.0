@@ -16,6 +16,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ReceptionDto {
 
+    /** PK technique de la réception — <strong>allouée par le serveur</strong> (séquence) ; ignorée si fournie
+     *  en entrée. Présente en sortie (référencée notamment par le dispatch). */
     private Integer idReception;
 
     @NotNull

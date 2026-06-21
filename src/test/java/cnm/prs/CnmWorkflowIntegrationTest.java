@@ -1334,13 +1334,13 @@ class CnmWorkflowIntegrationTest {
         // Le Président (toutes localités) peut agir sur le dossier 2 (TMS).
         mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":10,\"idDossier\":2,\"numPassage\":2,\"typePassage\":\"RETOUR\","
+                .content("{\"idDossier\":2,\"numPassage\":2,\"typePassage\":\"RETOUR\","
                         + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":false}"))
                 .andExpect(status().isCreated());
         // Le CC d'ANT, même délégué, ne peut pas agir sur un dossier de TMS → 403.
         mvc.perform(post("/api/receptions").header("Authorization", tokenCc)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":9,\"idDossier\":2,\"numPassage\":2,\"typePassage\":\"RETOUR\","
+                .content("{\"idDossier\":2,\"numPassage\":2,\"typePassage\":\"RETOUR\","
                         + "\"imCtrlRecept\":\"CTRCC1\",\"complet\":false}"))
                 .andExpect(status().isForbidden());
     }
@@ -2148,18 +2148,21 @@ class CnmWorkflowIntegrationTest {
         dossierRepository.save(dossier(3, "EXAMINE"));
 
         // 1) Réception complète par le Secrétaire → [Auto] dossier PRET_DISPATCH.
-        mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+        //    L'id de réception (PK technique) est alloué par le serveur (séquence) : on le capture pour la suite.
+        String recBody = mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":3,\"idDossier\":3,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":3,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        int idRec = com.jayway.jsonpath.JsonPath.read(recBody, "$.idReception");
         mvc.perform(get("/api/dossiers/3").header("Authorization", tokenPresident))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("PRET_DISPATCH"));
 
         // 2) Dispatch par le CC (titulaire dans sa localité ANT).
         mvc.perform(post("/api/dispatchs").header("Authorization", tokenCc)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idDispatch\":3,\"idReception\":3,\"imCtrlDispatch\":\"CTRCC1\",\"imCtrlCc\":\"CTRCC1\","
+                .content("{\"idDispatch\":3,\"idReception\":" + idRec + ",\"imCtrlDispatch\":\"CTRCC1\",\"imCtrlCc\":\"CTRCC1\","
                         + "\"imCtrlMembre\":\"CTRMEM\",\"interimDispatch\":false}"))
                 .andExpect(status().isCreated());
         // Le dispatch fait avancer le dossier à DISPATCHE (règle ajoutée).
@@ -2199,7 +2202,7 @@ class CnmWorkflowIntegrationTest {
         String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
         mvc.perform(post("/api/verifications").header("Authorization", tokenVer)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":3,\"idPv\":3,\"obsLevees\":true}"))
+                .content("{\"idReception\":" + idRec + ",\"idPv\":3,\"obsLevees\":true}"))
                 .andExpect(status().isCreated());
         mvc.perform(get("/api/dossiers/3").header("Authorization", tokenPresident))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("CLOTURE"));
@@ -2478,13 +2481,13 @@ class CnmWorkflowIntegrationTest {
         // Le Président (toutes localités) peut réceptionner (succès d'abord → pas de rollback-only).
         mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":91,\"idDossier\":9,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":9,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":false}"))
                 .andExpect(status().isCreated());
         // Un contrôleur d'ANT (CC, délégué Secrétaire) ne peut pas réceptionner un dossier TMS → 403.
         mvc.perform(post("/api/receptions").header("Authorization", tokenCc)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":92,\"idDossier\":9,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":9,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRCC1\",\"complet\":false}"))
                 .andExpect(status().isForbidden());
     }
@@ -2804,7 +2807,7 @@ class CnmWorkflowIntegrationTest {
         dossierRepository.save(d);
         mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":670,\"idDossier\":67,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":67,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":false}"))
                 .andExpect(status().isConflict());
     }
@@ -2894,7 +2897,7 @@ class CnmWorkflowIntegrationTest {
 
         mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":300,\"idDossier\":300,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":300,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":true}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.reference").value("00001/PPM/CNM/2026"));
@@ -2913,7 +2916,7 @@ class CnmWorkflowIntegrationTest {
 
         mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":301,\"idDossier\":301,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":301,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-ANT/2026"));
@@ -2930,12 +2933,12 @@ class CnmWorkflowIntegrationTest {
 
         mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":302,\"idDossier\":302,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":302,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
                 .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-ANT/2026"));
         mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":303,\"idDossier\":303,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":303,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
                 .andExpect(jsonPath("$.reference").value("00002/PPM/CRM-ANT/2026"));
     }
@@ -2954,17 +2957,17 @@ class CnmWorkflowIntegrationTest {
 
         mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":304,\"idDossier\":304,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":304,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
                 .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-ANT/2026"));
         mvc.perform(post("/api/receptions").header("Authorization", tokenSecTms)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":305,\"idDossier\":305,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":305,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRCC2\",\"complet\":true}"))
                 .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-TMS/2026"));
         mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":306,\"idDossier\":306,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":306,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":true}"))
                 .andExpect(jsonPath("$.reference").value("00001/PPM/CNM/2026"));
     }
@@ -2982,12 +2985,12 @@ class CnmWorkflowIntegrationTest {
         // contexte obtiennent des valeurs distinctes -> aucun doublon, même sous concurrence réelle.
         mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":307,\"idDossier\":307,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":307,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
                 .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-ANT/2026"));
         mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"idReception\":308,\"idDossier\":308,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                .content("{\"idDossier\":308,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
                 .andExpect(jsonPath("$.reference").value("00002/PPM/CRM-ANT/2026"));
     }
