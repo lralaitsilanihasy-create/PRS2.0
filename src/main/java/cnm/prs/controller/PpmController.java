@@ -58,10 +58,11 @@ public class PpmController {
     }
 
     // Édition restreinte (rectification) : PRMP propriétaire, uniquement si dossier EN_ATTENTE_DECISION_PRMP.
-    // Les champs d'identité présents dans le corps (idDossier, idPrmp, idLocalite) sont ignorés (figés serveur).
+    // Corps SANS validation des champs d'identité figés (idDossier/idPrmp/idLocalite), que le front n'envoie
+    // pas en rectification ; le contenu est appliqué, l'identité conservée serveur.
     @PreAuthorize("hasRole('PRMP')")
     @PatchMapping("/{id}/rectifier")
-    public PpmDto rectifier(@PathVariable Integer id, @Valid @RequestBody PpmDto dto) {
+    public PpmDto rectifier(@PathVariable Integer id, @RequestBody PpmDto dto) {
         return service.modifierEnAttenteRectification(id, dto);
     }
 

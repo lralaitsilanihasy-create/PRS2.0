@@ -87,20 +87,21 @@ BROUILLON** pour l'édition, **cohérence type↔contenu** (PPM ⇒ a un PPM ; D
   "error": "Conflict",
   "message": "Le commentaire de rectification est obligatoire (§3.2).",
   "path": "/api/pv-examens/1/retourner",
-  "fieldErrors": { "champ": "message" }
+  "erreurs": [ { "champ": "idDossier", "message": "ne doit pas être nul" } ]
 }
 ```
-`fieldErrors` n'est renseigné que pour les erreurs de validation (400).
+`erreurs` est un **tableau** d'objets `{ champ, message }`, renseigné uniquement pour les erreurs de
+validation (400) ; **omis** (absent du corps) pour les autres erreurs.
 
 ### Détail des erreurs 400 / 403 / 409
 Récapitulatif des trois codes d'erreur « métier » les plus fréquents, leur signification et
 quand ils surviennent (mapping centralisé dans `GlobalExceptionHandler`). Côté Angular : afficher
-`message`, et pour le **400** exploiter `fieldErrors` champ par champ.
+`message`, et pour le **400** exploiter le tableau **`erreurs`** (`[{ champ, message }]`) champ par champ.
 
 #### 400 — Bad Request *(requête invalide ; à corriger avant de renvoyer)*
 | Cause | Quand ça survient | Indice |
 |---|---|---|
-| **Validation des champs** (`@Valid`) | un champ obligatoire manque ou ne respecte pas une contrainte (`@NotNull`, `@NotBlank`, `@Size`…) | `message` = « Validation échouée » + **`fieldErrors`** renseigné |
+| **Validation des champs** (`@Valid`) | un champ obligatoire manque ou ne respecte pas une contrainte (`@NotNull`, `@NotBlank`, `@Size`…) | `message` = « Validation échouée » + tableau **`erreurs`** (`[{ champ, message }]`) renseigné |
 | **Identifiant de création manquant** | POST de création sans la clé primaire (toutes les PK sont **assignées par le client**, cf. *Clés primaires*) | « L'identifiant (clé primaire) est obligatoire à la création… » |
 | **Règle d'entrée métier** (`BadRequestException`) | ex. `POST /api/mon-compte/changer-mot-de-passe` avec ancien mot de passe incorrect ou nouveau identique à l'ancien ; `POST /api/marches` quand la **localité du dossier** est introuvable (mode indéterminable) | message explicite |
 
@@ -1351,8 +1352,9 @@ dossier/PPM (désormais réservée Admin).
 > PRMP propriétaire de corriger une ligne de marché dont le **dossier est `EN_ATTENTE_DECISION_PRMP`**, **sans
 > repasser par le brouillon**. Statut du dossier **inchangé** (reste `EN_ATTENTE_DECISION_PRMP` jusqu'à
 > `POST /api/dossiers/{id}/resoumettre`). Hors `EN_ATTENTE_DECISION_PRMP` → **409** ; non-propriétaire → **403** ;
-> profil **PRMP strict** (Admin/vérificateur → **403**). Identité **figée** (idDossier, idPpm — ignorés dans le
-> corps) ; mode de passation **revalidé**. Tracé `t_audit_log` (`MODIFICATION_RECTIFICATION`, `NOM_TABLE=t_marche`).
+> profil **PRMP strict** (Admin/vérificateur → **403**). Identité **figée** (idDossier, idPpm — **non requis** dans
+> le corps, ignorés s'ils sont envoyés ; le PATCH ne valide pas ces champs) ; mode de passation **revalidé**.
+> Tracé `t_audit_log` (`MODIFICATION_RECTIFICATION`, `NOM_TABLE=t_marche`).
 
 > Les **dates prévisionnelles** ne sont plus portées par le marché : elles sont
 > dans la ressource dédiée **Marchés — dates prévisionnelles** (`/api/marche-previsions`),
@@ -1833,7 +1835,8 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 > par le brouillon**. Statut du dossier **inchangé** (reste `EN_ATTENTE_DECISION_PRMP` jusqu'à
 > `POST /api/dossiers/{id}/resoumettre`). Hors `EN_ATTENTE_DECISION_PRMP` → **409** ; non-propriétaire → **403** ;
 > profil **PRMP strict** (Admin/vérificateur → **403**). Identité **figée** (idDossier, idPrmp, idLocalite —
-> ignorés dans le corps). Tracé `t_audit_log` (`MODIFICATION_RECTIFICATION`, `NOM_TABLE=t_ppm`).
+> **non requis** dans le corps, ignorés s'ils sont envoyés ; le PATCH ne valide pas ces champs).
+> Tracé `t_audit_log` (`MODIFICATION_RECTIFICATION`, `NOM_TABLE=t_ppm`).
 > *(DAO/MAOO : sans contenu éditable, donc non concernés. Les lignes de marché se corrigent via
 > `PATCH /api/marches/{id}/rectifier` ; pas d'ajout/suppression de lignes en rectification.)*
 

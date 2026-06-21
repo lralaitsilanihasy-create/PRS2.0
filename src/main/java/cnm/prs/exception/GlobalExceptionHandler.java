@@ -1,8 +1,7 @@
 package cnm.prs.exception;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -50,10 +49,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, WebRequest request) {
-        Map<String, String> fieldErrors = new HashMap<>();
-        ex.getBindingResult().getFieldErrors()
-                .forEach(fe -> fieldErrors.put(fe.getField(), fe.getDefaultMessage()));
-        return build(HttpStatus.BAD_REQUEST, "Validation échouée", request, fieldErrors);
+        List<ErrorResponse.FieldError> erreurs = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> new ErrorResponse.FieldError(fe.getField(), fe.getDefaultMessage()))
+                .toList();
+        return build(HttpStatus.BAD_REQUEST, "Validation échouée", request, erreurs);
     }
 
     /**
@@ -106,14 +105,14 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ErrorResponse> build(HttpStatus status, String message, WebRequest request,
-            Map<String, String> fieldErrors) {
+            List<ErrorResponse.FieldError> erreurs) {
         ErrorResponse body = new ErrorResponse(
                 LocalDateTime.now(),
                 status.value(),
                 status.getReasonPhrase(),
                 message,
                 request.getDescription(false).replace("uri=", ""),
-                fieldErrors);
+                erreurs);
         return ResponseEntity.status(status).body(body);
     }
 }

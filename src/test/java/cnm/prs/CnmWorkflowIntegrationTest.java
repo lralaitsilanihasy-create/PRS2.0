@@ -3088,6 +3088,45 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("Rectification PPM sans idDossier (identite figee) -> 200")
+    void rectifier_ppm_sansIdentite_ok() throws Exception {
+        Dossier d = dossier(406, "EN_ATTENTE_DECISION_PRMP"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(460, 406, "PRMP001"));
+        mvc.perform(patch("/api/ppms/460/rectifier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"exercice\":2026,\"signataire\":\"Sign\",\"dateSignature\":\"2026-05-10\",\"reference\":\"R\",\"libelle\":\"L\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.libelle").value("L"));
+    }
+
+    @Test
+    @DisplayName("Rectification marche sans idDossier/idPpm (identite figee) -> 200")
+    void rectifier_marche_sansIdentite_ok() throws Exception {
+        Dossier d = dossier(407, "EN_ATTENTE_DECISION_PRMP"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(470, 407, "PRMP001"));
+        marcheRepository.save(marche(471, 407, 470));
+        modePassationRepository.save(new ModePassation(2, "AOR", null, null, null, null));
+        mvc.perform(patch("/api/marches/471/rectifier").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"designationMarche\":\"Objet\",\"montEstim\":1000,\"idMode\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.designationMarche").value("Objet"));
+    }
+
+    @Test
+    @DisplayName("Erreur de validation : corps expose erreurs[].champ/message")
+    void validation_erreurs_format() throws Exception {
+        mvc.perform(post("/api/marches").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs").isArray())
+                .andExpect(jsonPath("$.erreurs[0].champ").exists())
+                .andExpect(jsonPath("$.erreurs[0].message").exists());
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
