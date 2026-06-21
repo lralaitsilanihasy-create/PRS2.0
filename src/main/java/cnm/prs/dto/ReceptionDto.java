@@ -39,4 +39,7 @@ public class ReceptionDto {
     private Boolean complet;
 
     private Integer idReceptionPrec;
+
+    /** (Règle ajoutée) Référence officielle générée à la réception — lecture seule (non stockée sur t_reception). */
+    private String reference;
 }

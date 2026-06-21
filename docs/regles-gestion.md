@@ -375,6 +375,13 @@ Subordonné direct du Chef de commission. Partage sa localité avec son CC. Réc
 
 - Enregistrement du dossier [Action]
   - Création de la réception avec référence, date, NUM_PASSAGE = 1 et TYPE_PASSAGE = INITIAL.
+  - ⚠️ **Règle ajoutée — référence officielle générée à la réception.** Au `POST /api/receptions`, le serveur génère une référence au format **`xxxxx/type_dossier/code_localite/annee_exercice`** :
+    - `xxxxx` : compteur 5 chiffres **incrémenté par la base** par combinaison (`type_dossier`, `code_localite`, `annee_exercice`) — table `t_sequence_reference` (PK composite ; `UPDATE +1` atomique sinon `INSERT` à 1), sans `SELECT FOR UPDATE` ni compteur applicatif ; la PK garantit l'unicité.
+    - `type_dossier` : `ID_TYPE_DOSSIER` du dossier (PPM, DAO, MAOO…). *Dossier sans type → pas de référence structurée, la réception reste valide.*
+    - `code_localite` : **`CNM`** si réception **centrale** (utilisateur transversal, sans localité — ex. Président) ; sinon **`CRM-<code_localite>`** (ex. `CRM-ANT`, `CRM-TMS`).
+    - `annee_exercice` : exercice du PPM du dossier, sinon année courante.
+    - La référence est **persistée sur le dossier** (`REFE_DOSSIER`, elle remplace la référence provisoire de soumission) et **retournée** dans `ReceptionDto.reference`.
+    - Compteurs **isolés par contexte** : `CRM-ANT`, `CRM-TMS` et `CNM` ont chacun leur propre suite. Exemples : `00001/PPM/CNM/2026`, `00001/PPM/CRM-ANT/2026`, `00002/PPM/CRM-ANT/2026`, `00001/PPM/CRM-TMS/2026`.
 - Vérification de complétude [Écriture]
   - COMPLET = true/false avec consignation des observations initiales.
 - Déclenchement PRET_DISPATCH [Auto]

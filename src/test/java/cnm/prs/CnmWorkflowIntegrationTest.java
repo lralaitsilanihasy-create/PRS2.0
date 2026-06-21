@@ -2885,6 +2885,113 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.conforme").value(false));
     }
 
+    @Test
+    @DisplayName("Référence réception : localité centrale (utilisateur transversal) -> 00001/PPM/CNM/2026")
+    void reference_localite_centrale() throws Exception {
+        Dossier d = dossier(300, "SOUMIS"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(300, 300, "PRMP001"));
+
+        mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":300,\"idDossier\":300,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":true}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.reference").value("00001/PPM/CNM/2026"));
+        // Persistée sur le dossier (REFE_DOSSIER écrasée).
+        mvc.perform(get("/api/dossiers/300").header("Authorization", tokenPresident))
+                .andExpect(jsonPath("$.refeDossier").value("00001/PPM/CNM/2026"));
+    }
+
+    @Test
+    @DisplayName("Référence réception : localité régionale ANT -> 00001/PPM/CRM-ANT/2026")
+    void reference_localite_crm() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        Dossier d = dossier(301, "SOUMIS"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(301, 301, "PRMP001"));
+
+        mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":301,\"idDossier\":301,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-ANT/2026"));
+    }
+
+    @Test
+    @DisplayName("Référence réception : compteur auto-incrémenté par la BDD (00001 puis 00002, même contexte)")
+    void reference_incrementee_automatiquement() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        Dossier d1 = dossier(302, "SOUMIS"); d1.setIdTypeDossier("PPM"); d1.setIdLocalite("ANT"); dossierRepository.save(d1);
+        Dossier d2 = dossier(303, "SOUMIS"); d2.setIdTypeDossier("PPM"); d2.setIdLocalite("ANT"); dossierRepository.save(d2);
+        ppmRepository.save(ppm(302, 302, "PRMP001"));
+        ppmRepository.save(ppm(303, 303, "PRMP001"));
+
+        mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":302,\"idDossier\":302,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
+                .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-ANT/2026"));
+        mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":303,\"idDossier\":303,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
+                .andExpect(jsonPath("$.reference").value("00002/PPM/CRM-ANT/2026"));
+    }
+
+    @Test
+    @DisplayName("Référence réception : compteurs isolés par contexte (CRM-ANT, CRM-TMS, CNM redémarrent à 00001)")
+    void reference_isolee_par_contexte() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        String tokenSecTms = bearer("CTRCC2", ProfilUtilisateur.CHEF_COMMISSION, TypeActeur.CONTROLEUR, "CTRCC2", "TMS");
+        Dossier ant = dossier(304, "SOUMIS"); ant.setIdTypeDossier("PPM"); ant.setIdLocalite("ANT"); dossierRepository.save(ant);
+        Dossier tms = dossier(305, "SOUMIS"); tms.setIdTypeDossier("PPM"); tms.setIdLocalite("TMS"); dossierRepository.save(tms);
+        Dossier cnm = dossier(306, "SOUMIS"); cnm.setIdTypeDossier("PPM"); cnm.setIdLocalite("ANT"); dossierRepository.save(cnm);
+        ppmRepository.save(ppm(304, 304, "PRMP001"));
+        ppmRepository.save(ppm(305, 305, "PRMP001"));
+        ppmRepository.save(ppm(306, 306, "PRMP001"));
+
+        mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":304,\"idDossier\":304,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
+                .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-ANT/2026"));
+        mvc.perform(post("/api/receptions").header("Authorization", tokenSecTms)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":305,\"idDossier\":305,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRCC2\",\"complet\":true}"))
+                .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-TMS/2026"));
+        mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":306,\"idDossier\":306,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":true}"))
+                .andExpect(jsonPath("$.reference").value("00001/PPM/CNM/2026"));
+    }
+
+    @Test
+    @DisplayName("Référence réception : pas de doublon sur 2 réceptions (unicité garantie par l'UPSERT BDD)")
+    void reference_concurrence() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        Dossier d1 = dossier(307, "SOUMIS"); d1.setIdTypeDossier("PPM"); d1.setIdLocalite("ANT"); dossierRepository.save(d1);
+        Dossier d2 = dossier(308, "SOUMIS"); d2.setIdTypeDossier("PPM"); d2.setIdLocalite("ANT"); dossierRepository.save(d2);
+        ppmRepository.save(ppm(307, 307, "PRMP001"));
+        ppmRepository.save(ppm(308, 308, "PRMP001"));
+
+        // L'incrément est fait par la BDD (UPSERT atomique, verrou de ligne) : deux réceptions du même
+        // contexte obtiennent des valeurs distinctes -> aucun doublon, même sous concurrence réelle.
+        mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":307,\"idDossier\":307,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
+                .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-ANT/2026"));
+        mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":308,\"idDossier\":308,\"numPassage\":1,\"typePassage\":\"INITIAL\","
+                        + "\"imCtrlRecept\":\"CTRSEC\",\"complet\":true}"))
+                .andExpect(jsonPath("$.reference").value("00002/PPM/CRM-ANT/2026"));
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------

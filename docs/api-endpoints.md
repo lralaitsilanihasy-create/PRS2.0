@@ -2055,6 +2055,16 @@ GET /api/rapports/dossiers/excel                   (Chef de commission : forcé 
 
 > **Règles (sinon 409)** : `numPassage` ≥ 1 ; `numPassage = 1` ⟺ `typePassage = "INITIAL"`.
 > **Effet `[Auto]`** : si `complet = true`, le dossier passe au statut `PRET_DISPATCH`.
+>
+> **Référence officielle générée à la réception (⚠️ règle ajoutée).** Au POST, le serveur génère et
+> renvoie `reference` au format **`xxxxx/type_dossier/code_localite/annee_exercice`** :
+> `xxxxx` = compteur 5 chiffres incrémenté par la base, **par combinaison** (`type_dossier`, `code_localite`,
+> `annee_exercice`) — table `t_sequence_reference`, sans compteur applicatif ;
+> `code_localite` = **`CNM`** si réception centrale (utilisateur transversal, sans localité, ex. Président),
+> sinon **`CRM-<localité>`** ; `annee_exercice` = exercice du PPM, sinon année courante.
+> La référence est **persistée** sur le dossier (`REFE_DOSSIER`, remplace la réf. provisoire de soumission).
+> Exemples : `00001/PPM/CNM/2026`, `00001/PPM/CRM-ANT/2026`, `00002/PPM/CRM-ANT/2026`, `00001/PPM/CRM-TMS/2026`.
+> *(Dossier sans `type_dossier` → `reference` non générée, la réception reste valide.)*
 
 **Champs `ReceptionDto`**
 
@@ -2069,6 +2079,7 @@ GET /api/rapports/dossiers/excel                   (Chef de commission : forcé 
 | observation | string | Non | max 500 |
 | complet | boolean | Non | si `true` → dossier `PRET_DISPATCH` |
 | idReceptionPrec | number | Non | |
+| reference | string | — (réponse) | référence officielle générée au POST (lecture seule) |
 
 **Endpoints**
 

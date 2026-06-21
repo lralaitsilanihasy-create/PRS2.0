@@ -1,6 +1,8 @@
 package cnm.prs.service;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,16 +36,19 @@ public class ReceptionService {
     private final ControleurRepository controleurRepository;
     private final ControleurDirectory controleurDirectory;
     private final NotificationService notificationService;
+    private final ReferenceService referenceService;
 
     public ReceptionService(ReceptionRepository repository, DossierRepository dossierRepository,
             PpmRepository ppmRepository, ControleurRepository controleurRepository,
-            ControleurDirectory controleurDirectory, NotificationService notificationService) {
+            ControleurDirectory controleurDirectory, NotificationService notificationService,
+            ReferenceService referenceService) {
         this.repository = repository;
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.controleurRepository = controleurRepository;
         this.controleurDirectory = controleurDirectory;
         this.notificationService = notificationService;
+        this.referenceService = referenceService;
     }
 
     @Transactional(readOnly = true)
@@ -114,8 +119,44 @@ public class ReceptionService {
         validatePassage(dto);
         Reception entity = ReceptionMapper.toEntity(dto);
         Reception saved = repository.save(entity);
+        String reference = genererReference(saved);   // (regle ajoutee) reference officielle a la reception
         declencherPretDispatch(saved);
-        return ReceptionMapper.toDto(saved);
+        ReceptionDto resultat = ReceptionMapper.toDto(saved);
+        resultat.setReference(reference);
+        return resultat;
+    }
+
+    /**
+     * (Règle ajoutée) À la réception, génère la référence officielle
+     * {@code xxxxx/type/code_localite/annee} et la persiste sur le dossier ({@code REFE_DOSSIER},
+     * remplaçant la référence provisoire de soumission). Segment localité : réception
+     * <strong>centrale</strong> (utilisateur transversal, sans localité — ex. Président) -> "CNM" ;
+     * sinon "CRM-" + localité du dossier.
+     */
+    private String genererReference(Reception reception) {
+        Dossier dossier = dossierRepository.findById(reception.getIdDossier()).orElse(null);
+        if (dossier == null) {
+            return null;
+        }
+        String typeDossier = dossier.getIdTypeDossier();
+        if (typeDossier == null || typeDossier.isBlank()) {
+            // Dossier sans type : pas de référence structurée, mais la réception reste valide.
+            return null;
+        }
+        String localite = localiteDuDossier(reception.getIdDossier());
+        boolean estCentrale = Visibilite.localite().filter(l -> !l.isBlank()).isEmpty();
+        int annee = exerciceDuDossier(reception.getIdDossier());
+        String reference = referenceService.generer(typeDossier, localite, estCentrale, annee);
+        dossier.setRefeDossier(reference);
+        dossierRepository.save(dossier);
+        return reference;
+    }
+
+    /** Exercice budgétaire du dossier (premier PPM), sinon année courante. */
+    private int exerciceDuDossier(Integer idDossier) {
+        return ppmRepository.findByIdDossier(idDossier).stream()
+                .map(Ppm::getExercice).filter(Objects::nonNull)
+                .findFirst().orElse(LocalDate.now().getYear());
     }
 
     /**
