@@ -3187,6 +3187,73 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
+    @Test
+    @DisplayName("Suppression cohérente : supprimer le dernier PPM d'un brouillon supprime aussi le dossier")
+    void suppression_coherente() throws Exception {
+        Dossier d = dossier(190, "BROUILLON"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(290, 190, "PRMP001"));
+        marcheRepository.save(marche(390, 190, 290));
+
+        mvc.perform(delete("/api/ppms/290").header("Authorization", tokenPrmp)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(dossierRepository.existsById(190));
+        // Absent de « Mes brouillons » (GET /api/dossiers?statut=BROUILLON) ET de GET /api/dossiers.
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp).param("statut", "BROUILLON"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[?(@.idDossier==190)]", hasSize(0)));
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==190)]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Suppression PPM d'un brouillon AVEC historique (réception) → PPM supprimé (204), dossier conservé (traces FK)")
+    void suppression_brouillonAvecHistorique_conserveDossier() throws Exception {
+        Dossier d = dossier(191, "BROUILLON"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(291, 191, "PRMP001"));
+        receptionRepository.save(reception(591, 191, "CTRSEC", true)); // trace de circuit → pas de hard delete
+
+        mvc.perform(delete("/api/ppms/291").header("Authorization", tokenPrmp)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(ppmRepository.existsById(291));
+        org.junit.jupiter.api.Assertions.assertTrue(dossierRepository.existsById(191)); // conservé (porte une réception)
+    }
+
+    @Test
+    @DisplayName("Suppression dossier — BROUILLON propriétaire → 204, cascade PPM/marché, absent de Mes brouillons")
+    void suppression_brouillon_ok() throws Exception {
+        Dossier d = dossier(600, "BROUILLON"); d.setIdTypeDossier("PPM"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        dossierRepository.save(d);
+        ppmRepository.save(ppm(600, 600, "PRMP001"));
+        marcheRepository.save(marche(600, 600, 600));
+
+        mvc.perform(delete("/api/dossiers/600").header("Authorization", tokenPrmp)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(dossierRepository.existsById(600));
+        org.junit.jupiter.api.Assertions.assertFalse(ppmRepository.existsById(600));
+        org.junit.jupiter.api.Assertions.assertFalse(marcheRepository.existsById(600));
+        mvc.perform(get("/api/dossiers").header("Authorization", tokenPrmp).param("statut", "BROUILLON"))
+                .andExpect(jsonPath("$[?(@.idDossier==600)]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Suppression dossier — statut SOUMIS → 409")
+    void suppression_hors_brouillon_409() throws Exception {
+        Dossier d = dossier(601, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        mvc.perform(delete("/api/dossiers/601").header("Authorization", tokenPrmp)).andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Suppression dossier — autre PRMP → 403")
+    void suppression_autre_prmp_403() throws Exception {
+        prmpRepository.save(prmp("PRMP002", "ANT"));
+        Dossier d = dossier(602, "BROUILLON"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP002"); dossierRepository.save(d);
+        mvc.perform(delete("/api/dossiers/602").header("Authorization", tokenPrmp)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Suppression dossier — id inexistant → 404")
+    void suppression_inexistant_404() throws Exception {
+        mvc.perform(delete("/api/dossiers/99999").header("Authorization", tokenPrmp)).andExpect(status().isNotFound());
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------

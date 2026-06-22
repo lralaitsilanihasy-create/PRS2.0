@@ -20,6 +20,7 @@ import cnm.prs.dto.EchangeDto;
 import cnm.prs.entity.AuditLog;
 import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Dossier;
+import cnm.prs.entity.Marche;
 import cnm.prs.entity.Ppm;
 import cnm.prs.entity.Prmp;
 import cnm.prs.entity.Verification;
@@ -31,9 +32,13 @@ import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.DossierMapper;
 import cnm.prs.repository.AuditLogRepository;
+import cnm.prs.repository.DemandeRetraitRepository;
 import cnm.prs.repository.DossierRepository;
+import cnm.prs.repository.MarchePrevisionRepository;
+import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
+import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.repository.VerificationRepository;
 import cnm.prs.security.CurrentUser;
 
@@ -52,11 +57,17 @@ public class DossierService {
     private final VerificationRepository verificationRepository;
     private final AuditLogRepository auditLogRepository;
     private final PrmpRepository prmpRepository;
+    private final MarcheRepository marcheRepository;
+    private final MarchePrevisionRepository marchePrevisionRepository;
+    private final ReceptionRepository receptionRepository;
+    private final DemandeRetraitRepository demandeRetraitRepository;
 
     public DossierService(DossierRepository repository, PpmRepository ppmRepository,
             ControleurDirectory controleurDirectory, NotificationService notificationService,
             DossierIntegriteService dossierIntegrite, VerificationRepository verificationRepository,
-            AuditLogRepository auditLogRepository, PrmpRepository prmpRepository) {
+            AuditLogRepository auditLogRepository, PrmpRepository prmpRepository,
+            MarcheRepository marcheRepository, MarchePrevisionRepository marchePrevisionRepository,
+            ReceptionRepository receptionRepository, DemandeRetraitRepository demandeRetraitRepository) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.controleurDirectory = controleurDirectory;
@@ -65,6 +76,10 @@ public class DossierService {
         this.verificationRepository = verificationRepository;
         this.auditLogRepository = auditLogRepository;
         this.prmpRepository = prmpRepository;
+        this.marcheRepository = marcheRepository;
+        this.marchePrevisionRepository = marchePrevisionRepository;
+        this.receptionRepository = receptionRepository;
+        this.demandeRetraitRepository = demandeRetraitRepository;
     }
 
     /**
@@ -243,10 +258,30 @@ public class DossierService {
         return DossierMapper.toDto(repository.save(existing));
     }
 
+    /**
+     * ⚠️ Règle ajoutée — suppression d'un dossier depuis « Mes brouillons » (PRMP propriétaire).
+     * Uniquement si {@code BROUILLON} (sinon 409) et <strong>sans historique de circuit</strong>
+     * (réception ou demande de retrait → 409, traces FK conservées). Cascade applicative du contenu :
+     * prévisions → marchés → PPM(s), puis le dossier.
+     */
     public void delete(Integer id) {
-        if (!repository.existsById(id)) {
-            throw new ResourceNotFoundException("Dossier introuvable : " + id);
+        Dossier dossier = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Dossier introuvable : " + id)); // 404
+        dossierIntegrite.exigerProprietaire(dossier);                                              // 403
+        if (!StatutDossier.BROUILLON.name().equals(dossier.getStatut())) {
+            throw new BusinessRuleException("Ce dossier ne peut pas être supprimé.");              // 409
         }
+        if (receptionRepository.existsByIdDossier(id) || demandeRetraitRepository.existsByIdDossier(id)) {
+            throw new BusinessRuleException(
+                    "Ce dossier ne peut pas être supprimé : il porte un historique de circuit (réception ou retrait).");
+        }
+        // Cascade applicative du contenu : prévisions → marchés → PPM(s), puis le dossier.
+        List<Marche> marches = marcheRepository.findByIdDossier(id);
+        for (Marche m : marches) {
+            marchePrevisionRepository.deleteByIdDetail(m.getIdDetail());
+        }
+        marcheRepository.deleteAll(marches);
+        ppmRepository.deleteAll(ppmRepository.findByIdDossier(id));
         repository.deleteById(id);
     }
 

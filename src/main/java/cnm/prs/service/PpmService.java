@@ -12,9 +12,12 @@ import cnm.prs.entity.Ppm;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.PpmMapper;
+import cnm.prs.repository.DemandeRetraitRepository;
+import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.MarchePrevisionRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
+import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.security.CurrentUser;
 import cnm.prs.security.Visibilite;
 
@@ -30,15 +33,22 @@ public class PpmService {
     private final MarcheRepository marcheRepository;
     private final MarchePrevisionRepository marchePrevisionRepository;
     private final AuditLogService auditLogService;
+    private final DossierRepository dossierRepository;
+    private final ReceptionRepository receptionRepository;
+    private final DemandeRetraitRepository demandeRetraitRepository;
 
     public PpmService(PpmRepository repository, DossierIntegriteService dossierIntegrite,
             MarcheRepository marcheRepository, MarchePrevisionRepository marchePrevisionRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService, DossierRepository dossierRepository,
+            ReceptionRepository receptionRepository, DemandeRetraitRepository demandeRetraitRepository) {
         this.repository = repository;
         this.dossierIntegrite = dossierIntegrite;
         this.marcheRepository = marcheRepository;
         this.marchePrevisionRepository = marchePrevisionRepository;
         this.auditLogService = auditLogService;
+        this.dossierRepository = dossierRepository;
+        this.receptionRepository = receptionRepository;
+        this.demandeRetraitRepository = demandeRetraitRepository;
     }
 
     /**
@@ -156,6 +166,7 @@ public class PpmService {
                 .orElseThrow(() -> new ResourceNotFoundException("Ppm introuvable : " + id));
         // Un PPM ne se supprime que sur un dossier en brouillon, propriété de la PRMP courante.
         dossierIntegrite.exigerBrouillonModifiable(existing.getIdDossier());
+        Integer idDossier = existing.getIdDossier();
         // Cascade applicative : SES marchés et LEURS prévisions, puis le PPM — en une transaction.
         List<Marche> marches = marcheRepository.findByIdPpm(id);
         for (Marche m : marches) {
@@ -163,5 +174,16 @@ public class PpmService {
         }
         marcheRepository.deleteAll(marches);
         repository.deleteById(id);
+        // ⚠️ Règle ajoutée — cohérence « Mes brouillons » : si le dossier brouillon devient un
+        // BROUILLON PUR (plus aucun PPM ni marché, et SANS historique de circuit : ni réception ni
+        // demande de retrait), le supprimer. Un dossier avec historique (revenu BROUILLON via retrait)
+        // porte des traces FK (réception, demande_retrait, notifications…) → conservé (pas de hard delete).
+        // Cas multi-PPM également préservé (un autre PPM subsiste → non supprimé).
+        if (!repository.existsByIdDossier(idDossier)
+                && !marcheRepository.existsByIdDossier(idDossier)
+                && !receptionRepository.existsByIdDossier(idDossier)
+                && !demandeRetraitRepository.existsByIdDossier(idDossier)) {
+            dossierRepository.deleteById(idDossier);
+        }
     }
 }

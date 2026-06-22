@@ -18,6 +18,9 @@ public interface DemandeRetraitRepository extends JpaRepository<DemandeRetrait, 
     /** Vrai s'il existe déjà une demande à ce statut pour ce dossier (anti-doublon EN_ATTENTE). */
     boolean existsByIdDossierAndStatut(Integer idDossier, String statut);
 
+    /** Vrai si le dossier porte au moins une demande de retrait (trace de circuit — empêche le hard delete). */
+    boolean existsByIdDossier(Integer idDossier);
+
     /** Demandes à un (ou plusieurs) statut(s) — Président, toutes localités. */
     List<DemandeRetrait> findByStatutIn(List<String> statuts);
 

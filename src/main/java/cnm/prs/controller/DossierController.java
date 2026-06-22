@@ -114,6 +114,8 @@ public class DossierController {
         return service.update(id, dto);
     }
 
+    // Suppression d'un dossier brouillon : PRMP propriétaire (garde statut/propriété/cascade en service).
+    @PreAuthorize("hasRole('PRMP')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Integer id) {
         service.delete(id);
