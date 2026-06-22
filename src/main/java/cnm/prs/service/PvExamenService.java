@@ -63,9 +63,17 @@ public class PvExamenService {
         this.dossierRepository = dossierRepository;
     }
 
+    /** Projets de PV : tous les PV NON signés (les signés sont exposés par {@link #definitifs()}). */
     @Transactional(readOnly = true)
-    public List<PvExamenDto> findAll() {
-        return Visibilite.filtrer(repository::findAll, repository::findVisiblesParLocalite)
+    public List<PvExamenDto> projets() {
+        return Visibilite.filtrer(repository::findProjets, repository::findProjetsParLocalite)
+                .stream().map(PvExamenMapper::toDto).toList();
+    }
+
+    /** PV définitifs : uniquement les PV signés ({@code statutPv = SIGNE}). */
+    @Transactional(readOnly = true)
+    public List<PvExamenDto> definitifs() {
+        return Visibilite.filtrer(repository::findDefinitifs, repository::findDefinitifsParLocalite)
                 .stream().map(PvExamenMapper::toDto).toList();
     }
 

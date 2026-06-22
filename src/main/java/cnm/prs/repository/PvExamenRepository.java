@@ -50,4 +50,22 @@ public interface PvExamenRepository extends JpaRepository<PvExamen, Integer> {
     @Query("select (count(pv) > 0) from PvExamen pv where pv.idPv = :id "
             + "and pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
     boolean existsDansLocalite(@Param("id") Integer id, @Param("loc") String loc);
+
+    /** Projets de PV (non signés) — tous (Président/Admin). */
+    @Query("select pv from PvExamen pv where pv.statutPv <> 'SIGNE'")
+    List<PvExamen> findProjets();
+
+    /** Projets de PV (non signés) d'une localité. */
+    @Query("select pv from PvExamen pv where pv.statutPv <> 'SIGNE' "
+            + "and pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
+    List<PvExamen> findProjetsParLocalite(@Param("loc") String loc);
+
+    /** PV définitifs (signés) — tous. */
+    @Query("select pv from PvExamen pv where pv.statutPv = 'SIGNE'")
+    List<PvExamen> findDefinitifs();
+
+    /** PV définitifs (signés) d'une localité. */
+    @Query("select pv from PvExamen pv where pv.statutPv = 'SIGNE' "
+            + "and pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
+    List<PvExamen> findDefinitifsParLocalite(@Param("loc") String loc);
 }

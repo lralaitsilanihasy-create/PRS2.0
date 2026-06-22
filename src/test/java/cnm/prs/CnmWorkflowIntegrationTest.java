@@ -3127,6 +3127,30 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$.erreurs[0].message").exists());
     }
 
+    @Test
+    @DisplayName("PV projets vs definitifs : un PV signe quitte /pv-examens et apparait dans /pv-examens/definitifs")
+    void pv_projets_et_definitifs() throws Exception {
+        // PV non signé (BROUILLON) sur examen 1.
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":96,\"idExamen\":1,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        // PV signé (FAV) sur examen 1.
+        signerPvAvecAvis(95, "FAV");
+
+        // Projets : contient 96 (BROUILLON), exclut 95 (SIGNE).
+        mvc.perform(get("/api/pv-examens").header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idPv==96)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPv==95)]", hasSize(0)));
+        // Définitifs : contient 95 (SIGNE), exclut 96 (BROUILLON).
+        mvc.perform(get("/api/pv-examens/definitifs").header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idPv==95)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPv==96)]", hasSize(0)));
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------

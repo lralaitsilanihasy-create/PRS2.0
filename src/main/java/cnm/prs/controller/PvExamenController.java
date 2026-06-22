@@ -34,9 +34,16 @@ public class PvExamenController {
         this.service = service;
     }
 
+    // Projets de PV (non signés). Les PV signés sont exposés par GET /api/pv-examens/definitifs.
     @GetMapping
-    public List<PvExamenDto> findAll() {
-        return service.findAll();
+    public List<PvExamenDto> projets() {
+        return service.projets();
+    }
+
+    /** PV définitifs (signés) — liste séparée des projets de PV. */
+    @GetMapping("/definitifs")
+    public List<PvExamenDto> definitifs() {
+        return service.definitifs();
     }
 
     @GetMapping("/{id}")
