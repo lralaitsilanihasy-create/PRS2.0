@@ -68,4 +68,11 @@ public interface PvExamenRepository extends JpaRepository<PvExamen, Integer> {
     @Query("select pv from PvExamen pv where pv.statutPv = 'SIGNE' "
             + "and pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
     List<PvExamen> findDefinitifsParLocalite(@Param("loc") String loc);
+
+    /** refeDossier du dossier rattaché à un examen (examen → dispatch → réception → dossier). */
+    @Query("select e.dispatch.reception.dossier.refeDossier from Examen e where e.idExamen = :idExamen")
+    Optional<String> findRefeDossierByExamen(@Param("idExamen") Integer idExamen);
+
+    /** Vrai si un PV porte déjà cette référence (unicité applicative). */
+    boolean existsByRefePv(String refePv);
 }

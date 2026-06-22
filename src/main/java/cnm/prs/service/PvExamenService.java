@@ -101,7 +101,25 @@ public class PvExamenService {
         entity.setDateSignaturePresident(null);
         entity.setDateSignatureCc(null);
         entity.setDatePv(null);
+        // ⚠️ Règle ajoutée — refePv dérivée du dossier (refeDossier au format .../YYYY), unique.
+        String refePv = genererRefePv(dto.getIdExamen());
+        if (refePv != null && repository.existsByRefePv(refePv)) {
+            throw new BusinessRuleException(
+                    "Un PV existe déjà pour ce dossier (référence " + refePv + ").");
+        }
+        entity.setRefePv(refePv);
         return PvExamenMapper.toDto(repository.save(entity));
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — dérive la référence du PV depuis {@code refeDossier} du dossier rattaché :
+     * insère {@code /PV} avant l'année. Uniquement si refeDossier est au format {@code .../YYYY}
+     * (sinon {@code null} — les anciennes références ne sont pas dérivables).
+     */
+    private String genererRefePv(Integer idExamen) {
+        String refe = repository.findRefeDossierByExamen(idExamen)
+                .filter(s -> s != null && s.matches(".*/\\d{4}$")).orElse(null);
+        return refe == null ? null : refe.replaceFirst("/(\\d{4})$", "/PV/$1");
     }
 
     /**

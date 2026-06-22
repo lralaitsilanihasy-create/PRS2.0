@@ -1992,7 +1992,13 @@ plusieurs dates, chacune typée). Remplace les anciens champs `datePrev*` de `Ma
 | dateSignatureCc | string (date) | Non | |
 | dateSignatureMembre | string (date) | Non | |
 | datePv | string (date) | Non | |
-| referencePv | string | Non | max 100 |
+| referencePv | string | Non | max 100 — référence libre (saisie ; reprise dans les notifications) |
+| refePv | string | — (réponse) | max 120 — **référence officielle dérivée du dossier**, générée serveur, **unique** (lecture seule) |
+
+> ⚠️ **Référence du PV (`refePv`) — règle ajoutée.** À la création, le serveur dérive `refePv` du `refeDossier`
+> du dossier rattaché en insérant **`/PV` avant l'année** : `00003/PPM/CRM-ANT/2026` → `00003/PPM/CRM-ANT/PV/2026`.
+> Dérivée **uniquement** si `refeDossier` est au format `…/YYYY` (sinon `null`). **Unique** : créer un 2ᵉ PV sur le
+> même dossier (même `refePv`) → **409**. Distincte du champ libre `referencePv`.
 
 **Champs `PvActionRequest`** (corps des actions de workflow)
 

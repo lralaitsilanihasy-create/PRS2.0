@@ -32,6 +32,7 @@ public final class PvExamenMapper {
         dto.setDateSignatureMembre(entity.getDateSignatureMembre());
         dto.setDatePv(entity.getDatePv());
         dto.setReferencePv(entity.getReferencePv());
+        dto.setRefePv(entity.getRefePv());
         return dto;
     }
 

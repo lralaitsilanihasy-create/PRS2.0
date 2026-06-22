@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -18,7 +19,8 @@ import lombok.NoArgsConstructor;
  * Générée à partir du MLD (db_ppm110626.pgerd).
  */
 @Entity
-@Table(name = "t_pv_examen")
+@Table(name = "t_pv_examen",
+        uniqueConstraints = @UniqueConstraint(name = "uq_pv_examen_refe_pv", columnNames = "REFE_PV"))
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -72,6 +74,10 @@ public class PvExamen {
 
     @Column(name = "REFERENCE_PV", length = 100)
     private String referencePv;
+
+    /** Référence dérivée du dossier (refeDossier avec /PV avant l'année) — auto-générée à la création, unique. */
+    @Column(name = "REFE_PV", length = 120)
+    private String refePv;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_AVIS", insertable = false, updatable = false)

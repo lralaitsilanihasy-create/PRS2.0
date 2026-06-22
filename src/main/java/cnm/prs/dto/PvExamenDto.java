@@ -58,4 +58,8 @@ public class PvExamenDto {
 
     @Size(max = 100)
     private String referencePv;
+
+    /** Référence officielle du PV (dérivée du dossier) — lecture seule, générée serveur. */
+    @Size(max = 120)
+    private String refePv;
 }

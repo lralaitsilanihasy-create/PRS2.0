@@ -3151,6 +3151,42 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.idPv==96)]", hasSize(0)));
     }
 
+    @Test
+    @DisplayName("PV refePv : derivee de refeDossier (.../YYYY -> .../PV/YYYY)")
+    void pv_refePv_generee() throws Exception {
+        Dossier d = dossier(500, "EXAMINE"); d.setRefeDossier("00003/PPM/CRM-ANT/2026"); dossierRepository.save(d);
+        receptionRepository.save(reception(500, 500, "CTRSEC", true));
+        dispatchRepository.save(dispatch(500, 500, "CTRCC1", "CTRMEM"));
+        examenRepository.save(examen(500, 500, "CTRMEM"));
+
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":201,\"idExamen\":500,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.refePv").value("00003/PPM/CRM-ANT/PV/2026"));
+    }
+
+    @Test
+    @DisplayName("PV refePv unique : deux PV sur le meme dossier -> 409")
+    void pv_refePv_unique() throws Exception {
+        Dossier d = dossier(501, "EXAMINE"); d.setRefeDossier("00007/PPM/CRM-ANT/2026"); dossierRepository.save(d);
+        receptionRepository.save(reception(501, 501, "CTRSEC", true));
+        dispatchRepository.save(dispatch(501, 501, "CTRCC1", "CTRMEM"));
+        examenRepository.save(examen(501, 501, "CTRMEM"));
+
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":202,\"idExamen\":501,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/pv-examens").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idPv\":203,\"idExamen\":501,\"idAvis\":\"FAV\",\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"statutPv\":\"BROUILLON\",\"nbNavettes\":0}"))
+                .andExpect(status().isConflict());
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
