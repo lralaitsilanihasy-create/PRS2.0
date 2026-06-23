@@ -21,6 +21,9 @@ public interface DemandeRetraitRepository extends JpaRepository<DemandeRetrait, 
     /** Vrai si le dossier porte au moins une demande de retrait (trace de circuit — empêche le hard delete). */
     boolean existsByIdDossier(Integer idDossier);
 
+    /** Supprime les demandes de retrait d'un dossier (cascade à la suppression du dossier brouillon). */
+    void deleteByIdDossier(Integer idDossier);
+
     /** Demandes à un (ou plusieurs) statut(s) — Président, toutes localités. */
     List<DemandeRetrait> findByStatutIn(List<String> statuts);
 

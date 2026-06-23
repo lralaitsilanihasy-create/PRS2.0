@@ -36,4 +36,7 @@ public interface ReceptionRepository extends JpaRepository<Reception, Integer> {
     /** Prochaine PK réception, allouée par la séquence serveur (Voie B — l'id client est ignoré). */
     @Query(value = "select nextval('seq_reception')", nativeQuery = true)
     Long nextIdReception();
+
+    /** Supprime les réceptions d'un dossier (cascade à la suppression du dossier brouillon ; feuilles sans dispatch). */
+    void deleteByIdDossier(Integer idDossier);
 }

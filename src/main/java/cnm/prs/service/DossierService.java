@@ -36,6 +36,7 @@ import cnm.prs.repository.DemandeRetraitRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.MarchePrevisionRepository;
 import cnm.prs.repository.MarcheRepository;
+import cnm.prs.repository.NotificationRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
 import cnm.prs.repository.ReceptionRepository;
@@ -61,13 +62,15 @@ public class DossierService {
     private final MarchePrevisionRepository marchePrevisionRepository;
     private final ReceptionRepository receptionRepository;
     private final DemandeRetraitRepository demandeRetraitRepository;
+    private final NotificationRepository notificationRepository;
 
     public DossierService(DossierRepository repository, PpmRepository ppmRepository,
             ControleurDirectory controleurDirectory, NotificationService notificationService,
             DossierIntegriteService dossierIntegrite, VerificationRepository verificationRepository,
             AuditLogRepository auditLogRepository, PrmpRepository prmpRepository,
             MarcheRepository marcheRepository, MarchePrevisionRepository marchePrevisionRepository,
-            ReceptionRepository receptionRepository, DemandeRetraitRepository demandeRetraitRepository) {
+            ReceptionRepository receptionRepository, DemandeRetraitRepository demandeRetraitRepository,
+            NotificationRepository notificationRepository) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.controleurDirectory = controleurDirectory;
@@ -80,6 +83,7 @@ public class DossierService {
         this.marchePrevisionRepository = marchePrevisionRepository;
         this.receptionRepository = receptionRepository;
         this.demandeRetraitRepository = demandeRetraitRepository;
+        this.notificationRepository = notificationRepository;
     }
 
     /**
@@ -260,9 +264,12 @@ public class DossierService {
 
     /**
      * ⚠️ Règle ajoutée — suppression d'un dossier depuis « Mes brouillons » (PRMP propriétaire).
-     * Uniquement si {@code BROUILLON} (sinon 409) et <strong>sans historique de circuit</strong>
-     * (réception ou demande de retrait → 409, traces FK conservées). Cascade applicative du contenu :
-     * prévisions → marchés → PPM(s), puis le dossier.
+     * Un dossier <strong>{@code BROUILLON}</strong> est <strong>toujours supprimable</strong> (même revenu en
+     * brouillon après un circuit incomplet via retrait), sinon <strong>409</strong>. Cascade complète en une
+     * transaction : <strong>contenu</strong> (prévisions → marchés → PPM) + <strong>historique de circuit</strong>
+     * (notifications, demandes de retrait, réceptions — un brouillon n'a jamais dépassé {@code PRET_DISPATCH},
+     * donc des réceptions <em>feuilles</em>, sans dispatch/examen/PV/vérification). Le <strong>journal d'audit</strong>
+     * ({@code t_audit_log}, immuable §3.8, sans FK) est <strong>conservé</strong>.
      */
     public void delete(Integer id) {
         Dossier dossier = repository.findById(id)
@@ -271,17 +278,17 @@ public class DossierService {
         if (!StatutDossier.BROUILLON.name().equals(dossier.getStatut())) {
             throw new BusinessRuleException("Ce dossier ne peut pas être supprimé.");              // 409
         }
-        if (receptionRepository.existsByIdDossier(id) || demandeRetraitRepository.existsByIdDossier(id)) {
-            throw new BusinessRuleException(
-                    "Ce dossier ne peut pas être supprimé : il porte un historique de circuit (réception ou retrait).");
-        }
-        // Cascade applicative du contenu : prévisions → marchés → PPM(s), puis le dossier.
+        // Contenu : prévisions → marchés → PPM(s).
         List<Marche> marches = marcheRepository.findByIdDossier(id);
         for (Marche m : marches) {
             marchePrevisionRepository.deleteByIdDetail(m.getIdDetail());
         }
         marcheRepository.deleteAll(marches);
         ppmRepository.deleteAll(ppmRepository.findByIdDossier(id));
+        // Historique de circuit (un brouillon ≤ PRET_DISPATCH → réceptions sans dispatch/vérification).
+        notificationRepository.deleteByIdDossier(id);
+        demandeRetraitRepository.deleteByIdDossier(id);
+        receptionRepository.deleteByIdDossier(id);
         repository.deleteById(id);
     }
 

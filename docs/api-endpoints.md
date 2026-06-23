@@ -774,7 +774,7 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 | GET | /api/dossiers/{id} | — | `DossierDto` | 200, 403, 404 | Authentifié (filtré) |
 | POST | /api/dossiers | `DossierDto` | `DossierDto` | 201, 400, 403 | **ADMINISTRATEUR** |
 | PUT | /api/dossiers/{id} | `DossierDto` | `DossierDto` | 200, 400, 403, 404 | **ADMINISTRATEUR** |
-| DELETE | /api/dossiers/{id} | — | — | 204, 403, 404, 409 | **PRMP** propriétaire — BROUILLON sans historique |
+| DELETE | /api/dossiers/{id} | — | — | 204, 403, 404, 409 | **PRMP** propriétaire — BROUILLON (cascade contenu + historique) |
 | POST | /api/dossiers/{id}/soumettre | — | `DossierDto` | 200, 400, 403, 404, 409 | **PRMP** |
 | POST | /api/dossiers/{id}/resoumettre | `DossierResoumissionRequest` | `DossierDto` | 200, 400, 403, 404, 409 | **PRMP** propriétaire |
 | GET | /api/dossiers/{id}/historique-echanges | — | `EchangeDto[]` | 200, 403, 404 | **PRMP** / **VERIFICATEUR** (titulaire/délégué) / **ADMINISTRATEUR** |
@@ -782,10 +782,12 @@ utilisateur (ex. mot de passe oublié) ; l'utilisateur pourra ensuite le changer
 `{id}` = idDossier (number). **`DossierResoumissionRequest`** = `{ motifRectification }` (String, **@NotBlank**, max 255).
 
 > ⚠️ **Suppression de dossier (règle ajoutée).** `DELETE /api/dossiers/{id}` est réservée à la **PRMP propriétaire**
-> (sinon **403**), uniquement sur un dossier **`BROUILLON`** (sinon **409** « Ce dossier ne peut pas être supprimé. »).
-> Cascade applicative du **contenu** : prévisions → marchés → PPM(s), puis le dossier. Un brouillon **avec historique
-> de circuit** (réception ou demande de retrait — ex. revenu BROUILLON via retrait) est **refusé (409)** : ses traces
-> FK (réception, retrait, notifications) sont **conservées**. Dossier inexistant → **404**.
+> (sinon **403**). Un dossier **`BROUILLON`** est **toujours supprimable** (sinon **409** « Ce dossier ne peut pas
+> être supprimé. »), **y compris s'il porte un historique de circuit** (revenu BROUILLON via retrait incomplet).
+> Cascade complète en une transaction : **contenu** (prévisions → marchés → PPM) **+ historique de circuit**
+> (notifications, demandes de retrait, réceptions — un brouillon n'a jamais dépassé `PRET_DISPATCH`, donc des
+> réceptions sans dispatch/examen/PV/vérification). Le **journal d'audit** (`t_audit_log`, immuable §3.8, sans FK) est
+> **conservé**. Dossier inexistant → **404**.
 
 > ⚠️ **Historique d'échanges (règle ajoutée).** `GET /api/dossiers/{id}/historique-echanges` retourne l'historique
 > complet d'un dossier **`CLOTURE`** (sinon **403**), en **fil chronologique entrelacé** (chaîne de réponse : chaque

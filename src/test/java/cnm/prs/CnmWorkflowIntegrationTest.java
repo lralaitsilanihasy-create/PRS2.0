@@ -3234,6 +3234,20 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Suppression dossier — BROUILLON AVEC historique (réception+retrait+notif) → 204, cascade historique")
+    void suppression_brouillon_avec_historique_ok() throws Exception {
+        Dossier d = dossier(603, "BROUILLON"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        receptionRepository.save(reception(603, 603, "CTRSEC", true));
+        demandeRetraitRepository.save(demandeRetrait(0, 603, "PRMP001"));
+        notificationService.emettre(603, TypeNotification.PRET_DISPATCH, "CTRMEM", null, "Titre", "Corps");
+
+        mvc.perform(delete("/api/dossiers/603").header("Authorization", tokenPrmp)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(dossierRepository.existsById(603));
+        org.junit.jupiter.api.Assertions.assertFalse(receptionRepository.existsByIdDossier(603));
+        org.junit.jupiter.api.Assertions.assertFalse(demandeRetraitRepository.existsByIdDossier(603));
+    }
+
+    @Test
     @DisplayName("Suppression dossier — statut SOUMIS → 409")
     void suppression_hors_brouillon_409() throws Exception {
         Dossier d = dossier(601, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);

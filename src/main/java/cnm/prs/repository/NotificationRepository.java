@@ -35,4 +35,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Inte
             order by n.dateEnvoi desc
             """)
     List<Notification> findPourPrmp(@Param("ref") String ref, @Param("email") String email);
+
+    /** Supprime les notifications d'un dossier (cascade à la suppression du dossier brouillon). */
+    void deleteByIdDossier(Integer idDossier);
 }
