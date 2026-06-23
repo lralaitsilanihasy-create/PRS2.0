@@ -1,14 +1,14 @@
 package cnm.prs.dto;
 
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO de transfert pour {@link cnm.prs.entity.MarchePrevision}.
+ * DTO de transfert pour {@link cnm.prs.entity.MarchePrevision} : date prévisionnelle d'un marché
+ * pour un processus ({@code idCapm}). {@code ordre} est en lecture seule (porté par {@code t_capm}).
  */
 @Data
 @NoArgsConstructor
@@ -22,8 +22,14 @@ public class MarchePrevisionDto {
     private Integer idDetail;
 
     @NotNull
-    @Size(max = 20)
-    private String typeDate;
+    private Integer idCapm;
 
-    private LocalDate datePrev;
+    @NotNull
+    private LocalDate dateDebut;
+
+    @NotNull
+    private LocalDate dateFin;
+
+    /** Ordre d'affichage du processus, porté par {@code t_capm.ORDRE} (lecture seule). */
+    private Integer ordre;
 }

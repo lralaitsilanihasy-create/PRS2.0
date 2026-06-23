@@ -18,8 +18,10 @@ public final class MarchePrevisionMapper {
         MarchePrevisionDto dto = new MarchePrevisionDto();
         dto.setIdPrevision(entity.getIdPrevision());
         dto.setIdDetail(entity.getIdDetail());
-        dto.setTypeDate(entity.getTypeDate());
-        dto.setDatePrev(entity.getDatePrev());
+        dto.setIdCapm(entity.getIdCapm());
+        dto.setDateDebut(entity.getDateDebut());
+        dto.setDateFin(entity.getDateFin());
+        // ordre (lecture seule, porté par t_capm) : peuplé par le service.
         return dto;
     }
 
@@ -30,8 +32,9 @@ public final class MarchePrevisionMapper {
         MarchePrevision entity = new MarchePrevision();
         entity.setIdPrevision(dto.getIdPrevision());
         entity.setIdDetail(dto.getIdDetail());
-        entity.setTypeDate(dto.getTypeDate());
-        entity.setDatePrev(dto.getDatePrev());
+        entity.setIdCapm(dto.getIdCapm());
+        entity.setDateDebut(dto.getDateDebut());
+        entity.setDateFin(dto.getDateFin());
         return entity;
     }
 }

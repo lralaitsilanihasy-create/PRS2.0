@@ -1,6 +1,5 @@
 package cnm.prs.service;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -14,6 +13,7 @@ import cnm.prs.dto.EditionPpmRequest;
 import cnm.prs.dto.MarcheDto;
 import cnm.prs.dto.MarchePrevisionDto;
 import cnm.prs.dto.PpmDto;
+import cnm.prs.dto.ProcessusMarche;
 import cnm.prs.dto.SaisieDossierRequest;
 import cnm.prs.dto.SaisieMarcheLigne;
 import cnm.prs.dto.SaisiePpmRequest;
@@ -26,6 +26,7 @@ import cnm.prs.exception.ChampsInvalidesException;
 import cnm.prs.exception.ErrorResponse;
 import cnm.prs.mapper.DossierMapper;
 import cnm.prs.mapper.PpmMapper;
+import cnm.prs.repository.CapmRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.EntiteContractRepository;
 import cnm.prs.repository.MarchePrevisionRepository;
@@ -59,13 +60,14 @@ public class SaisieService {
     private final ReferenceService referenceService;
     private final MarchePrevisionRepository marchePrevisionRepository;
     private final MarchePrevisionService marchePrevisionService;
+    private final CapmRepository capmRepository;
 
     public SaisieService(DossierRepository dossierRepository, PpmRepository ppmRepository,
             MarcheRepository marcheRepository, PpmService ppmService,
             MarcheService marcheService, DossierIntegriteService dossierIntegrite,
             EntiteContractRepository entiteContractRepository, PrmpRepository prmpRepository,
             ReferenceService referenceService, MarchePrevisionRepository marchePrevisionRepository,
-            MarchePrevisionService marchePrevisionService) {
+            MarchePrevisionService marchePrevisionService, CapmRepository capmRepository) {
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.marcheRepository = marcheRepository;
@@ -77,6 +79,7 @@ public class SaisieService {
         this.referenceService = referenceService;
         this.marchePrevisionRepository = marchePrevisionRepository;
         this.marchePrevisionService = marchePrevisionService;
+        this.capmRepository = capmRepository;
     }
 
     /** Saisie d'un PPM = dossier (BROUILLON) + PPM + lignes de marché (mode auto), en une transaction. */
@@ -100,30 +103,40 @@ public class SaisieService {
 
         if (req.marches() != null) {
             int prevSeq = marchePrevisionRepository.findMaxId();   // PK prévision allouée serveur (max+1)
-            for (SaisieMarcheLigne ligne : req.marches()) {
-                exigerDatesPrevisionnelles(ligne);   // (règle ajoutée) dates obligatoires par marché → 400 sinon
+            for (int i = 0; i < req.marches().size(); i++) {
+                SaisieMarcheLigne ligne = req.marches().get(i);
+                exigerAuMoinsUnProcessus(ligne, i);   // « au moins un processus » (NotEmpty, à la création)
+                for (int j = 0; j < ligne.processus().size(); j++) {
+                    exigerCapmConnu(ligne.processus().get(j), i, j);   // idCapm existant (avant création marché)
+                }
                 Integer idDetail = marcheService.create(toMarcheDto(ligne, idDossier, idPpm)).getIdDetail();
-                marchePrevisionService.create(new MarchePrevisionDto(++prevSeq, idDetail, "DEBUT", ligne.dateDebut()));
-                marchePrevisionService.create(new MarchePrevisionDto(++prevSeq, idDetail, "FIN", ligne.dateFin()));
+                for (ProcessusMarche p : ligne.processus()) {
+                    marchePrevisionService.create(new MarchePrevisionDto(
+                            ++prevSeq, idDetail, p.idCapm(), p.dateDebut(), p.dateFin(), null));
+                }
             }
         }
         return DossierMapper.toDto(dossierRepository.findById(idDossier).orElseThrow());
     }
 
     /**
-     * ⚠️ Règle ajoutée — les dates prévisionnelles (début/fin) sont obligatoires pour chaque marché
-     * dès la création du brouillon. Absentes → 400 avec {@code erreurs:[{champ,message}]}.
+     * ⚠️ Règle ajoutée — chaque marché doit comporter au moins un processus à la création (400 sinon).
+     * Validé ici (et non par {@code @NotEmpty} sur le DTO) pour ne pas exiger de processus à l'édition,
+     * qui partage {@link SaisieMarcheLigne}.
      */
-    private void exigerDatesPrevisionnelles(SaisieMarcheLigne ligne) {
-        List<ErrorResponse.FieldError> erreurs = new ArrayList<>();
-        if (ligne.dateDebut() == null) {
-            erreurs.add(new ErrorResponse.FieldError("dateDebut", "La date de début est obligatoire."));
+    private void exigerAuMoinsUnProcessus(SaisieMarcheLigne ligne, int i) {
+        if (ligne.processus() == null || ligne.processus().isEmpty()) {
+            throw new ChampsInvalidesException(List.of(new ErrorResponse.FieldError(
+                    "marches[" + i + "].processus", "Au moins un processus est obligatoire.")));
         }
-        if (ligne.dateFin() == null) {
-            erreurs.add(new ErrorResponse.FieldError("dateFin", "La date de fin est obligatoire."));
-        }
-        if (!erreurs.isEmpty()) {
-            throw new ChampsInvalidesException(erreurs);
+    }
+
+    /** ⚠️ Règle ajoutée — l'{@code idCapm} d'un processus doit exister dans {@code t_capm} (400 sinon). */
+    private void exigerCapmConnu(ProcessusMarche p, int i, int j) {
+        if (p.idCapm() != null && !capmRepository.existsById(p.idCapm())) {
+            throw new ChampsInvalidesException(List.of(new ErrorResponse.FieldError(
+                    "marches[" + i + "].processus[" + j + "].idCapm",
+                    "Processus inconnu : " + p.idCapm() + ".")));
         }
     }
 

@@ -48,7 +48,7 @@ public class SecurityConfig {
             "/api/regle-anomalies", "/api/regle-alertes", "/api/comptes", "/api/cat-comptes",
             "/api/entite-contracts", "/api/delegation-profils", "/api/aviss", "/api/natures",
             "/api/mode-passations", "/api/situations", "/api/type-dossiers", "/api/ministeres",
-            "/api/profiles"
+            "/api/profiles", "/api/capm"
     };
 
     /** Mêmes ressources, ciblées par identifiant (pour PUT / DELETE). */
@@ -57,7 +57,7 @@ public class SecurityConfig {
             "/api/regle-anomalies/*", "/api/regle-alertes/*", "/api/comptes/*", "/api/cat-comptes/*",
             "/api/entite-contracts/*", "/api/delegation-profils/*", "/api/aviss/*", "/api/natures/*",
             "/api/mode-passations/*", "/api/situations/*", "/api/type-dossiers/*", "/api/ministeres/*",
-            "/api/profiles/*"
+            "/api/profiles/*", "/api/capm/*"
     };
 
     /**

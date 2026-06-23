@@ -1,8 +1,9 @@
 package cnm.prs.dto;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.util.List;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -33,11 +34,12 @@ public record SaisieMarcheLigne(
 
         Integer idNature,
 
-        // Dates prévisionnelles : OBLIGATOIRES à la saisie PPM (validées par le service ; persistées en
-        // 2 lignes t_marche_prevision typées DEBUT/FIN). Nullable ici car le DTO est partagé avec l'édition.
-        LocalDate dateDebut,
-
-        LocalDate dateFin,
+        // Processus de marché + dates prévisionnelles (idCapm, dateDebut, dateFin). @Valid cascade la
+        // validation par processus (chemins marches[i].processus[j].champ). « Au moins un processus »
+        // est exigé à la CRÉATION (SaisieService) — pas via @NotEmpty ici, pour ne pas casser l'édition
+        // qui partage ce DTO (EditionPpmRequest).
+        @Valid
+        List<ProcessusMarche> processus,
 
         // idMode : mode de passation CHOISI par la PRMP (facultatif) ; null → mode recommandé.
         // Le serveur valide qu'il appartient à l'ensemble autorisé (sinon 409).

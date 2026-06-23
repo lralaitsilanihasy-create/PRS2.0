@@ -16,10 +16,10 @@ import lombok.NoArgsConstructor;
 /**
  * Entité JPA mappée sur la table {@code t_marche_prevision}.
  *
- * <p>Une date prévisionnelle d'un marché. Relation 1,N : un marché ({@link Marche})
- * possède plusieurs dates prévisionnelles, chacune typée par {@code TYPE_DATE}
- * (LANCEMENT, DAO, OUVERTURE, ATTRIBUTION). Remplace les colonnes de dates qui
- * figuraient auparavant directement dans {@code t_marche}.</p>
+ * <p>Dates prévisionnelles d'un marché par <strong>processus</strong>. Relation 1,N : un marché
+ * ({@link Marche}) possède une ligne par processus ({@link Capm}, via {@code ID_CAPM}), chacune
+ * portant une {@code DATE_DEBUT} et une {@code DATE_FIN}. L'ordre d'affichage est porté par
+ * {@code t_capm.ORDRE}.</p>
  */
 @Entity
 @Table(name = "t_marche_prevision")
@@ -36,13 +36,22 @@ public class MarchePrevision {
     @Column(name = "ID_DETAIL", nullable = false)
     private Integer idDetail;
 
-    /** Type de date prévisionnelle : LANCEMENT, DAO, OUVERTURE, ATTRIBUTION. */
-    @Column(name = "TYPE_DATE", length = 20, nullable = false)
-    private String typeDate;
+    /** Processus de marché (FK vers {@code t_capm.ID_CAPM}). */
+    @Column(name = "ID_CAPM", nullable = false)
+    private Integer idCapm;
 
-    /** Date prévisionnelle. */
-    @Column(name = "DATE_PREV")
-    private LocalDate datePrev;
+    /** Date prévisionnelle de début du processus. */
+    @Column(name = "DATE_DEBUT")
+    private LocalDate dateDebut;
+
+    /** Date prévisionnelle de fin du processus. */
+    @Column(name = "DATE_FIN")
+    private LocalDate dateFin;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_CAPM", insertable = false, updatable = false)
+    @JsonIgnore
+    private Capm capm;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_DETAIL", insertable = false, updatable = false)
