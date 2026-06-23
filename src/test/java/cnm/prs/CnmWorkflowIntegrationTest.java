@@ -2505,7 +2505,8 @@ class CnmWorkflowIntegrationTest {
         // Localité dérivée de l'entité 1 (= ANT) ; AUCUN id (dossier/PPM/marché) dans le corps → alloués serveur.
         String body = "{\"idEntiteContract\":1,\"exercice\":2026,"
                 + "\"signataire\":\"RABE\",\"dateSignature\":\"2026-01-10\",\"reference\":\"PPM-60\","
-                + "\"marches\":[{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+                + "\"marches\":[{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"dateDebut\":\"2026-02-01\",\"dateFin\":\"2026-06-30\"}]}";
         String resp = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
@@ -2698,8 +2699,10 @@ class CnmWorkflowIntegrationTest {
         // Saisie initiale (sans id) : marché 150M (→ mode 4) et 500M (→ mode 2), entité 1 (ANT).
         String creation = "{\"idEntiteContract\":1,\"exercice\":2026,"
                 + "\"signataire\":\"RABE\",\"dateSignature\":\"2026-01-10\",\"reference\":\"PPM-120-v1\","
-                + "\"marches\":[{\"montEstim\":150000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"},"
-                + "{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+                + "\"marches\":[{\"montEstim\":150000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"dateDebut\":\"2026-02-01\",\"dateFin\":\"2026-06-30\"},"
+                + "{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"dateDebut\":\"2026-02-01\",\"dateFin\":\"2026-06-30\"}]}";
         String cresp = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON).content(creation))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
@@ -3326,6 +3329,43 @@ class CnmWorkflowIntegrationTest {
         int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
         mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
                 .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].signataire", hasItem("Prenoms Nom")));
+    }
+
+    @Test
+    @DisplayName("Saisie PPM — marché sans dates prévisionnelles → 400 (dateDebut/dateFin obligatoires)")
+    void brouillon_sans_dates_400() throws Exception {
+        String body = "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"2026-01-10\","
+                + "\"marches\":[{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[?(@.champ=='dateDebut')].message", hasItem("La date de début est obligatoire.")))
+                .andExpect(jsonPath("$.erreurs[?(@.champ=='dateFin')].message", hasItem("La date de fin est obligatoire.")));
+    }
+
+    @Test
+    @DisplayName("Saisie PPM — marché avec dates prévisionnelles → 201 + prévisions DEBUT/FIN créées")
+    void brouillon_avec_dates_ok() throws Exception {
+        // Mode déterminable (évite la notif MODE_NON_DETERMINE, hors sujet) : 500M → AOR (mode 2).
+        natureRepository.save(new Nature(1, "Travaux", null));
+        situationRepository.save(new Situation(1, "Normale", null));
+        modePassationRepository.save(new ModePassation(2, "AOR", null, null, null, null));
+        seuilRepository.save(seuil(902, "ANT", 1, "200000001", "1000000000"));
+        reglePassationRepository.save(regle(902, 1, 902, 2));
+        String body = "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"2026-01-10\","
+                + "\"marches\":[{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"dateDebut\":\"2026-02-01\",\"dateFin\":\"2026-06-30\"}]}";
+        String resp = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
+        String m = mvc.perform(get("/api/marches").header("Authorization", tokenPrmp))
+                .andReturn().getResponse().getContentAsString();
+        int idDetail = ((List<Integer>) com.jayway.jsonpath.JsonPath.read(m,
+                "$[?(@.idDossier==" + idDoss + ")].idDetail")).get(0);
+        mvc.perform(get("/api/marche-previsions?marche=" + idDetail).header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.typeDate=='DEBUT')].datePrev", hasItem("2026-02-01")))
+                .andExpect(jsonPath("$[?(@.typeDate=='FIN')].datePrev", hasItem("2026-06-30")));
     }
 
     // ------------------------------------------------------------------

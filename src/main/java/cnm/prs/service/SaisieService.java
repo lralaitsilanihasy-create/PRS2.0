@@ -1,5 +1,6 @@
 package cnm.prs.service;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import cnm.prs.dto.DossierDto;
 import cnm.prs.dto.EditionPpmRequest;
 import cnm.prs.dto.MarcheDto;
+import cnm.prs.dto.MarchePrevisionDto;
 import cnm.prs.dto.PpmDto;
 import cnm.prs.dto.SaisieDossierRequest;
 import cnm.prs.dto.SaisieMarcheLigne;
@@ -20,10 +22,13 @@ import cnm.prs.entity.Marche;
 import cnm.prs.entity.Ppm;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.exception.BusinessRuleException;
+import cnm.prs.exception.ChampsInvalidesException;
+import cnm.prs.exception.ErrorResponse;
 import cnm.prs.mapper.DossierMapper;
 import cnm.prs.mapper.PpmMapper;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.EntiteContractRepository;
+import cnm.prs.repository.MarchePrevisionRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
@@ -52,12 +57,15 @@ public class SaisieService {
     private final EntiteContractRepository entiteContractRepository;
     private final PrmpRepository prmpRepository;
     private final ReferenceService referenceService;
+    private final MarchePrevisionRepository marchePrevisionRepository;
+    private final MarchePrevisionService marchePrevisionService;
 
     public SaisieService(DossierRepository dossierRepository, PpmRepository ppmRepository,
             MarcheRepository marcheRepository, PpmService ppmService,
             MarcheService marcheService, DossierIntegriteService dossierIntegrite,
             EntiteContractRepository entiteContractRepository, PrmpRepository prmpRepository,
-            ReferenceService referenceService) {
+            ReferenceService referenceService, MarchePrevisionRepository marchePrevisionRepository,
+            MarchePrevisionService marchePrevisionService) {
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.marcheRepository = marcheRepository;
@@ -67,6 +75,8 @@ public class SaisieService {
         this.entiteContractRepository = entiteContractRepository;
         this.prmpRepository = prmpRepository;
         this.referenceService = referenceService;
+        this.marchePrevisionRepository = marchePrevisionRepository;
+        this.marchePrevisionService = marchePrevisionService;
     }
 
     /** Saisie d'un PPM = dossier (BROUILLON) + PPM + lignes de marché (mode auto), en une transaction. */
@@ -89,11 +99,32 @@ public class SaisieService {
         Integer idPpm = ppmService.create(ppm).getIdPpm();          // PK séquence (retournée)
 
         if (req.marches() != null) {
+            int prevSeq = marchePrevisionRepository.findMaxId();   // PK prévision allouée serveur (max+1)
             for (SaisieMarcheLigne ligne : req.marches()) {
-                marcheService.create(toMarcheDto(ligne, idDossier, idPpm));   // idDetail alloué par MarcheService
+                exigerDatesPrevisionnelles(ligne);   // (règle ajoutée) dates obligatoires par marché → 400 sinon
+                Integer idDetail = marcheService.create(toMarcheDto(ligne, idDossier, idPpm)).getIdDetail();
+                marchePrevisionService.create(new MarchePrevisionDto(++prevSeq, idDetail, "DEBUT", ligne.dateDebut()));
+                marchePrevisionService.create(new MarchePrevisionDto(++prevSeq, idDetail, "FIN", ligne.dateFin()));
             }
         }
         return DossierMapper.toDto(dossierRepository.findById(idDossier).orElseThrow());
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — les dates prévisionnelles (début/fin) sont obligatoires pour chaque marché
+     * dès la création du brouillon. Absentes → 400 avec {@code erreurs:[{champ,message}]}.
+     */
+    private void exigerDatesPrevisionnelles(SaisieMarcheLigne ligne) {
+        List<ErrorResponse.FieldError> erreurs = new ArrayList<>();
+        if (ligne.dateDebut() == null) {
+            erreurs.add(new ErrorResponse.FieldError("dateDebut", "La date de début est obligatoire."));
+        }
+        if (ligne.dateFin() == null) {
+            erreurs.add(new ErrorResponse.FieldError("dateFin", "La date de fin est obligatoire."));
+        }
+        if (!erreurs.isEmpty()) {
+            throw new ChampsInvalidesException(erreurs);
+        }
     }
 
     /**

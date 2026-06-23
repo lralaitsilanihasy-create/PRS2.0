@@ -3,6 +3,7 @@ package cnm.prs.repository;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import cnm.prs.entity.MarchePrevision;
@@ -15,4 +16,8 @@ public interface MarchePrevisionRepository extends JpaRepository<MarchePrevision
 
     /** Supprime les dates prévisionnelles d'un marché (cascade applicative à la suppression du marché). */
     long deleteByIdDetail(Integer idDetail);
+
+    /** Plus grand ID_PREVISION existant (0 si table vide) — pour allouer la PK assignée à la saisie. */
+    @Query("select coalesce(max(p.idPrevision), 0) from MarchePrevision p")
+    Integer findMaxId();
 }

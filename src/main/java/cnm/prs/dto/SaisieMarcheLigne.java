@@ -1,6 +1,7 @@
 package cnm.prs.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import jakarta.validation.constraints.Size;
 
@@ -31,6 +32,12 @@ public record SaisieMarcheLigne(
         Integer idSituation,
 
         Integer idNature,
+
+        // Dates prévisionnelles : OBLIGATOIRES à la saisie PPM (validées par le service ; persistées en
+        // 2 lignes t_marche_prevision typées DEBUT/FIN). Nullable ici car le DTO est partagé avec l'édition.
+        LocalDate dateDebut,
+
+        LocalDate dateFin,
 
         // idMode : mode de passation CHOISI par la PRMP (facultatif) ; null → mode recommandé.
         // Le serveur valide qu'il appartient à l'ensemble autorisé (sinon 409).
