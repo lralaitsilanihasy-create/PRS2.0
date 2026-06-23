@@ -23,8 +23,10 @@ import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.mapper.DossierMapper;
 import cnm.prs.mapper.PpmMapper;
 import cnm.prs.repository.DossierRepository;
+import cnm.prs.repository.EntiteContractRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
+import cnm.prs.repository.PrmpRepository;
 import cnm.prs.security.CurrentUser;
 
 /**
@@ -47,16 +49,24 @@ public class SaisieService {
     private final PpmService ppmService;
     private final MarcheService marcheService;
     private final DossierIntegriteService dossierIntegrite;
+    private final EntiteContractRepository entiteContractRepository;
+    private final PrmpRepository prmpRepository;
+    private final ReferenceService referenceService;
 
     public SaisieService(DossierRepository dossierRepository, PpmRepository ppmRepository,
             MarcheRepository marcheRepository, PpmService ppmService,
-            MarcheService marcheService, DossierIntegriteService dossierIntegrite) {
+            MarcheService marcheService, DossierIntegriteService dossierIntegrite,
+            EntiteContractRepository entiteContractRepository, PrmpRepository prmpRepository,
+            ReferenceService referenceService) {
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.marcheRepository = marcheRepository;
         this.ppmService = ppmService;
         this.marcheService = marcheService;
         this.dossierIntegrite = dossierIntegrite;
+        this.entiteContractRepository = entiteContractRepository;
+        this.prmpRepository = prmpRepository;
+        this.referenceService = referenceService;
     }
 
     /** Saisie d'un PPM = dossier (BROUILLON) + PPM + lignes de marché (mode auto), en une transaction. */
@@ -71,9 +81,10 @@ public class SaisieService {
         ppm.setIdDossier(idDossier);
         ppm.setIdPrmp(idPrmp);
         ppm.setExercice(req.exercice());
-        ppm.setSignataire(req.signataire());
+        // ⚠️ Règle ajoutée — signataire auto (profil PRMP) + référence auto (acronyme entité), non saisis.
+        ppm.setSignataire(signataireDeLaPrmp(idPrmp));
         ppm.setDateSignature(req.dateSignature());
-        ppm.setReference(req.reference());
+        ppm.setReference(referenceService.genererPpm(libelleEntite(req.idEntiteContract()), req.exercice()));
         ppm.setIdLocalite(localite);
         Integer idPpm = ppmService.create(ppm).getIdPpm();          // PK séquence (retournée)
 
@@ -172,5 +183,19 @@ public class SaisieService {
     private String prmpCourante() {
         return CurrentUser.ref().filter(s -> !s.isBlank())
                 .orElseThrow(() -> new AccessDeniedException("Utilisateur PRMP non identifié."));
+    }
+
+    /** Libellé de l'entité contractante (source de l'acronyme de la référence PPM). */
+    private String libelleEntite(Integer idEntiteContract) {
+        return entiteContractRepository.findById(idEntiteContract).map(e -> e.getLibelleEntite()).orElse(null);
+    }
+
+    /** Signataire = « prénoms nom » de la PRMP (équivalent de t_prmp.signataire, absent) ; repli sur idPrmp. */
+    private String signataireDeLaPrmp(String idPrmp) {
+        return prmpRepository.findById(idPrmp).map(p -> {
+            String n = ((p.getPrenomsPrmp() == null ? "" : p.getPrenomsPrmp()) + " "
+                    + (p.getNomPrmp() == null ? "" : p.getNomPrmp())).trim();
+            return n.isBlank() ? idPrmp : n;
+        }).orElse(idPrmp);
     }
 }

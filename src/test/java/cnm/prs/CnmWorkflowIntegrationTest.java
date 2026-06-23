@@ -3268,6 +3268,67 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(delete("/api/dossiers/99999").header("Authorization", tokenPrmp)).andExpect(status().isNotFound());
     }
 
+    @Test
+    @DisplayName("Saisie PPM — reference auto 00001/DGB/PPM/2026 (acronyme du libelle entite)")
+    void ppm_reference_generee() throws Exception {
+        EntiteContract e = entite(700, 1, "ANT"); e.setLibelleEntite("Direction Générale du Budget");
+        entiteContractRepository.save(e);
+        prmpEntiteRepository.save(prmpEntite(700, "PRMP001", 700, true));
+        String resp = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idEntiteContract\":700,\"exercice\":2026,\"dateSignature\":\"2026-01-10\",\"marches\":[]}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].reference", hasItem("00001/DGB/PPM/2026")));
+    }
+
+    @Test
+    @DisplayName("Saisie PPM — reference incrementee 00002 sur 2e PPM meme entite/annee")
+    void ppm_reference_incrementee() throws Exception {
+        EntiteContract e = entite(701, 1, "ANT"); e.setLibelleEntite("Direction Générale du Budget");
+        entiteContractRepository.save(e);
+        prmpEntiteRepository.save(prmpEntite(701, "PRMP001", 701, true));
+        String body = "{\"idEntiteContract\":701,\"exercice\":2026,\"dateSignature\":\"2026-01-10\",\"marches\":[]}";
+        int d1 = com.jayway.jsonpath.JsonPath.read(mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getContentAsString(), "$.idDossier");
+        int d2 = com.jayway.jsonpath.JsonPath.read(mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getContentAsString(), "$.idDossier");
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==" + d1 + ")].reference", hasItem("00001/DGB/PPM/2026")))
+                .andExpect(jsonPath("$[?(@.idDossier==" + d2 + ")].reference", hasItem("00002/DGB/PPM/2026")));
+    }
+
+    @Test
+    @DisplayName("Saisie PPM — compteur isole par entite : DRT -> 00001/DRT/PPM/2026")
+    void ppm_reference_isolee() throws Exception {
+        EntiteContract e = entite(702, 1, "ANT"); e.setLibelleEntite("Direction Régionale des Travaux");
+        entiteContractRepository.save(e);
+        prmpEntiteRepository.save(prmpEntite(702, "PRMP001", 702, true));
+        String resp = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idEntiteContract\":702,\"exercice\":2026,\"dateSignature\":\"2026-01-10\",\"marches\":[]}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].reference", hasItem("00001/DRT/PPM/2026")));
+    }
+
+    @Test
+    @DisplayName("Saisie PPM — signataire auto depuis le profil PRMP (prenoms + nom)")
+    void ppm_signataire_depuis_prmp() throws Exception {
+        EntiteContract e = entite(703, 1, "ANT"); e.setLibelleEntite("Direction Générale du Budget");
+        entiteContractRepository.save(e);
+        prmpEntiteRepository.save(prmpEntite(703, "PRMP001", 703, true));
+        String resp = mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idEntiteContract\":703,\"exercice\":2026,\"dateSignature\":\"2026-01-10\",\"marches\":[]}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].signataire", hasItem("Prenoms Nom")));
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
