@@ -220,11 +220,11 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
 
     /** Dossiers retirables de la PRMP (SOUMIS/PRET_DISPATCH dont elle est propriétaire) — liste déroulante (⚠️ règle ajoutée). */
     @Query("""
-            select d from Dossier d where d.statut in ('SOUMIS','PRET_DISPATCH') and (
-               d.idPrmp = :idPrmp
-               or exists (select 1 from Ppm p where p.idDossier = d.idDossier and p.idPrmp = :idPrmp)
-               or exists (select 1 from Marche m, Ppm p2
-                          where m.idDossier = d.idDossier and m.idPpm = p2.idPpm and p2.idPrmp = :idPrmp))
+            select d from Dossier d
+            where d.idPrmp = :idPrmp
+              and d.statut in ('SOUMIS','PRET_DISPATCH')
+              and not exists (select 1 from DemandeRetrait dr
+                              where dr.idDossier = d.idDossier and dr.statut = 'EN_ATTENTE')
             """)
     List<Dossier> findRetirablesPourPrmp(@Param("idPrmp") String idPrmp);
 

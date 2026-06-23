@@ -1648,6 +1648,53 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Retirables — dossier BROUILLON de la PRMP → absent")
+    void retirables_brouillon_exclu() throws Exception {
+        Dossier d = dossier(154, "BROUILLON"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        mvc.perform(get("/api/dossiers/retirables").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==154)]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Retirables — dossier SOUMIS de la PRMP → présent")
+    void retirables_soumis_inclus() throws Exception {
+        Dossier d = dossier(155, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        mvc.perform(get("/api/dossiers/retirables").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==155)]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Retirables — dossier PRET_DISPATCH de la PRMP → présent")
+    void retirables_pret_dispatch_inclus() throws Exception {
+        Dossier d = dossier(156, "PRET_DISPATCH"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        mvc.perform(get("/api/dossiers/retirables").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==156)]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Retirables — dossier SOUMIS avec demande EN_ATTENTE → absent")
+    void retirables_demande_en_attente_exclu() throws Exception {
+        Dossier d = dossier(157, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        demandeRetraitRepository.save(demandeRetrait(0, 157, "PRMP001"));   // statut EN_ATTENTE
+        mvc.perform(get("/api/dossiers/retirables").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==157)]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Retirables — dossier SOUMIS d'une autre PRMP → absent")
+    void retirables_autre_prmp_exclu() throws Exception {
+        prmpRepository.save(prmp("PRMP009", "ANT"));
+        Dossier d = dossier(158, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP009"); dossierRepository.save(d);
+        mvc.perform(get("/api/dossiers/retirables").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==158)]", hasSize(0)));
+    }
+
+    @Test
     @DisplayName("À valider : CC voit les EN_ATTENTE de sa localité (ANT), pas TMS ; le Président voit les deux")
     void retrait_aValider_scopeLocalite() throws Exception {
         Dossier ant = dossier(160, "SOUMIS"); ant.setIdLocalite("ANT"); ant.setIdPrmp("PRMP001"); dossierRepository.save(ant);
