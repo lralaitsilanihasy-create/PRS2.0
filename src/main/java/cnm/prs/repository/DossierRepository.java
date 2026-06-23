@@ -224,7 +224,8 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             where d.idPrmp = :idPrmp
               and d.statut in ('SOUMIS','PRET_DISPATCH')
               and not exists (select 1 from DemandeRetrait dr
-                              where dr.idDossier = d.idDossier and dr.statut = 'EN_ATTENTE')
+                              where dr.idDossier = d.idDossier
+                                and dr.statut in ('EN_ATTENTE', 'REFUSEE'))
             """)
     List<Dossier> findRetirablesPourPrmp(@Param("idPrmp") String idPrmp);
 

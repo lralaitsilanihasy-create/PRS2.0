@@ -1685,6 +1685,18 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Retirables — dossier SOUMIS avec demande REFUSEE → absent (pas de nouvelle demande)")
+    void retirables_demande_refusee_exclu() throws Exception {
+        Dossier d = dossier(159, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+        DemandeRetrait dr = demandeRetrait(0, 159, "PRMP001");
+        dr.setStatut("REFUSEE");
+        demandeRetraitRepository.save(dr);
+        mvc.perform(get("/api/dossiers/retirables").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==159)]", hasSize(0)));
+    }
+
+    @Test
     @DisplayName("Retirables — dossier SOUMIS d'une autre PRMP → absent")
     void retirables_autre_prmp_exclu() throws Exception {
         prmpRepository.save(prmp("PRMP009", "ANT"));
