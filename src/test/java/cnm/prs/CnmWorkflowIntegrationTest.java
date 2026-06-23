@@ -3368,6 +3368,28 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$[?(@.typeDate=='FIN')].datePrev", hasItem("2026-06-30")));
     }
 
+    @Test
+    @DisplayName("Saisie PPM — corps mal formé (date JJ/MM/AAAA, id libellé) → 400 avec le champ fautif")
+    void saisie_corps_illisible_400() throws Exception {
+        // dateSignature non-ISO → 400 + champ dateSignature
+        String dateKo = "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"23/06/2026\","
+                + "\"marches\":[{\"montEstim\":1000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"dateDebut\":\"2026-02-01\",\"dateFin\":\"2026-06-30\"}]}";
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(dateKo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[?(@.champ=='dateSignature')]").exists());
+
+        // idEntiteContract = libellé (string) → 400 + champ idEntiteContract
+        String idKo = "{\"idEntiteContract\":\"Direction Générale du Budget\",\"exercice\":2026,\"dateSignature\":\"2026-06-23\","
+                + "\"marches\":[{\"montEstim\":1000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"dateDebut\":\"2026-02-01\",\"dateFin\":\"2026-06-30\"}]}";
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(idKo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[?(@.champ=='idEntiteContract')]").exists());
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------

@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -50,6 +51,68 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ChampsInvalidesException.class)
     public ResponseEntity<ErrorResponse> handleChampsInvalides(ChampsInvalidesException ex, WebRequest request) {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, ex.getErreurs());
+    }
+
+    /**
+     * Corps de requête illisible / mal formé (JSON invalide, mauvais type, date hors format ISO).
+     * → 400 avec le champ fautif dans {@code erreurs}, au lieu d'une 500 opaque. Le champ et le type
+     * attendu sont lus <strong>par réflexion</strong> sur l'exception Jackson sous-jacente
+     * ({@code MismatchedInputException#getPath()} / {@code InvalidFormatException#getTargetType()}) :
+     * jackson-databind est présent à l'exécution mais non exposé à la compilation par le starter webmvc.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex, WebRequest request) {
+        List<ErrorResponse.FieldError> erreurs = null;
+        String champ = champFautif(ex);
+        if (champ != null) {
+            erreurs = List.of(new ErrorResponse.FieldError(champ, messageFautif(ex)));
+        }
+        return build(HttpStatus.BAD_REQUEST, "Corps de requête invalide ou mal formé.", request, erreurs);
+    }
+
+    /** Nom du champ fautif (feuille) lu sur le chemin Jackson {@code getPath()}, via sa notation {@code ["champ"]}. */
+    private static String champFautif(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (invoquer(t, "getPath") instanceof List<?> refs && !refs.isEmpty()) {
+                java.util.regex.Matcher m = REF_CHAMP.matcher(refs.toString());
+                String dernier = null;
+                while (m.find()) {
+                    dernier = m.group(1);   // dernière feuille (ex. dateSignature, dateFin)
+                }
+                if (dernier != null) {
+                    return dernier;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Notation d'un segment de chemin Jackson : {@code ["nomDuChamp"]} (stable Jackson 2 et 3). */
+    private static final java.util.regex.Pattern REF_CHAMP = java.util.regex.Pattern.compile("\\[\"([^\"]+)\"\\]");
+
+    /** Message selon le type attendu ({@code InvalidFormatException#getTargetType()}), lu par réflexion. */
+    private static String messageFautif(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (invoquer(t, "getTargetType") instanceof Class<?> type) {
+                if (java.time.temporal.Temporal.class.isAssignableFrom(type)) {
+                    return "Date invalide : format attendu AAAA-MM-JJ.";
+                }
+                if (Number.class.isAssignableFrom(type)) {
+                    return "Valeur numérique attendue pour ce champ.";
+                }
+                return "Valeur invalide pour ce champ.";
+            }
+        }
+        return "Valeur invalide ou mal formatée pour ce champ.";
+    }
+
+    /** Invoque sans argument une méthode publique si elle existe (sinon {@code null}) — accès Jackson sans dépendance compile. */
+    private static Object invoquer(Object cible, String methode) {
+        try {
+            return cible.getClass().getMethod(methode).invoke(cible);
+        } catch (ReflectiveOperationException e) {
+            return null;
+        }
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
