@@ -1,5 +1,6 @@
 package cnm.prs.service;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -17,6 +18,7 @@ import cnm.prs.dto.ProcessusMarche;
 import cnm.prs.dto.SaisieDossierRequest;
 import cnm.prs.dto.SaisieMarcheLigne;
 import cnm.prs.dto.SaisiePpmRequest;
+import cnm.prs.entity.Capm;
 import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Marche;
 import cnm.prs.entity.Ppm;
@@ -106,8 +108,18 @@ public class SaisieService {
             for (int i = 0; i < req.marches().size(); i++) {
                 SaisieMarcheLigne ligne = req.marches().get(i);
                 exigerAuMoinsUnProcessus(ligne, i);   // « au moins un processus » (NotEmpty, à la création)
+                // Charge les CAPM (idCapm existant, sinon 400) et valide la chronologie des processus.
+                List<ProcessusChronologie.Proc> procs = new ArrayList<>();
                 for (int j = 0; j < ligne.processus().size(); j++) {
-                    exigerCapmConnu(ligne.processus().get(j), i, j);   // idCapm existant (avant création marché)
+                    ProcessusMarche p = ligne.processus().get(j);
+                    Capm capm = capmConnu(p, i, j);
+                    procs.add(new ProcessusChronologie.Proc("marches[" + i + "].processus[" + j + "]",
+                            capm.getOrdre() == null ? 0 : capm.getOrdre(), capm.getLibelleProcessus(),
+                            p.dateDebut(), p.dateFin()));
+                }
+                ErrorResponse.FieldError violation = ProcessusChronologie.premiereViolation(procs);
+                if (violation != null) {
+                    throw new ChampsInvalidesException(List.of(violation));
                 }
                 Integer idDetail = marcheService.create(toMarcheDto(ligne, idDossier, idPpm)).getIdDetail();
                 for (ProcessusMarche p : ligne.processus()) {
@@ -131,13 +143,12 @@ public class SaisieService {
         }
     }
 
-    /** ⚠️ Règle ajoutée — l'{@code idCapm} d'un processus doit exister dans {@code t_capm} (400 sinon). */
-    private void exigerCapmConnu(ProcessusMarche p, int i, int j) {
-        if (p.idCapm() != null && !capmRepository.existsById(p.idCapm())) {
-            throw new ChampsInvalidesException(List.of(new ErrorResponse.FieldError(
-                    "marches[" + i + "].processus[" + j + "].idCapm",
-                    "Processus inconnu : " + p.idCapm() + ".")));
-        }
+    /** ⚠️ Règle ajoutée — charge le {@code Capm} d'un processus ; l'{@code idCapm} doit exister (400 sinon). */
+    private Capm capmConnu(ProcessusMarche p, int i, int j) {
+        return capmRepository.findById(p.idCapm())
+                .orElseThrow(() -> new ChampsInvalidesException(List.of(new ErrorResponse.FieldError(
+                        "marches[" + i + "].processus[" + j + "].idCapm",
+                        "Processus inconnu : " + p.idCapm() + "."))));
     }
 
     /**

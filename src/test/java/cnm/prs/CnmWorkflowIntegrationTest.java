@@ -3498,6 +3498,56 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Saisie PPM — processus dateDebut >= dateFin → 400 (cohérence interne)")
+    void processus_datefin_avant_datedebut_400() throws Exception {
+        capmRepository.save(new Capm(1, "LANCEMENT", 1));
+        String body = "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"2026-01-10\","
+                + "\"marches\":[{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"processus\":[{\"idCapm\":1,\"dateDebut\":\"2026-06-30\",\"dateFin\":\"2026-06-01\"}]}]}";
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[?(@.champ=='marches[0].processus[0].dateFin')].message",
+                        hasItem("La date de fin doit être postérieure à la date de début.")));
+    }
+
+    @Test
+    @DisplayName("Saisie PPM — chevauchement entre processus consécutifs → 400 (séquence)")
+    void processus_sequence_chevauchement_400() throws Exception {
+        capmRepository.save(new Capm(1, "LANCEMENT", 1));
+        capmRepository.save(new Capm(2, "DAO", 2));
+        // processus[1] (DAO) commence 02-15, avant la fin de processus[0] (LANCEMENT) le 03-01 → chevauchement.
+        String body = "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"2026-01-10\","
+                + "\"marches\":[{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"processus\":[{\"idCapm\":1,\"dateDebut\":\"2026-02-01\",\"dateFin\":\"2026-03-01\"},"
+                + "{\"idCapm\":2,\"dateDebut\":\"2026-02-15\",\"dateFin\":\"2026-04-01\"}]}]}";
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[?(@.champ=='marches[0].processus[1].dateDebut')]").exists());
+    }
+
+    @Test
+    @DisplayName("Saisie PPM — dates cohérentes et ordonnées → 201")
+    void processus_sequence_ok() throws Exception {
+        natureRepository.save(new Nature(1, "Travaux", null));
+        situationRepository.save(new Situation(1, "Normale", null));
+        modePassationRepository.save(new ModePassation(2, "AOR", null, null, null, null));
+        seuilRepository.save(seuil(902, "ANT", 1, "200000001", "1000000000"));
+        reglePassationRepository.save(regle(902, 1, 902, 2));
+        capmRepository.save(new Capm(1, "LANCEMENT", 1));
+        capmRepository.save(new Capm(2, "DAO", 2));
+        // dateDebut[2] = dateFin[1] (03-01) → contiguïté autorisée (>=).
+        String body = "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"2026-01-10\","
+                + "\"marches\":[{\"montEstim\":500000000,\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\","
+                + "\"processus\":[{\"idCapm\":1,\"dateDebut\":\"2026-02-01\",\"dateFin\":\"2026-03-01\"},"
+                + "{\"idCapm\":2,\"dateDebut\":\"2026-03-01\",\"dateFin\":\"2026-04-01\"}]}]}";
+        mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
     @DisplayName("Saisie PPM — corps mal formé (date JJ/MM/AAAA, id libellé) → 400 avec le champ fautif")
     void saisie_corps_illisible_400() throws Exception {
         // dateSignature non-ISO → 400 + champ dateSignature
