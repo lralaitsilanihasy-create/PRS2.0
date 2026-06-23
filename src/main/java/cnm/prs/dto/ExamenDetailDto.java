@@ -1,5 +1,7 @@
 package cnm.prs.dto;
 
+import java.util.List;
+
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -25,8 +27,8 @@ public class ExamenDetailDto {
     @NotNull
     private Boolean conforme;
 
-    @Size(max = 500)
-    private String observation;
+    /** Lignes d'observation « AU LIEU DE / LIRE » : {@code []} si conforme, N lignes si non conforme. */
+    private List<ObservationControleDto> observations;
 
     @Size(max = 500)
     private String obsSiNonConforme;

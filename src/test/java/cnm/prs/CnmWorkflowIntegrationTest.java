@@ -45,6 +45,8 @@ import java.util.List;
 
 import cnm.prs.entity.Capm;
 import cnm.prs.entity.Examen;
+import cnm.prs.entity.ExamenDetail;
+import cnm.prs.entity.PointsCtrl;
 import cnm.prs.entity.Localite;
 import cnm.prs.entity.Marche;
 import cnm.prs.entity.MarchePrevision;
@@ -133,6 +135,8 @@ class CnmWorkflowIntegrationTest {
     @Autowired private MarcheRepository marcheRepository;
     @Autowired private MarchePrevisionRepository marchePrevisionRepository;
     @Autowired private cnm.prs.repository.CapmRepository capmRepository;
+    @Autowired private cnm.prs.repository.ExamenDetailRepository examenDetailRepository;
+    @Autowired private cnm.prs.repository.PointsCtrlRepository pointsCtrlRepository;
     @Autowired private DemandeRetraitRepository demandeRetraitRepository;
     @Autowired private DelegationProfilRepository delegationProfilRepository;
     @Autowired private NatureRepository natureRepository;
@@ -3579,6 +3583,51 @@ class CnmWorkflowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content(idKo))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.erreurs[?(@.champ=='idEntiteContract')]").exists());
+    }
+
+    @Test
+    @DisplayName("Observation-controle — création d'une ligne (Membre) → 201")
+    void observation_creation_ok() throws Exception {
+        PointsCtrl pc = new PointsCtrl();
+        pc.setIdPointCtrl(1); pc.setLibelPointCtrl("Montant"); pc.setObligatoire(true); pc.setIdTypeDossier("PPM");
+        pointsCtrlRepository.save(pc);
+        ExamenDetail d = new ExamenDetail();
+        d.setIdDetailExamen(520); d.setIdExamen(1); d.setIdPtControle(1); d.setConforme(false);
+        examenDetailRepository.save(d);
+        mvc.perform(post("/api/observation-controles").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDetail\":520,\"auLieuDe\":\"500000\",\"lire\":\"5000000\",\"ordre\":1}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idObservation").exists())
+                .andExpect(jsonPath("$.idDetail").value(520));
+    }
+
+    @Test
+    @DisplayName("Examen-détail — non conforme sans lignes d'observation → 400")
+    void observation_non_conforme_sans_lignes_400() throws Exception {
+        // examen 1 = EXAMINE (seed, modifiable) ; conforme=false + observations vide → 400 (avant save).
+        mvc.perform(post("/api/examen-details").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDetailExamen\":510,\"idExamen\":1,\"idPtControle\":1,\"conforme\":false}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[?(@.champ=='observations')].message",
+                        hasItem("Au moins une ligne d'observation est obligatoire si le point est non conforme.")));
+    }
+
+    @Test
+    @DisplayName("Examen-détail — conforme sans lignes d'observation → 200")
+    void observation_conforme_sans_lignes_ok() throws Exception {
+        PointsCtrl pc = new PointsCtrl();
+        pc.setIdPointCtrl(1); pc.setLibelPointCtrl("Montant"); pc.setObligatoire(true); pc.setIdTypeDossier("PPM");
+        pointsCtrlRepository.save(pc);
+        ExamenDetail d = new ExamenDetail();
+        d.setIdDetailExamen(511); d.setIdExamen(1); d.setIdPtControle(1); d.setConforme(true);
+        examenDetailRepository.save(d);
+        mvc.perform(put("/api/examen-details/511").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDetailExamen\":511,\"idExamen\":1,\"idPtControle\":1,\"conforme\":true,\"observations\":[]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.conforme").value(true));
     }
 
     // ------------------------------------------------------------------

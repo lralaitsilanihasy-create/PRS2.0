@@ -36,9 +36,6 @@ public class ExamenDetail {
     @Column(name = "CONFORME", nullable = false)
     private Boolean conforme;
 
-    @Column(name = "OBSERVATION", length = 500)
-    private String observation;
-
     @Column(name = "OBS_SI_NON_CONFORME", length = 500)
     private String obsSiNonConforme;
 

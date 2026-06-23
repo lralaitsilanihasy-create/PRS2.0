@@ -1,0 +1,39 @@
+package cnm.prs.mapper;
+
+import cnm.prs.dto.ObservationControleDto;
+import cnm.prs.entity.ObservationControle;
+
+/**
+ * Convertisseur entité &lt;-&gt; DTO pour {@link ObservationControle}.
+ */
+public final class ObservationControleMapper {
+
+    private ObservationControleMapper() {
+    }
+
+    public static ObservationControleDto toDto(ObservationControle entity) {
+        if (entity == null) {
+            return null;
+        }
+        ObservationControleDto dto = new ObservationControleDto();
+        dto.setIdObservation(entity.getIdObservation());
+        dto.setIdDetail(entity.getIdDetail());
+        dto.setAuLieuDe(entity.getAuLieuDe());
+        dto.setLire(entity.getLire());
+        dto.setOrdre(entity.getOrdre());
+        return dto;
+    }
+
+    public static ObservationControle toEntity(ObservationControleDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        ObservationControle entity = new ObservationControle();
+        entity.setIdObservation(dto.getIdObservation());
+        entity.setIdDetail(dto.getIdDetail());
+        entity.setAuLieuDe(dto.getAuLieuDe());
+        entity.setLire(dto.getLire());
+        entity.setOrdre(dto.getOrdre());
+        return entity;
+    }
+}

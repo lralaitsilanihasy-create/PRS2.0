@@ -20,7 +20,7 @@ public final class ExamenDetailMapper {
         dto.setIdExamen(entity.getIdExamen());
         dto.setIdPtControle(entity.getIdPtControle());
         dto.setConforme(entity.getConforme());
-        dto.setObservation(entity.getObservation());
+        // observations (1,N) : peuplées par le service depuis t_observation_controle.
         dto.setObsSiNonConforme(entity.getObsSiNonConforme());
         return dto;
     }
@@ -34,7 +34,6 @@ public final class ExamenDetailMapper {
         entity.setIdExamen(dto.getIdExamen());
         entity.setIdPtControle(dto.getIdPtControle());
         entity.setConforme(dto.getConforme());
-        entity.setObservation(dto.getObservation());
         entity.setObsSiNonConforme(dto.getObsSiNonConforme());
         return entity;
     }
