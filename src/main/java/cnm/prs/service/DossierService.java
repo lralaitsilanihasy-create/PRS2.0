@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
-import java.util.Objects;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -336,11 +335,9 @@ public class DossierService {
             throw new BadRequestException(
                     "Localité indéterminée : elle provient de l'entité contractante choisie à la saisie (§1, §3.1).");
         }
-        int exercice = ppms.stream().map(Ppm::getExercice).filter(Objects::nonNull)
-                .findFirst().orElse(LocalDate.now().getYear());
-
-        String reference = "CNM-" + localite + "-" + exercice + "-" + String.format("%06d", idDossier);
-        dossier.setRefeDossier(reference);
+        // (Règle ajoutée) Format CNM-{localité}-{exercice}-{idDossier} ABANDONNÉ. La soumission ne génère
+        // plus de référence : refeDossier reste null jusqu'à la réception, qui pose la réf. officielle
+        // structurée (xxxxx/type/localité/année).
         dossier.setIdLocalite(localite);             // propage la localité (§C) → visible par le Secrétaire
         dossier.setStatut(StatutDossier.SOUMIS.name());
         if (dossier.getDateRef() == null) {
@@ -355,8 +352,8 @@ public class DossierService {
     /** Notifie le Secrétaire et le CC de la localité qu'un dossier est soumis et attend réception. */
     private void notifierSoumission(Dossier dossier, String localite) {
         String titre = "Nouveau dossier soumis à réceptionner";
-        String corps = "Le dossier " + dossier.getIdDossier() + " (réf. " + dossier.getRefeDossier()
-                + ") a été soumis et attend sa réception dans la localité " + localite + ".";
+        String corps = "Le dossier " + dossier.getIdDossier()
+                + " a été soumis et attend sa réception dans la localité " + localite + ".";
         for (Controleur sec : controleurDirectory.secretaires(localite)) {
             notificationService.emettre(dossier.getIdDossier(), TypeNotification.DOSSIER_SOUMIS,
                     sec.getImControleur(), sec.getEmailCont(), titre, corps);

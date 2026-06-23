@@ -130,7 +130,7 @@ public class ReceptionService {
     /**
      * (Règle ajoutée) À la réception, génère la référence officielle
      * {@code xxxxx/type/code_localite/annee} et la persiste sur le dossier ({@code REFE_DOSSIER},
-     * remplaçant la référence provisoire de soumission). Segment localité : réception
+     * REFE_DOSSIER restant vide depuis la soumission). Segment localité : réception
      * <strong>centrale</strong> (utilisateur transversal, sans localité — ex. Président) -> "CNM" ;
      * sinon "CRM-" + localité du dossier.
      */

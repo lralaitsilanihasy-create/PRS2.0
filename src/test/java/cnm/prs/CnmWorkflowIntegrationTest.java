@@ -3,7 +3,6 @@ package cnm.prs;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
-import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -2299,7 +2298,7 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Soumission dossier (§3.1, Option C) : la PRMP soumet → référence générée + Secrétaire/CC notifiés ; re-soumission → 409")
+    @DisplayName("Soumission dossier (§3.1, Option C) : la PRMP soumet → SOUMIS (réf. générée à la réception, null avant) + Secrétaire/CC notifiés ; re-soumission → 409")
     void soumissionDossier_ok() throws Exception {
         // Brouillon PPM de la PRMP courante (PRMP001), localisé ANT, avec son PPM.
         Dossier d = dossier(3, "BROUILLON");
@@ -2313,11 +2312,11 @@ class CnmWorkflowIntegrationTest {
         ppmRepository.save(ppm);
         marcheRepository.save(marche(31, 3, 30)); // un PPM doit comporter au moins un marché (règle ajoutée)
 
-        // Soumission par la PRMP → 200, statut SOUMIS, référence unique générée.
+        // Soumission par la PRMP → 200, statut SOUMIS, refeDossier null (réf. posée à la réception).
         mvc.perform(post("/api/dossiers/3/soumettre").header("Authorization", tokenPrmp))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statut").value("SOUMIS"))
-                .andExpect(jsonPath("$.refeDossier", startsWith("CNM-ANT-2026-")));
+                .andExpect(jsonPath("$.refeDossier").doesNotExist());
 
         // Le Secrétaire et le CC de la localité sont notifiés.
         mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
@@ -2360,7 +2359,7 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Soumission dossier SANS PPM (DAO/MAOO) : la localité du dossier (dérivée de l'entité à la saisie) → référence + ID_LOCALITE estampillé + Secrétaire notifié et le voit")
+    @DisplayName("Soumission dossier SANS PPM (DAO/MAOO) : la localité du dossier (dérivée de l'entité à la saisie) → refeDossier null (réf. à la réception) + ID_LOCALITE estampillé + Secrétaire notifié et le voit")
     void soumissionDossier_sansPpm() throws Exception {
         String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
         // Brouillon DAO sans PPM, de PRMP001, dont la localité (ANT) a été dérivée de l'entité à la saisie.
@@ -2371,11 +2370,11 @@ class CnmWorkflowIntegrationTest {
         d.setIdLocalite("ANT");
         dossierRepository.save(d);
 
-        // PRMP001 soumet → localité = ANT (celle du dossier), SOUMIS, référence + ID_LOCALITE (plus de repli PRMP).
+        // PRMP001 soumet → localité = ANT (celle du dossier), SOUMIS, refeDossier null + ID_LOCALITE (plus de repli PRMP).
         mvc.perform(post("/api/dossiers/6/soumettre").header("Authorization", tokenPrmp))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statut").value("SOUMIS"))
-                .andExpect(jsonPath("$.refeDossier", startsWith("CNM-ANT-")))
+                .andExpect(jsonPath("$.refeDossier").doesNotExist())
                 .andExpect(jsonPath("$.idLocalite").value("ANT"));
         // Le Secrétaire de la localité (ANT) est notifié.
         mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
