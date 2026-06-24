@@ -1,0 +1,72 @@
+package cnm.prs.entity;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import java.time.LocalDate;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * Entité JPA mappée sur la table {@code t_lettre_renvoi} : lettre de renvoi d'un examen,
+ * alternative au Projet de PV. Un examen produit au plus une lettre ({@code ID_EXAMEN} unique).
+ * Cycle : {@code BROUILLON → SOUMIS → SIGNE} (signature CC ou Président). PK auto (IDENTITY).
+ */
+@Entity
+@Table(name = "t_lettre_renvoi")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class LettreRenvoi {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "ID_LETTRE", nullable = false)
+    private Integer idLettre;
+
+    @Column(name = "ID_EXAMEN", nullable = false, unique = true)
+    private Integer idExamen;
+
+    @Column(name = "ID_DOSSIER", nullable = false)
+    private Integer idDossier;
+
+    /** Référence officielle, générée serveur : {@code <seq>/<type>/<code_localite>/LR/<année>}. */
+    @Column(name = "REF_LETTRE", length = 50)
+    private String refLettre;
+
+    @Column(name = "OBJET_LETTRE", length = 500)
+    private String objetLettre;
+
+    /** Date d'examen du dossier (reprise de l'examen). */
+    @Column(name = "DATE_EXAMEN")
+    private LocalDate dateExamen;
+
+    /** Date de la lettre, posée serveur (jour de la soumission de l'examen). */
+    @Column(name = "DATE_LETTRE")
+    private LocalDate dateLettre;
+
+    @Column(name = "STATUT", length = 20)
+    private String statut;
+
+    /** IM du signataire (CC ou Président), posé à la signature depuis le JWT. */
+    @Column(name = "IM_SIGNATAIRE", length = 7)
+    private String imSignataire;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_EXAMEN", insertable = false, updatable = false)
+    @JsonIgnore
+    private Examen examen;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ID_DOSSIER", insertable = false, updatable = false)
+    @JsonIgnore
+    private Dossier dossier;
+}

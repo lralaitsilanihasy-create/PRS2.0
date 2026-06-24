@@ -1,0 +1,30 @@
+package cnm.prs.mapper;
+
+import cnm.prs.dto.LettreRenvoiDto;
+import cnm.prs.entity.LettreRenvoi;
+
+/**
+ * Convertisseur entité &lt;-&gt; DTO pour {@link LettreRenvoi}.
+ */
+public final class LettreRenvoiMapper {
+
+    private LettreRenvoiMapper() {
+    }
+
+    public static LettreRenvoiDto toDto(LettreRenvoi entity) {
+        if (entity == null) {
+            return null;
+        }
+        LettreRenvoiDto dto = new LettreRenvoiDto();
+        dto.setIdLettre(entity.getIdLettre());
+        dto.setIdExamen(entity.getIdExamen());
+        dto.setIdDossier(entity.getIdDossier());
+        dto.setRefLettre(entity.getRefLettre());
+        dto.setObjetLettre(entity.getObjetLettre());
+        dto.setDateExamen(entity.getDateExamen());
+        dto.setDateLettre(entity.getDateLettre());
+        dto.setStatut(entity.getStatut());
+        dto.setImSignataire(entity.getImSignataire());
+        return dto;
+    }
+}

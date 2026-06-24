@@ -13,6 +13,10 @@ import cnm.prs.entity.PvExamen;
 @Repository
 public interface PvExamenRepository extends JpaRepository<PvExamen, Integer> {
 
+    /** Plus grand ID_PV existant (0 si table vide) — pour allouer la PK assignée à la soumission d'examen. */
+    @Query("select coalesce(max(p.idPv), 0) from PvExamen p")
+    Integer findMaxId();
+
     /**
      * Identifiant(s) PRMP rattaché(s) à un PV, via la chaîne
      * PV → examen → dispatch → réception → dossier → PPM. Sert à notifier la PRMP du PV signé.

@@ -89,6 +89,18 @@ public class PvExamenService {
      * {@link StatutPv#BROUILLON} (§3.5), sans navette ni signature — quel que soit le
      * statut transmis : impossible de créer un PV directement accepté ou signé.
      */
+    /**
+     * ⚠️ Règle ajoutée — crée le Projet de PV d'un examen à sa soumission (PK {@code idPv} allouée
+     * serveur, max+1) avec l'avis choisi. Réutilise {@link #create(PvExamenDto)}.
+     */
+    public PvExamenDto creerProjet(Integer idExamen, String idAvis) {
+        PvExamenDto dto = new PvExamenDto();
+        dto.setIdExamen(idExamen);
+        dto.setIdAvis(idAvis);
+        dto.setIdPv(repository.findMaxId() + 1);
+        return create(dto);
+    }
+
     public PvExamenDto create(PvExamenDto dto) {
         PvExamen entity = PvExamenMapper.toEntity(dto);
         // ⚠️ Règle ajoutée — l'imCtrlMembre est l'attributaire de l'examen (dispatch), jamais le corps.

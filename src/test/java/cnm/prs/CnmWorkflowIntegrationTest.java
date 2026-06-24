@@ -46,6 +46,7 @@ import java.util.List;
 import cnm.prs.entity.Capm;
 import cnm.prs.entity.Examen;
 import cnm.prs.entity.ExamenDetail;
+import cnm.prs.entity.LettreRenvoi;
 import cnm.prs.entity.PointsCtrl;
 import cnm.prs.entity.Localite;
 import cnm.prs.entity.Marche;
@@ -137,6 +138,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private cnm.prs.repository.CapmRepository capmRepository;
     @Autowired private cnm.prs.repository.ExamenDetailRepository examenDetailRepository;
     @Autowired private cnm.prs.repository.PointsCtrlRepository pointsCtrlRepository;
+    @Autowired private cnm.prs.repository.LettreRenvoiRepository lettreRenvoiRepository;
     @Autowired private DemandeRetraitRepository demandeRetraitRepository;
     @Autowired private DelegationProfilRepository delegationProfilRepository;
     @Autowired private NatureRepository natureRepository;
@@ -3628,6 +3630,74 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idDetailExamen\":511,\"idExamen\":1,\"idPtControle\":1,\"conforme\":true,\"observations\":[]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.conforme").value(true));
+    }
+
+    @Test
+    @DisplayName("Soumission examen — typeResultat=PV → Projet de PV créé (201)")
+    void examen_soumettre_pv_ok() throws Exception {
+        mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"typeResultat\":\"PV\",\"idAvis\":\"FAV\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idExamen").value(1))
+                .andExpect(jsonPath("$.statutPv").value("BROUILLON"));
+    }
+
+    @Test
+    @DisplayName("Soumission examen — typeResultat=LETTRE_RENVOI → lettre de renvoi créée (201)")
+    void examen_soumettre_lettre_ok() throws Exception {
+        mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"typeResultat\":\"LETTRE_RENVOI\",\"objetLettre\":\"Renvoi du dossier\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idExamen").value(1))
+                .andExpect(jsonPath("$.idDossier").value(1))
+                .andExpect(jsonPath("$.statut").value("BROUILLON"))
+                .andExpect(jsonPath("$.objetLettre").value("Renvoi du dossier"));
+    }
+
+    @Test
+    @DisplayName("Soumission examen — typeResultat absent → 400 (champ typeResultat)")
+    void examen_soumettre_sans_type_400() throws Exception {
+        mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[?(@.champ=='typeResultat')].message",
+                        hasItem("Le type de résultat est obligatoire (PV ou LETTRE_RENVOI).")));
+    }
+
+    @Test
+    @DisplayName("Lettre de renvoi — un Membre tente de signer → 403")
+    void lettre_signer_membre_403() throws Exception {
+        int id = seedLettreSoumise();
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenMembre))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Lettre de renvoi — le CC signe → SIGNE")
+    void lettre_signer_cc_ok() throws Exception {
+        int id = seedLettreSoumise();
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("SIGNE"))
+                .andExpect(jsonPath("$.imSignataire").value("CTRCC1"));
+    }
+
+    @Test
+    @DisplayName("Lettre de renvoi — le Président signe → SIGNE")
+    void lettre_signer_president_ok() throws Exception {
+        int id = seedLettreSoumise();
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("SIGNE"))
+                .andExpect(jsonPath("$.imSignataire").value("CTRPRE"));
+    }
+
+    /** Lettre de renvoi de l'examen 1 (localité ANT) au statut SOUMIS. */
+    private int seedLettreSoumise() {
+        LettreRenvoi l = new LettreRenvoi();
+        l.setIdExamen(1); l.setIdDossier(1); l.setObjetLettre("Renvoi"); l.setStatut("SOUMIS");
+        return lettreRenvoiRepository.save(l).getIdLettre();
     }
 
     // ------------------------------------------------------------------

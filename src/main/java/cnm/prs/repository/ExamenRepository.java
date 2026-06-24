@@ -25,4 +25,15 @@ public interface ExamenRepository extends JpaRepository<Examen, Integer> {
             where e.idExamen = :idExamen and d.idDossier = e.dispatch.reception.idDossier
             """)
     Optional<String> findStatutDossierByExamen(@Param("idExamen") Integer idExamen);
+
+    /** idDossier rattaché à un examen (examen→dispatch→réception→dossier). */
+    @Query("select e.dispatch.reception.idDossier from Examen e where e.idExamen = :idExamen")
+    Optional<Integer> findIdDossierByExamen(@Param("idExamen") Integer idExamen);
+
+    /** refeDossier du dossier rattaché à un examen (pour dériver la référence de la lettre). */
+    @Query("""
+            select d.refeDossier from Examen e, Dossier d
+            where e.idExamen = :idExamen and d.idDossier = e.dispatch.reception.idDossier
+            """)
+    Optional<String> findRefeDossierByExamen(@Param("idExamen") Integer idExamen);
 }

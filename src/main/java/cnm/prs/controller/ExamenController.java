@@ -17,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import jakarta.validation.Valid;
 
 import cnm.prs.dto.ExamenDto;
+import cnm.prs.dto.ExamenSoumissionRequest;
 import cnm.prs.service.ExamenService;
 
 /**
@@ -60,5 +61,16 @@ public class ExamenController {
     public ResponseEntity<Void> delete(@PathVariable Integer id) {
         service.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — soumission de l'examen : le Membre choisit le résultat (Projet de PV ou
+     * lettre de renvoi). Renvoie le {@code PvExamenDto} ou le {@code LettreRenvoiDto} créé.
+     */
+    @PreAuthorize("@perm.peutExercer('MEMBRE')")
+    @PostMapping("/{id}/soumettre")
+    public ResponseEntity<Object> soumettre(@PathVariable Integer id,
+            @Valid @RequestBody ExamenSoumissionRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.soumettre(id, req));
     }
 }
