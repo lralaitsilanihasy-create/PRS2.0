@@ -81,6 +81,7 @@ public class LettreRenvoiService {
             throw new BusinessRuleException("Lettre non éditable : statut « " + lettre.getStatut() + " » (attendu BROUILLON).");
         }
         lettre.setObjetLettre(dto.getObjetLettre());
+        lettre.setCorpsLettre(dto.getCorpsLettre());
         return LettreRenvoiMapper.toDto(repository.save(lettre));
     }
 

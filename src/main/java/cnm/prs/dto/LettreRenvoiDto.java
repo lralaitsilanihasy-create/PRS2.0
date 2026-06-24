@@ -29,6 +29,9 @@ public class LettreRenvoiDto {
     @Size(max = 500)
     private String objetLettre;
 
+    /** Corps libre de la lettre (TEXT, nullable, sans contrainte de taille). */
+    private String corpsLettre;
+
     private LocalDate dateExamen;
 
     private LocalDate dateLettre;

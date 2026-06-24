@@ -45,6 +45,10 @@ public class LettreRenvoi {
     @Column(name = "OBJET_LETTRE", length = 500)
     private String objetLettre;
 
+    /** Corps libre de la lettre de renvoi (TEXT, nullable). */
+    @Column(name = "CORPS_LETTRE", columnDefinition = "text")
+    private String corpsLettre;
+
     /** Date d'examen du dossier (reprise de l'examen). */
     @Column(name = "DATE_EXAMEN")
     private LocalDate dateExamen;
