@@ -3672,6 +3672,34 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Assistant contrôleur — login ASSANT1/Test@1234 → 200, role ASSISTANT_CONTROLEUR")
+    void assistant_login_ok() throws Exception {
+        controleurRepository.save(controleur("ASSANT1", 9, "ANT"));
+        compteAuthRepository.save(new CompteAuth("ASSANT1",
+                passwordEncoder.encode("Test@1234"), "CONTROLEUR", "ASSANT1", true));
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"login\":\"ASSANT1\",\"motDePasse\":\"Test@1234\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("ASSISTANT_CONTROLEUR"));
+    }
+
+    @Test
+    @DisplayName("Assistant contrôleur — accès GET /api/lettre-renvois → 200")
+    void assistant_acces_lettre_renvoi_ok() throws Exception {
+        String tokenAss = bearer("CTRASS", ProfilUtilisateur.ASSISTANT_CONTROLEUR, TypeActeur.CONTROLEUR, "CTRASS", "ANT");
+        mvc.perform(get("/api/lettre-renvois").header("Authorization", tokenAss))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Assistant contrôleur — accès GET /api/pv-examens → 200")
+    void assistant_acces_pv_ok() throws Exception {
+        String tokenAss = bearer("CTRASS", ProfilUtilisateur.ASSISTANT_CONTROLEUR, TypeActeur.CONTROLEUR, "CTRASS", "ANT");
+        mvc.perform(get("/api/pv-examens").header("Authorization", tokenAss))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     @DisplayName("Lettre de renvoi — N lettres sur le même examen → 201 chacune")
     void lettre_multiple_meme_examen_ok() throws Exception {
         mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
