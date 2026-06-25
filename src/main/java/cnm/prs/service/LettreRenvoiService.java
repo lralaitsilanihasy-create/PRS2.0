@@ -42,20 +42,17 @@ public class LettreRenvoiService {
     private final DossierRepository dossierRepository;
     private final PpmRepository ppmRepository;
     private final PrmpRepository prmpRepository;
-    private final ReferenceService referenceService;
     private final ControleurDirectory controleurDirectory;
     private final NotificationService notificationService;
 
     public LettreRenvoiService(LettreRenvoiRepository repository, ExamenRepository examenRepository,
             DossierRepository dossierRepository, PpmRepository ppmRepository, PrmpRepository prmpRepository,
-            ReferenceService referenceService, ControleurDirectory controleurDirectory,
-            NotificationService notificationService) {
+            ControleurDirectory controleurDirectory, NotificationService notificationService) {
         this.repository = repository;
         this.examenRepository = examenRepository;
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.prmpRepository = prmpRepository;
-        this.referenceService = referenceService;
         this.controleurDirectory = controleurDirectory;
         this.notificationService = notificationService;
     }
@@ -111,20 +108,28 @@ public class LettreRenvoiService {
         Examen examen = examenRepository.findById(idExamen)
                 .orElseThrow(() -> new AccessDeniedException("Examen inexistant ou hors de votre périmètre."));
         Integer idDossier = examenRepository.findIdDossierByExamen(idExamen).orElse(null);
-        String localite = idDossier == null ? null
-                : dossierRepository.findById(idDossier).map(Dossier::getIdLocalite).orElse(null);
-        boolean estCentrale = localite == null || localite.isBlank();
 
         LettreRenvoi lettre = new LettreRenvoi();
         lettre.setIdExamen(idExamen);
         lettre.setIdDossier(idDossier);
         lettre.setObjetLettre(dto.getObjetLettre());
         lettre.setCorpsLettre(dto.getCorpsLettre());
-        lettre.setRefLettre(referenceService.genererLettreRenvoi(localite, estCentrale, LocalDate.now().getYear()));
+        lettre.setRefLettre(genererRefLettre(idExamen));
         lettre.setDateExamen(examen.getDateExamen());
         lettre.setDateLettre(LocalDate.now());
         lettre.setStatut(StatutLettreRenvoi.BROUILLON.name());
         return LettreRenvoiMapper.toDto(repository.save(lettre));
+    }
+
+    /**
+     * Référence de la lettre dérivée de {@code refeDossier} (même séquence/format que le dossier et le PV) :
+     * insère {@code /LR/} avant l'année ({@code .../YYYY} → {@code .../LR/YYYY}, ex. {@code 00007/PPM/CRM-ANT/LR/2026}).
+     * {@code null} si refeDossier absent ou non structuré (comportement identique à {@code refePv}).
+     */
+    private String genererRefLettre(Integer idExamen) {
+        String refe = examenRepository.findRefeDossierByExamen(idExamen)
+                .filter(s -> s != null && s.matches(".*/\\d{4}$")).orElse(null);
+        return refe == null ? null : refe.replaceFirst("/(\\d{4})$", "/LR/$1");
     }
 
     /** Édition du brouillon (objet + corps) par le Membre. */

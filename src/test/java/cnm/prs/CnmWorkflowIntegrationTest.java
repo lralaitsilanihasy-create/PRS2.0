@@ -3647,16 +3647,28 @@ class CnmWorkflowIntegrationTest {
     @Test
     @DisplayName("Lettre de renvoi — création pendant l'examen (Membre) → 201 BROUILLON")
     void lettre_creation_pendant_examen_ok() throws Exception {
-        String resp = mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idExamen\":1,\"objetLettre\":\"Renvoi du dossier\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.idExamen").value(1))
                 .andExpect(jsonPath("$.idDossier").value(1))
                 .andExpect(jsonPath("$.statut").value("BROUILLON"))
-                .andExpect(jsonPath("$.objetLettre").value("Renvoi du dossier"))
-                .andReturn().getResponse().getContentAsString();
-        org.junit.jupiter.api.Assertions.assertNotNull(com.jayway.jsonpath.JsonPath.read(resp, "$.refLettre"));
+                .andExpect(jsonPath("$.objetLettre").value("Renvoi du dossier"));
+    }
+
+    @Test
+    @DisplayName("Lettre de renvoi — refLettre au format {seq}/{type}/{code_localite}/LR/{annee}")
+    void lettre_ref_format_ok() throws Exception {
+        // refeDossier structuré du dossier → refLettre = même réf avec /LR/ avant l'année.
+        Dossier d = dossierRepository.findById(1).orElseThrow();
+        d.setRefeDossier("00007/PPM/CRM-ANT/2026");
+        dossierRepository.save(d);
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":1,\"objetLettre\":\"Renvoi\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.refLettre").value("00007/PPM/CRM-ANT/LR/2026"));
     }
 
     @Test

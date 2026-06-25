@@ -39,21 +39,6 @@ public class ReferenceService {
         return String.format("%05d/%s/%s/%d", valeur, typeDossier, codeLocalite, anneeExercice);
     }
 
-    /**
-     * ⚠️ Règle ajoutée — référence d'une lettre de renvoi : {@code <seq>/LR/<code_localite>/<année>}
-     * (ex. {@code 00001/LR/CRM-ANT/2026}). Compteur dédié par (localité, année) — clé {@code LR} dans
-     * {@code t_sequence_reference} (un examen peut produire N lettres, chacune avec sa séquence).
-     */
-    @Transactional
-    public String genererLettreRenvoi(String localite, boolean estCentrale, int annee) {
-        String codeLocalite = estCentrale ? "CNM" : "CRM-" + localite;
-        if (repository.incrementerExistant("LR", codeLocalite, annee) == 0) {
-            repository.creer("LR", codeLocalite, annee);
-        }
-        long valeur = repository.valeurCourante("LR", codeLocalite, annee);
-        return String.format("%05d/LR/%s/%d", valeur, codeLocalite, annee);
-    }
-
     private static final Set<String> MOTS_VIDES =
             Set.of("de", "du", "des", "la", "le", "les", "l", "d", "et", "a", "aux", "en", "pour", "sur", "par");
 
