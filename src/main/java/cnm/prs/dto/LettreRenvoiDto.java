@@ -40,4 +40,7 @@ public class LettreRenvoiDto {
     private String statut;
 
     private String imSignataire;
+
+    /** Nom complet du signataire (« prénoms nom »), peuplé serveur en lecture (lecture seule). */
+    private String nomSignataire;
 }

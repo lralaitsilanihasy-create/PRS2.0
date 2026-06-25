@@ -3672,6 +3672,18 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Lettre de renvoi — détail d'une lettre SIGNE → nomSignataire (prénoms nom) non vide")
+    void lettre_detail_signataire_ok() throws Exception {
+        int id = seedLettreSoumise();
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.imSignataire").value("CTRCC1"))
+                .andExpect(jsonPath("$.nomSignataire").value("Prenoms NomCTRCC1"));
+    }
+
+    @Test
     @DisplayName("Assistant contrôleur — login ASSANT1/Test@1234 → 200, role ASSISTANT_CONTROLEUR")
     void assistant_login_ok() throws Exception {
         controleurRepository.save(controleur("ASSANT1", 9, "ANT"));

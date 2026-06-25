@@ -20,6 +20,7 @@ import cnm.prs.enums.TypeNotification;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.LettreRenvoiMapper;
+import cnm.prs.repository.ControleurRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenRepository;
 import cnm.prs.repository.LettreRenvoiRepository;
@@ -43,17 +44,20 @@ public class LettreRenvoiService {
     private final PpmRepository ppmRepository;
     private final PrmpRepository prmpRepository;
     private final ControleurDirectory controleurDirectory;
+    private final ControleurRepository controleurRepository;
     private final NotificationService notificationService;
 
     public LettreRenvoiService(LettreRenvoiRepository repository, ExamenRepository examenRepository,
             DossierRepository dossierRepository, PpmRepository ppmRepository, PrmpRepository prmpRepository,
-            ControleurDirectory controleurDirectory, NotificationService notificationService) {
+            ControleurDirectory controleurDirectory, ControleurRepository controleurRepository,
+            NotificationService notificationService) {
         this.repository = repository;
         this.examenRepository = examenRepository;
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.prmpRepository = prmpRepository;
         this.controleurDirectory = controleurDirectory;
+        this.controleurRepository = controleurRepository;
         this.notificationService = notificationService;
     }
 
@@ -77,7 +81,7 @@ public class LettreRenvoiService {
         } else {
             lettres = List.of();
         }
-        return lettres.stream().map(LettreRenvoiMapper::toDto).toList();
+        return lettres.stream().map(LettreRenvoiMapper::toDto).map(this::peuplerNomSignataire).toList();
     }
 
     /** Lettres signées concernant les dossiers de la PRMP connectée (lecture seule). */
@@ -87,14 +91,27 @@ public class LettreRenvoiService {
         if (idPrmp == null) {
             return List.of();
         }
-        return repository.findSigneesPourPrmp(idPrmp).stream().map(LettreRenvoiMapper::toDto).toList();
+        return repository.findSigneesPourPrmp(idPrmp).stream()
+                .map(LettreRenvoiMapper::toDto).map(this::peuplerNomSignataire).toList();
     }
 
     @Transactional(readOnly = true)
     public LettreRenvoiDto findById(Integer id) {
         LettreRenvoi entity = exigerExistante(id);
         Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
-        return LettreRenvoiMapper.toDto(entity);
+        return peuplerNomSignataire(LettreRenvoiMapper.toDto(entity));
+    }
+
+    /** Renseigne {@code nomSignataire} (« prénoms nom ») depuis {@code tr_controleur} si la lettre est signée. */
+    private LettreRenvoiDto peuplerNomSignataire(LettreRenvoiDto dto) {
+        if (dto != null && dto.getImSignataire() != null) {
+            controleurRepository.findById(dto.getImSignataire()).ifPresent(c -> {
+                String n = ((c.getPrenomsCont() == null ? "" : c.getPrenomsCont()) + " "
+                        + (c.getNomCont() == null ? "" : c.getNomCont())).trim();
+                dto.setNomSignataire(n.isBlank() ? null : n);
+            });
+        }
+        return dto;
     }
 
     /**
