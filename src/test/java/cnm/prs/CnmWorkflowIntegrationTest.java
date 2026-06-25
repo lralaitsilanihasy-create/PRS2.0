@@ -151,6 +151,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private OrganigrammeRepository organigrammeRepository;
     @Autowired private EntiteContractRepository entiteContractRepository;
     @Autowired private PrmpEntiteRepository prmpEntiteRepository;
+    @Autowired private cnm.prs.repository.TypePieceJointeRepository typePieceJointeRepository;
 
     private String tokenPresident;
     private String tokenCc;
@@ -3820,6 +3821,164 @@ class CnmWorkflowIntegrationTest {
         LettreRenvoi l = new LettreRenvoi();
         l.setIdExamen(1); l.setIdDossier(1); l.setObjetLettre("Renvoi"); l.setStatut("SOUMIS");
         return lettreRenvoiRepository.save(l).getIdLettre();
+    }
+
+    // ------------------------------------------------------------------
+    // Pièces jointes par type de dossier (référentiel + upload + lettre de renvoi)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Référentiel pièces jointes : CRUD par l'Administrateur (201/200/204) + filtre ?typeDossier")
+    void type_piece_crud_admin_ok() throws Exception {
+        // Création.
+        String body = "{\"libellePiece\":\"Plan de passation\",\"obligatoire\":true,"
+                + "\"idTypeDossier\":\"PPM\",\"ordre\":1}";
+        String json = mvc.perform(post("/api/type-piece-jointes").header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idTypePiece").isNumber())
+                .andExpect(jsonPath("$.libellePiece").value("Plan de passation"))
+                .andReturn().getResponse().getContentAsString();
+        int id = com.jayway.jsonpath.JsonPath.parse(json).read("$.idTypePiece");
+
+        // Mise à jour.
+        String maj = "{\"libellePiece\":\"Plan de passation des marchés\",\"obligatoire\":false,"
+                + "\"idTypeDossier\":\"PPM\",\"ordre\":2}";
+        mvc.perform(put("/api/type-piece-jointes/" + id).header("Authorization", tokenAdmin)
+                .contentType(MediaType.APPLICATION_JSON).content(maj))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.libellePiece").value("Plan de passation des marchés"))
+                .andExpect(jsonPath("$.obligatoire").value(false));
+
+        // Filtre par type de dossier (authentifié).
+        mvc.perform(get("/api/type-piece-jointes?typeDossier=PPM").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idTypePiece==" + id + ")]", hasSize(1)));
+
+        // Suppression.
+        mvc.perform(delete("/api/type-piece-jointes/" + id).header("Authorization", tokenAdmin))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @DisplayName("Référentiel pièces jointes : écriture interdite à un non-Administrateur (403)")
+    void type_piece_non_admin_403() throws Exception {
+        String body = "{\"libellePiece\":\"X\",\"obligatoire\":true,\"idTypeDossier\":\"PPM\",\"ordre\":1}";
+        mvc.perform(post("/api/type-piece-jointes").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Upload pièce à la création : PRMP propriétaire, magic-bytes PDF → 201, apresLettreRenvoi=false")
+    void piece_upload_creation_ok() throws Exception {
+        Dossier d = dossier(140, "BROUILLON"); d.setIdTypeDossier("PPM"); d.setIdPrmp("PRMP001");
+        d.setIdLocalite("ANT"); dossierRepository.save(d);
+        int type = seedTypePiece("Plan de passation", true, "PPM", 1);
+
+        byte[] pdf = "%PDF-1.4 contenu plan".getBytes(StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/piece-jointe-dossiers")
+                .file(new MockMultipartFile("data", "", "application/json",
+                        ("{\"idDossier\":140,\"idTypePiece\":" + type + "}").getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("fichier", "plan.pdf", "application/pdf", pdf))
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.format").value("PDF"))
+                .andExpect(jsonPath("$.apresLettreRenvoi").value(false))
+                .andExpect(jsonPath("$.libellePiece").value("Plan de passation"));
+
+        mvc.perform(get("/api/piece-jointe-dossiers?dossier=140").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Upload pièce : format non autorisé (.docx) → 400")
+    void piece_upload_format_invalide_400() throws Exception {
+        Dossier d = dossier(141, "BROUILLON"); d.setIdTypeDossier("PPM"); d.setIdPrmp("PRMP001");
+        d.setIdLocalite("ANT"); dossierRepository.save(d);
+        int type = seedTypePiece("Plan de passation", true, "PPM", 1);
+
+        byte[] docx = "PK ceci est un .docx".getBytes(StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/piece-jointe-dossiers")
+                .file(new MockMultipartFile("data", "", "application/json",
+                        ("{\"idDossier\":141,\"idTypePiece\":" + type + "}").getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("fichier", "plan.docx",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx))
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Upload pièce après lettre de renvoi (dossier SOUMIS + idLettre) → 201, apresLettreRenvoi=true")
+    void piece_upload_apres_lettre_ok() throws Exception {
+        Dossier d = dossier(142, "SOUMIS"); d.setIdTypeDossier("PPM"); d.setIdPrmp("PRMP001");
+        d.setIdLocalite("ANT"); dossierRepository.save(d);
+        int type = seedTypePiece("Avis de non-objection", false, "PPM", 1);
+        LettreRenvoi l = new LettreRenvoi();
+        l.setIdExamen(1); l.setIdDossier(142); l.setObjetLettre("Renvoi"); l.setStatut("SIGNE");
+        int idLettre = lettreRenvoiRepository.save(l).getIdLettre();
+
+        byte[] pdf = "%PDF-1.5 piece complementaire".getBytes(StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/piece-jointe-dossiers")
+                .file(new MockMultipartFile("data", "", "application/json",
+                        ("{\"idDossier\":142,\"idTypePiece\":" + type + ",\"idLettre\":" + idLettre + "}")
+                                .getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("fichier", "complement.pdf", "application/pdf", pdf))
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.apresLettreRenvoi").value(true))
+                .andExpect(jsonPath("$.idLettre").value(idLettre));
+    }
+
+    @Test
+    @DisplayName("Soumission : pièce obligatoire manquante → 400 {champ:piecesJointes}")
+    void piece_obligatoire_manquante_400() throws Exception {
+        Dossier d = dossier(143, "BROUILLON"); d.setRefeDossier(null); d.setIdTypeDossier("PPM");
+        d.setIdPrmp("PRMP001"); d.setIdLocalite("ANT"); dossierRepository.save(d);
+        Ppm ppm = ppmLocalise(43, 143, "ANT"); ppm.setIdPrmp("PRMP001"); ppmRepository.save(ppm);
+        marcheRepository.save(marche(431, 143, 43));
+        seedTypePiece("Plan de passation des marchés", true, "PPM", 1); // obligatoire, non fournie
+
+        mvc.perform(post("/api/dossiers/143/soumettre").header("Authorization", tokenPrmp))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[0].champ").value("piecesJointes"))
+                .andExpect(jsonPath("$.erreurs[0].message")
+                        .value("La pièce 'Plan de passation des marchés' est obligatoire."));
+    }
+
+    @Test
+    @DisplayName("Téléchargement du contenu d'une pièce → 200 + octets identiques")
+    void piece_download_ok() throws Exception {
+        Dossier d = dossier(144, "BROUILLON"); d.setIdTypeDossier("PPM"); d.setIdPrmp("PRMP001");
+        d.setIdLocalite("ANT"); dossierRepository.save(d);
+        int type = seedTypePiece("Plan de passation", true, "PPM", 1);
+
+        byte[] pdf = "%PDF-1.6 contenu a telecharger".getBytes(StandardCharsets.US_ASCII);
+        String created = mvc.perform(multipart("/api/piece-jointe-dossiers")
+                .file(new MockMultipartFile("data", "", "application/json",
+                        ("{\"idDossier\":144,\"idTypePiece\":" + type + "}").getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("fichier", "plan.pdf", "application/pdf", pdf))
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        int idPiece = com.jayway.jsonpath.JsonPath.parse(created).read("$.idPiece");
+
+        byte[] recupere = mvc.perform(get("/api/piece-jointe-dossiers/" + idPiece + "/contenu")
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        assertTrue(java.util.Arrays.equals(pdf, recupere), "le contenu téléchargé est identique à l'envoyé");
+    }
+
+    /** Crée un type de pièce dans le référentiel H2 et renvoie sa PK générée. */
+    private int seedTypePiece(String libelle, boolean obligatoire, String typeDossier, int ordre) {
+        cnm.prs.entity.TypePieceJointe t = new cnm.prs.entity.TypePieceJointe();
+        t.setLibellePiece(libelle);
+        t.setObligatoire(obligatoire);
+        t.setIdTypeDossier(typeDossier);
+        t.setOrdre(ordre);
+        return typePieceJointeRepository.save(t).getIdTypePiece();
     }
 
     // ------------------------------------------------------------------

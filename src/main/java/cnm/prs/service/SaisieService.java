@@ -8,6 +8,7 @@ import java.util.Set;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import cnm.prs.dto.DossierDto;
 import cnm.prs.dto.EditionPpmRequest;
@@ -63,13 +64,15 @@ public class SaisieService {
     private final MarchePrevisionRepository marchePrevisionRepository;
     private final MarchePrevisionService marchePrevisionService;
     private final CapmRepository capmRepository;
+    private final PieceJointeDossierService pieceJointeDossierService;
 
     public SaisieService(DossierRepository dossierRepository, PpmRepository ppmRepository,
             MarcheRepository marcheRepository, PpmService ppmService,
             MarcheService marcheService, DossierIntegriteService dossierIntegrite,
             EntiteContractRepository entiteContractRepository, PrmpRepository prmpRepository,
             ReferenceService referenceService, MarchePrevisionRepository marchePrevisionRepository,
-            MarchePrevisionService marchePrevisionService, CapmRepository capmRepository) {
+            MarchePrevisionService marchePrevisionService, CapmRepository capmRepository,
+            PieceJointeDossierService pieceJointeDossierService) {
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.marcheRepository = marcheRepository;
@@ -82,6 +85,7 @@ public class SaisieService {
         this.marchePrevisionRepository = marchePrevisionRepository;
         this.marchePrevisionService = marchePrevisionService;
         this.capmRepository = capmRepository;
+        this.pieceJointeDossierService = pieceJointeDossierService;
     }
 
     /** Saisie d'un PPM = dossier (BROUILLON) + PPM + lignes de marché (mode auto), en une transaction. */
@@ -129,6 +133,25 @@ public class SaisieService {
             }
         }
         return DossierMapper.toDto(dossierRepository.findById(idDossier).orElseThrow());
+    }
+
+    /**
+     * Saisie d'un PPM avec ses pièces jointes initiales (multipart). Crée le dossier/PPM puis
+     * enregistre chaque pièce ({@code apresLettreRenvoi=false}), dans la même transaction : un format
+     * invalide (magic-bytes) lève 400 et annule la saisie complète.
+     *
+     * @param pieces fichiers indexés par {@code idTypePiece} (parts {@code piece_<idTypePiece>})
+     */
+    public DossierDto saisirPpm(SaisiePpmRequest req, java.util.Map<Integer, MultipartFile> pieces) {
+        DossierDto dossier = saisirPpm(req);
+        if (pieces != null) {
+            for (java.util.Map.Entry<Integer, MultipartFile> e : pieces.entrySet()) {
+                if (e.getValue() != null && !e.getValue().isEmpty()) {
+                    pieceJointeDossierService.enregistrerInitiale(dossier.getIdDossier(), e.getKey(), e.getValue());
+                }
+            }
+        }
+        return dossier;
     }
 
     /**

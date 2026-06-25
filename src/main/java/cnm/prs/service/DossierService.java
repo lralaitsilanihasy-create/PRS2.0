@@ -27,6 +27,8 @@ import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.TypeNotification;
 import cnm.prs.exception.BadRequestException;
+import cnm.prs.exception.ChampsInvalidesException;
+import cnm.prs.exception.ErrorResponse;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.DossierMapper;
@@ -36,9 +38,11 @@ import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.MarchePrevisionRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.NotificationRepository;
+import cnm.prs.repository.PieceJointeDossierRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
 import cnm.prs.repository.ReceptionRepository;
+import cnm.prs.repository.TypePieceJointeRepository;
 import cnm.prs.repository.VerificationRepository;
 import cnm.prs.security.CurrentUser;
 
@@ -62,6 +66,8 @@ public class DossierService {
     private final ReceptionRepository receptionRepository;
     private final DemandeRetraitRepository demandeRetraitRepository;
     private final NotificationRepository notificationRepository;
+    private final TypePieceJointeRepository typePieceJointeRepository;
+    private final PieceJointeDossierRepository pieceJointeDossierRepository;
 
     public DossierService(DossierRepository repository, PpmRepository ppmRepository,
             ControleurDirectory controleurDirectory, NotificationService notificationService,
@@ -69,7 +75,9 @@ public class DossierService {
             AuditLogRepository auditLogRepository, PrmpRepository prmpRepository,
             MarcheRepository marcheRepository, MarchePrevisionRepository marchePrevisionRepository,
             ReceptionRepository receptionRepository, DemandeRetraitRepository demandeRetraitRepository,
-            NotificationRepository notificationRepository) {
+            NotificationRepository notificationRepository,
+            TypePieceJointeRepository typePieceJointeRepository,
+            PieceJointeDossierRepository pieceJointeDossierRepository) {
         this.repository = repository;
         this.ppmRepository = ppmRepository;
         this.controleurDirectory = controleurDirectory;
@@ -83,6 +91,8 @@ public class DossierService {
         this.receptionRepository = receptionRepository;
         this.demandeRetraitRepository = demandeRetraitRepository;
         this.notificationRepository = notificationRepository;
+        this.typePieceJointeRepository = typePieceJointeRepository;
+        this.pieceJointeDossierRepository = pieceJointeDossierRepository;
     }
 
     /**
@@ -323,6 +333,8 @@ public class DossierService {
         }
         // Cohérence type↔contenu (PPM ⇒ a un PPM ; DAO/MAOO ⇒ pas de PPM).
         dossierIntegrite.validerCoherenceAvantSoumission(dossier);
+        // Pièces jointes obligatoires du type de dossier (référentiel) : toutes doivent être présentes.
+        validerPiecesObligatoires(dossier);
 
         // Localité : celle du dossier (dérivée de l'entité à la saisie), sinon celle du PPM. Plus de repli PRMP.
         List<Ppm> ppms = ppmRepository.findByIdDossier(idDossier);
@@ -347,6 +359,24 @@ public class DossierService {
 
         notifierSoumission(dossier, localite);
         return DossierMapper.toDto(dossier);
+    }
+
+    /**
+     * Contrôle, à la soumission, que toutes les pièces jointes marquées {@code obligatoire} pour le
+     * type du dossier (référentiel {@code t_type_piece_jointe}) sont effectivement attachées
+     * ({@code t_piece_jointe_dossier}). Sinon → 400 {@code erreurs:[{champ:"piecesJointes", message}]}.
+     */
+    private void validerPiecesObligatoires(Dossier dossier) {
+        List<ErrorResponse.FieldError> manquantes = typePieceJointeRepository
+                .findByIdTypeDossierAndObligatoireTrue(dossier.getIdTypeDossier()).stream()
+                .filter(t -> !pieceJointeDossierRepository
+                        .existsByIdDossierAndIdTypePiece(dossier.getIdDossier(), t.getIdTypePiece()))
+                .map(t -> new ErrorResponse.FieldError("piecesJointes",
+                        "La pièce '" + t.getLibellePiece() + "' est obligatoire."))
+                .toList();
+        if (!manquantes.isEmpty()) {
+            throw new ChampsInvalidesException(manquantes);
+        }
     }
 
     /** Notifie le Secrétaire et le CC de la localité qu'un dossier est soumis et attend réception. */
