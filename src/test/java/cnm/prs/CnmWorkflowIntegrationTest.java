@@ -173,6 +173,7 @@ class CnmWorkflowIntegrationTest {
         profileRepository.save(profile(6, "Contrôleur vérificateur"));
         profileRepository.save(profile(7, "Chargé de publication"));
         profileRepository.save(profile(8, "Administrateur"));
+        profileRepository.save(profile(9, "Assistant contrôleur"));
 
         controleurRepository.save(controleur("CTRPRE", 2, null));   // Président, voit tout
         controleurRepository.save(controleur("CTRCC1", 3, "ANT"));  // Chef de commission
@@ -181,6 +182,7 @@ class CnmWorkflowIntegrationTest {
         controleurRepository.save(controleur("CTRVER", 6, "ANT"));  // Contrôleur vérificateur
         controleurRepository.save(controleur("CTRADM", 8, "ANT"));  // Administrateur
         controleurRepository.save(controleur("CTRPUB", 7, null));   // Chargé de publication
+        controleurRepository.save(controleur("CTRASS", 9, "ANT"));  // Assistant contrôleur (ANT)
         prmpRepository.save(prmp("PRMP001", "ANT"));
 
         // Délégations actives (orientation MLD : délégant = profil qui exerce,
@@ -3633,36 +3635,104 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Soumission examen — typeResultat=PV → Projet de PV créé (201)")
+    @DisplayName("Soumission examen → Projet de PV créé (toujours un PV)")
     void examen_soumettre_pv_ok() throws Exception {
         mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"typeResultat\":\"PV\",\"idAvis\":\"FAV\"}"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idAvis\":\"FAV\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.idExamen").value(1))
                 .andExpect(jsonPath("$.statutPv").value("BROUILLON"));
     }
 
     @Test
-    @DisplayName("Soumission examen — typeResultat=LETTRE_RENVOI → lettre de renvoi créée (201)")
-    void examen_soumettre_lettre_ok() throws Exception {
-        mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
+    @DisplayName("Lettre de renvoi — création pendant l'examen (Membre) → 201 BROUILLON")
+    void lettre_creation_pendant_examen_ok() throws Exception {
+        String resp = mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"typeResultat\":\"LETTRE_RENVOI\",\"objetLettre\":\"Renvoi du dossier\"}"))
+                .content("{\"idExamen\":1,\"objetLettre\":\"Renvoi du dossier\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.idExamen").value(1))
                 .andExpect(jsonPath("$.idDossier").value(1))
                 .andExpect(jsonPath("$.statut").value("BROUILLON"))
-                .andExpect(jsonPath("$.objetLettre").value("Renvoi du dossier"));
+                .andExpect(jsonPath("$.objetLettre").value("Renvoi du dossier"))
+                .andReturn().getResponse().getContentAsString();
+        org.junit.jupiter.api.Assertions.assertNotNull(com.jayway.jsonpath.JsonPath.read(resp, "$.refLettre"));
     }
 
     @Test
-    @DisplayName("Soumission examen — typeResultat absent → 400 (champ typeResultat)")
-    void examen_soumettre_sans_type_400() throws Exception {
-        mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
-                .contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.erreurs[?(@.champ=='typeResultat')].message",
-                        hasItem("Le type de résultat est obligatoire (PV ou LETTRE_RENVOI).")));
+    @DisplayName("Lettre de renvoi — N lettres sur le même examen → 201 chacune")
+    void lettre_multiple_meme_examen_ok() throws Exception {
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idExamen\":1,\"objetLettre\":\"Lettre 1\"}"))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idExamen\":1,\"objetLettre\":\"Lettre 2\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("Lettre signée → PRMP notifiée (LETTRE_RENVOI_RECUE)")
+    void lettre_signee_prmp_notifiee() throws Exception {
+        int id = seedLettreSoumise();
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='LETTRE_RENVOI_RECUE')]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Lettre signée → Assistant contrôleur notifié (LETTRE_RENVOI_COPIE)")
+    void lettre_signee_assistant_notifie() throws Exception {
+        int id = seedLettreSoumise();
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='LETTRE_RENVOI_COPIE')].destinataireIm", hasItem("CTRASS")));
+    }
+
+    @Test
+    @DisplayName("PV signé avis DÉFAVORABLE → Assistant contrôleur notifié (PV_DEFINITIF_COPIE)")
+    void pv_signe_avis_defav_assistant_notifie() throws Exception {
+        signerPvAvecAvis(120, "DEF");
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_DEFINITIF_COPIE')].destinataireIm", hasItem("CTRASS")));
+    }
+
+    @Test
+    @DisplayName("PV signé avis FAVR → Assistant contrôleur NON notifié (pas de PV_DEFINITIF_COPIE)")
+    void pv_signe_avis_favr_assistant_non_notifie() throws Exception {
+        signerPvAvecAvis(121, "FAVR");
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PV_DEFINITIF_COPIE')]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Dossier clôturé après vérification (FAVR) → Assistant contrôleur notifié (CLOTURE_COPIE_ASSISTANT)")
+    void dossier_cloture_assistant_notifie() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        signerPvAvecAvis(122, "FAVR");   // dossier 1 → EN_VERIFICATION
+        mvc.perform(post("/api/verifications").header("Authorization", tokenVer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idReception\":1,\"idPv\":122,\"observation\":\"ok\",\"obsLevees\":true}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
+                .andExpect(jsonPath("$[?(@.typeNotif=='CLOTURE_COPIE_ASSISTANT')].destinataireIm", hasItem("CTRASS")));
+    }
+
+    @Test
+    @DisplayName("Assistant contrôleur hors localité → accès lettre 403")
+    void assistant_acces_lettre_autre_localite_403() throws Exception {
+        int id = seedLettreSoumise();   // examen 1 → localité ANT
+        String tokenAssTms = bearer("CTRASS", ProfilUtilisateur.ASSISTANT_CONTROLEUR, TypeActeur.CONTROLEUR, "CTRASS", "TMS");
+        mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenAssTms))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("PRMP — GET /api/lettre-renvois/mes-lettres (lecture seule) → 200")
+    void prmp_mes_lettres_lecture_seule() throws Exception {
+        mvc.perform(get("/api/lettre-renvois/mes-lettres").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk());
     }
 
     @Test

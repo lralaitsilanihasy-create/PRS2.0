@@ -8,12 +8,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.ExamenDto;
 import cnm.prs.dto.ExamenSoumissionRequest;
+import cnm.prs.dto.PvExamenDto;
 import cnm.prs.entity.Examen;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.exception.BusinessRuleException;
-import cnm.prs.exception.ChampsInvalidesException;
-import cnm.prs.exception.ErrorResponse;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.ExamenMapper;
 import cnm.prs.repository.DispatchRepository;
@@ -33,42 +32,25 @@ public class ExamenService {
     private final DispatchRepository dispatchRepository;
     private final DossierRepository dossierRepository;
     private final PvExamenService pvExamenService;
-    private final LettreRenvoiService lettreRenvoiService;
 
     public ExamenService(ExamenRepository repository, DispatchRepository dispatchRepository,
-            DossierRepository dossierRepository, PvExamenService pvExamenService,
-            LettreRenvoiService lettreRenvoiService) {
+            DossierRepository dossierRepository, PvExamenService pvExamenService) {
         this.repository = repository;
         this.dispatchRepository = dispatchRepository;
         this.dossierRepository = dossierRepository;
         this.pvExamenService = pvExamenService;
-        this.lettreRenvoiService = lettreRenvoiService;
     }
 
     /**
-     * ⚠️ Règle ajoutée — soumission de l'examen : le Membre choisit le résultat. {@code typeResultat=PV}
-     * crée le Projet de PV (comportement actuel, via {@link PvExamenService}) ; {@code LETTRE_RENVOI}
-     * crée une lettre de renvoi ({@code objetLettre} obligatoire). Type absent/invalide → 400.
-     *
-     * @return le {@code PvExamenDto} ou le {@code LettreRenvoiDto} créé.
+     * ⚠️ Règle ajoutée — soumission de l'examen : produit le <strong>Projet de PV</strong>
+     * (via {@link PvExamenService}, {@code idPv} alloué serveur) avec l'avis fourni
+     * ({@code idAvis}, obligatoire sur le PV). La lettre de renvoi est une action séparée.
      */
-    public Object soumettre(Integer idExamen, ExamenSoumissionRequest req) {
+    public PvExamenDto soumettre(Integer idExamen, ExamenSoumissionRequest req) {
         if (!repository.existsById(idExamen)) {
             throw new ResourceNotFoundException("Examen introuvable : " + idExamen);
         }
-        String type = req.typeResultat();
-        if ("PV".equals(type)) {
-            return pvExamenService.creerProjet(idExamen, req.idAvis());   // avis FAV/FAVR/DEF/NSP
-        }
-        if ("LETTRE_RENVOI".equals(type)) {
-            if (req.objetLettre() == null || req.objetLettre().isBlank()) {
-                throw new ChampsInvalidesException(List.of(new ErrorResponse.FieldError(
-                        "objetLettre", "L'objet de la lettre est obligatoire.")));
-            }
-            return lettreRenvoiService.creerDepuisExamen(idExamen, req.objetLettre());
-        }
-        throw new ChampsInvalidesException(List.of(new ErrorResponse.FieldError(
-                "typeResultat", "Le type de résultat est obligatoire (PV ou LETTRE_RENVOI).")));
+        return pvExamenService.creerProjet(idExamen, req.idAvis());
     }
 
     @Transactional(readOnly = true)

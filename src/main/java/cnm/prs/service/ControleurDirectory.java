@@ -71,6 +71,15 @@ public class ControleurDirectory {
         return controleurRepository.findByIdProfileInAndIdLocalite(ids, idLocalite);
     }
 
+    /** Les Assistants contrôleurs d'une localité donnée (copies lettres de renvoi / PV définitifs). */
+    public List<Controleur> assistantsControleurs(String idLocalite) {
+        List<Integer> ids = idProfiles(ProfilUtilisateur.ASSISTANT_CONTROLEUR);
+        if (ids.isEmpty() || idLocalite == null) {
+            return List.of();
+        }
+        return controleurRepository.findByIdProfileInAndIdLocalite(ids, idLocalite);
+    }
+
     private List<Controleur> parProfil(ProfilUtilisateur profil) {
         List<Integer> ids = idProfiles(profil);
         return ids.isEmpty() ? List.of() : controleurRepository.findByIdProfileIn(ids);

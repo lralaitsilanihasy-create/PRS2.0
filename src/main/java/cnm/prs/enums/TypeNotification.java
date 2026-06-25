@@ -75,5 +75,17 @@ public enum TypeNotification {
     OBSERVATION_VERIFICATION,
 
     /** Dossier rectifié par la PRMP et resoumis — vers le vérificateur du dossier (⚠️ règle ajoutée). */
-    RECTIFICATION_PRMP
+    RECTIFICATION_PRMP,
+
+    /** Lettre de renvoi signée reçue — vers la PRMP du dossier concerné (⚠️ règle ajoutée). */
+    LETTRE_RENVOI_RECUE,
+
+    /** Copie d'une lettre de renvoi signée — vers l'Assistant contrôleur de la localité (⚠️ règle ajoutée). */
+    LETTRE_RENVOI_COPIE,
+
+    /** Copie d'un PV définitif (avis ≠ FAVR) — vers l'Assistant contrôleur de la localité (⚠️ règle ajoutée). */
+    PV_DEFINITIF_COPIE,
+
+    /** Copie d'un PV FAVR après clôture du dossier — vers l'Assistant contrôleur de la localité (⚠️ règle ajoutée). */
+    CLOTURE_COPIE_ASSISTANT
 }

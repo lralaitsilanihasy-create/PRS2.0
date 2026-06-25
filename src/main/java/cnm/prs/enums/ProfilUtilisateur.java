@@ -20,6 +20,7 @@ public enum ProfilUtilisateur {
     SECRETAIRE,
     MEMBRE,
     VERIFICATEUR,
+    ASSISTANT_CONTROLEUR,
     CHARGE_PUBLICATION,
     ADMINISTRATEUR;
 
@@ -48,6 +49,9 @@ public enum ProfilUtilisateur {
         }
         if (n.contains("secretaire")) {
             return SECRETAIRE;
+        }
+        if (n.contains("assistant")) {
+            return ASSISTANT_CONTROLEUR;
         }
         if (n.contains("verificateur")) {
             return VERIFICATEUR;

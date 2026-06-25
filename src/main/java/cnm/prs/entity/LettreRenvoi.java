@@ -17,8 +17,8 @@ import lombok.NoArgsConstructor;
 
 /**
  * Entité JPA mappée sur la table {@code t_lettre_renvoi} : lettre de renvoi d'un examen,
- * alternative au Projet de PV. Un examen produit au plus une lettre ({@code ID_EXAMEN} unique).
- * Cycle : {@code BROUILLON → SOUMIS → SIGNE} (signature CC ou Président). PK auto (IDENTITY).
+ * action séparée pendant l'examen. Un examen peut produire <strong>N lettres</strong> ({@code ID_EXAMEN}
+ * non unique). Cycle : {@code BROUILLON → SOUMIS → SIGNE} (signature CC ou Président). PK auto (IDENTITY).
  */
 @Entity
 @Table(name = "t_lettre_renvoi")
@@ -32,7 +32,7 @@ public class LettreRenvoi {
     @Column(name = "ID_LETTRE", nullable = false)
     private Integer idLettre;
 
-    @Column(name = "ID_EXAMEN", nullable = false, unique = true)
+    @Column(name = "ID_EXAMEN", nullable = false)
     private Integer idExamen;
 
     @Column(name = "ID_DOSSIER", nullable = false)

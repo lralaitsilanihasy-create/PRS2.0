@@ -254,6 +254,31 @@ public class PvExamenService {
         }
         notifierPvSigne(pv);                            // PRMP (transmission systématique)
         notifierVerificateur(pv, reserve, idDossier);
+        notifierAssistantPvDefinitif(pv, reserve, idDossier);
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — copie du PV définitif aux Assistants contrôleurs de la localité, uniquement
+     * si l'avis n'est PAS favorable avec réserves ({@code ≠ FAVR}) — le dossier est alors clôturé
+     * immédiatement ({@code PV_DEFINITIF_COPIE}). Pour un PV FAVR, l'assistant est notifié plus tard,
+     * à la clôture du dossier après vérification (cf. {@code VerificationService}).
+     */
+    private void notifierAssistantPvDefinitif(PvExamen pv, boolean reserve, Integer idDossier) {
+        if (reserve) {
+            return;
+        }
+        String localite = repository.findLocaliteByPv(pv.getIdPv()).orElse(null);
+        if (localite == null) {
+            return;
+        }
+        String avis = repository.findIdAvisByPv(pv.getIdPv()).orElse(null);
+        String titre = "PV définitif (copie)";
+        String corps = "PV définitif " + referencePv(pv) + " (avis " + avis + "), dossier "
+                + (idDossier == null ? "?" : idDossier) + ".";
+        for (Controleur a : controleurDirectory.assistantsControleurs(localite)) {
+            notificationService.emettre(idDossier, TypeNotification.PV_DEFINITIF_COPIE,
+                    a.getImControleur(), a.getEmailCont(), titre, corps);
+        }
     }
 
     /**

@@ -19,13 +19,14 @@ public class LettreRenvoiDto {
 
     private Integer idLettre;
 
-    @NotNull
+    @NotNull(message = "L'examen est obligatoire.")
     private Integer idExamen;
 
     private Integer idDossier;
 
     private String refLettre;
 
+    @NotNull(message = "L'objet de la lettre est obligatoire.")
     @Size(max = 500)
     private String objetLettre;
 

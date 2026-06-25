@@ -189,6 +189,7 @@ public class VerificationService {
                 dossier.setStatut(StatutDossier.CLOTURE.name());
                 dossierRepository.save(dossier);
                 notifierClotureEligible(dossier.getIdDossier());
+                notifierClotureAssistant(dossier, verification);
             } else {
                 dossier.setStatut(StatutDossier.EN_ATTENTE_DECISION_PRMP.name());
                 dossierRepository.save(dossier);
@@ -213,6 +214,24 @@ public class VerificationService {
             String email = prmpRepository.findById(idPrmp).map(Prmp::getEmailPrmp).orElse(null);
             notificationService.emettrePrmp(TypeNotification.OBSERVATION_VERIFICATION, idPrmp, email,
                     dossier.getIdDossier(), TypeObjet.DOSSIER, dossier.getIdDossier(), titre, corps);
+        }
+    }
+
+    /**
+     * ⚠️ Règle ajoutée — à la clôture d'un dossier après vérification (PV FAVR, observations levées),
+     * copie aux Assistants contrôleurs de la localité ({@code CLOTURE_COPIE_ASSISTANT}).
+     */
+    private void notifierClotureAssistant(Dossier dossier, Verification verification) {
+        String localite = receptionRepository.findLocaliteById(verification.getIdReception());
+        if (localite == null) {
+            return;
+        }
+        String ref = dossier.getRefeDossier() != null ? dossier.getRefeDossier() : ("n° " + dossier.getIdDossier());
+        String titre = "Dossier clôturé (copie)";
+        String corps = "Dossier " + ref + " clôturé après vérification (PV favorable avec réserves).";
+        for (Controleur a : controleurDirectory.assistantsControleurs(localite)) {
+            notificationService.emettre(dossier.getIdDossier(), TypeNotification.CLOTURE_COPIE_ASSISTANT,
+                    a.getImControleur(), a.getEmailCont(), titre, corps);
         }
     }
 

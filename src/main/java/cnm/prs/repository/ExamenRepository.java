@@ -30,6 +30,10 @@ public interface ExamenRepository extends JpaRepository<Examen, Integer> {
     @Query("select e.dispatch.reception.idDossier from Examen e where e.idExamen = :idExamen")
     Optional<Integer> findIdDossierByExamen(@Param("idExamen") Integer idExamen);
 
+    /** Localité de circuit d'un examen (via la réception : examen→dispatch→réception→contrôleur récepteur). */
+    @Query("select e.dispatch.reception.ctrlRecept.idLocalite from Examen e where e.idExamen = :idExamen")
+    Optional<String> findLocaliteByExamen(@Param("idExamen") Integer idExamen);
+
     /** refeDossier du dossier rattaché à un examen (pour dériver la référence de la lettre). */
     @Query("""
             select d.refeDossier from Examen e, Dossier d

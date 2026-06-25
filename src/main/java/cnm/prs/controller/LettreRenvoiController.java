@@ -2,6 +2,7 @@ package cnm.prs.controller;
 
 import java.util.List;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -37,9 +38,23 @@ public class LettreRenvoiController {
         return service.findAll();
     }
 
+    /** Lettres de renvoi signées concernant les dossiers de la PRMP connectée (lecture seule). */
+    @PreAuthorize("hasRole('PRMP')")
+    @GetMapping("/mes-lettres")
+    public List<LettreRenvoiDto> mesLettres() {
+        return service.mesLettres();
+    }
+
     @GetMapping("/{id}")
     public LettreRenvoiDto findById(@PathVariable Integer id) {
         return service.findById(id);
+    }
+
+    /** Création d'une lettre de renvoi pendant l'examen (statut BROUILLON). */
+    @PreAuthorize("@perm.peutExercer('MEMBRE')")
+    @PostMapping
+    public ResponseEntity<LettreRenvoiDto> create(@Valid @RequestBody LettreRenvoiDto dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(dto));
     }
 
     @PreAuthorize("@perm.peutExercer('MEMBRE')")
