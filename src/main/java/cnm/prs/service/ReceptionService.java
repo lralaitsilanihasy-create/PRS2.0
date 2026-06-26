@@ -54,7 +54,7 @@ public class ReceptionService {
     @Transactional(readOnly = true)
     public List<ReceptionDto> findAll() {
         return Visibilite.filtrer(repository::findAll, repository::findVisiblesParLocalite)
-                .stream().map(ReceptionMapper::toDto).toList();
+                .stream().map(this::toDtoComplet).toList();
     }
 
     /**
@@ -77,7 +77,7 @@ public class ReceptionService {
                 return List.of();
             }
         }
-        return repository.findByIdDossier(idDossier).stream().map(ReceptionMapper::toDto).toList();
+        return repository.findByIdDossier(idDossier).stream().map(this::toDtoComplet).toList();
     }
 
     /**
@@ -110,7 +110,21 @@ public class ReceptionService {
         Reception entity = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Reception introuvable : " + id));
         Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
-        return ReceptionMapper.toDto(entity);
+        return toDtoComplet(entity);
+    }
+
+    /**
+     * Mappe la réception puis enrichit {@code dateSoumission} avec la date/heure de soumission du
+     * dossier rattaché ({@code t_dossier.DATE_SOUMISSION}) — {@code null} pour un dossier ancien.
+     */
+    private ReceptionDto toDtoComplet(Reception entity) {
+        ReceptionDto dto = ReceptionMapper.toDto(entity);
+        if (dto != null && entity.getIdDossier() != null) {
+            dossierRepository.findById(entity.getIdDossier())
+                    .map(Dossier::getDateSoumission)
+                    .ifPresent(ds -> dto.setDateSoumission(ReceptionMapper.format(ds)));
+        }
+        return dto;
     }
 
     public ReceptionDto create(ReceptionDto dto) {
@@ -122,7 +136,7 @@ public class ReceptionService {
         Reception saved = repository.save(entity);
         String reference = genererReference(saved);   // (regle ajoutee) reference officielle a la reception
         declencherPretDispatch(saved);
-        ReceptionDto resultat = ReceptionMapper.toDto(saved);
+        ReceptionDto resultat = toDtoComplet(saved);
         resultat.setReference(reference);
         return resultat;
     }
@@ -182,13 +196,13 @@ public class ReceptionService {
         existing.setNumPassage(dto.getNumPassage());
         existing.setTypePassage(dto.getTypePassage());
         existing.setImCtrlRecept(dto.getImCtrlRecept());
-        existing.setDateReception(dto.getDateReception());
+        existing.setDateReception(ReceptionMapper.toLocalDateTime(dto.getDateReception()));
         existing.setObservation(dto.getObservation());
         existing.setComplet(dto.getComplet());
         existing.setIdReceptionPrec(dto.getIdReceptionPrec());
         Reception saved = repository.save(existing);
         declencherPretDispatch(saved);
-        return ReceptionMapper.toDto(saved);
+        return toDtoComplet(saved);
     }
 
     public void delete(Integer id) {

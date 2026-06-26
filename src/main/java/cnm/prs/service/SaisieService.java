@@ -280,6 +280,7 @@ public class SaisieService {
         d.setIdPrmp(idPrmp);
         d.setIdEntiteContract(idEntiteContract);
         d.setStatut(StatutDossier.BROUILLON.name());
+        d.setDateSoumission(java.time.LocalDateTime.now());   // date/heure de saisie du dossier (§ secrétariat)
         return dossierRepository.save(d);
     }
 

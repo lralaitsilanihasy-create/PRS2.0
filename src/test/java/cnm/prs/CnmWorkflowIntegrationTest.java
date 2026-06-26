@@ -1380,6 +1380,32 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Enregistrement secrétariat : la date de réception comporte l'heure (yyyy-MM-dd HH:mm)")
+    void enregistrement_liste_ok() throws Exception {
+        // La réception 1 (localité ANT) est seedée à 2026-06-02 10:30.
+        mvc.perform(get("/api/receptions").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idReception==1)].dateReception", hasItem("2026-06-02 10:30")));
+    }
+
+    @Test
+    @DisplayName("Enregistrement secrétariat : dateSoumission présente et non nulle pour un dossier récent")
+    void enregistrement_soumission_ok() throws Exception {
+        // Dossier récent (ANT) avec une date/heure de soumission, et sa réception (CC ANT).
+        Dossier d = dossier(150, "SOUMIS");
+        d.setIdLocalite("ANT");
+        d.setIdPrmp("PRMP001");
+        d.setDateSoumission(LocalDateTime.of(2026, 6, 20, 9, 15));
+        dossierRepository.save(d);
+        receptionRepository.save(reception(150, 150, "CTRCC1", true));
+
+        mvc.perform(get("/api/receptions/150").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dateReception").value("2026-06-02 10:30"))
+                .andExpect(jsonPath("$.dateSoumission").value("2026-06-20 09:15"));
+    }
+
+    @Test
     @DisplayName("Scoping PPM/Marché : PRMP voit les siens, CC sa localité (hors brouillon), Président tout ; hors périmètre → 403")
     void scoping_ppmEtMarche() throws Exception {
         String tokenPrmp2 = bearer("PRMP002", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMP002", "ANT");
@@ -4300,7 +4326,7 @@ class CnmWorkflowIntegrationTest {
         r.setNumPassage(1);
         r.setTypePassage("INITIAL");
         r.setImCtrlRecept(imRecept);
-        r.setDateReception(LocalDate.of(2026, 6, 2));
+        r.setDateReception(LocalDateTime.of(2026, 6, 2, 10, 30));
         r.setComplet(complet);
         return r;
     }

@@ -10,6 +10,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -44,6 +45,10 @@ public class Dossier {
 
     @Column(name = "DATE_REF")
     private LocalDate dateRef;
+
+    /** Date et heure de soumission du dossier (TIMESTAMP). Posée à la saisie (POST /api/saisies/ppm). */
+    @Column(name = "DATE_SOUMISSION")
+    private LocalDateTime dateSoumission;
 
     @Column(name = "STATUT", length = 30)
     private String statut;

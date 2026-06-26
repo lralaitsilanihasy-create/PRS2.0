@@ -3,7 +3,6 @@ package cnm.prs.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -33,7 +32,12 @@ public class ReceptionDto {
     @Size(max = 7)
     private String imCtrlRecept;
 
-    private LocalDate dateReception;
+    /** Date et heure de réception, formatée {@code yyyy-MM-dd HH:mm} (lecture seule en sortie). */
+    private String dateReception;
+
+    /** Date et heure de soumission du dossier, {@code yyyy-MM-dd HH:mm} — lecture seule ; {@code null}
+     *  pour un dossier ancien sans date de soumission enregistrée. */
+    private String dateSoumission;
 
     @Size(max = 500)
     private String observation;

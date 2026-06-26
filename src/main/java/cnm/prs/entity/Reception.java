@@ -9,7 +9,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -43,8 +43,9 @@ public class Reception {
     @Column(name = "IM_CTRL_RECEPT", length = 7)
     private String imCtrlRecept;
 
+    /** Date <strong>et heure</strong> de réception par le secrétariat (TIMESTAMP). */
     @Column(name = "DATE_RECEPTION")
-    private LocalDate dateReception;
+    private LocalDateTime dateReception;
 
     @Column(name = "OBSERVATION", length = 500)
     private String observation;
