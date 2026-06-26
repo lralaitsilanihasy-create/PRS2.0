@@ -36,6 +36,7 @@ import cnm.prs.repository.MarchePrevisionRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
+import cnm.prs.repository.TypePieceJointeRepository;
 import cnm.prs.security.CurrentUser;
 
 /**
@@ -65,6 +66,7 @@ public class SaisieService {
     private final MarchePrevisionService marchePrevisionService;
     private final CapmRepository capmRepository;
     private final PieceJointeDossierService pieceJointeDossierService;
+    private final TypePieceJointeRepository typePieceJointeRepository;
 
     public SaisieService(DossierRepository dossierRepository, PpmRepository ppmRepository,
             MarcheRepository marcheRepository, PpmService ppmService,
@@ -72,7 +74,8 @@ public class SaisieService {
             EntiteContractRepository entiteContractRepository, PrmpRepository prmpRepository,
             ReferenceService referenceService, MarchePrevisionRepository marchePrevisionRepository,
             MarchePrevisionService marchePrevisionService, CapmRepository capmRepository,
-            PieceJointeDossierService pieceJointeDossierService) {
+            PieceJointeDossierService pieceJointeDossierService,
+            TypePieceJointeRepository typePieceJointeRepository) {
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.marcheRepository = marcheRepository;
@@ -86,6 +89,7 @@ public class SaisieService {
         this.marchePrevisionService = marchePrevisionService;
         this.capmRepository = capmRepository;
         this.pieceJointeDossierService = pieceJointeDossierService;
+        this.typePieceJointeRepository = typePieceJointeRepository;
     }
 
     /** Saisie d'un PPM = dossier (BROUILLON) + PPM + lignes de marché (mode auto), en une transaction. */
@@ -143,6 +147,7 @@ public class SaisieService {
      * @param pieces fichiers indexés par {@code idTypePiece} (parts {@code piece_<idTypePiece>})
      */
     public DossierDto saisirPpm(SaisiePpmRequest req, java.util.Map<Integer, MultipartFile> pieces) {
+        exigerPiecesObligatoires(TYPE_PPM, pieces);   // contrôle AVANT toute persistance (400 si manquante)
         DossierDto dossier = saisirPpm(req);
         if (pieces != null) {
             for (java.util.Map.Entry<Integer, MultipartFile> e : pieces.entrySet()) {
@@ -152,6 +157,26 @@ public class SaisieService {
             }
         }
         return dossier;
+    }
+
+    /**
+     * Vérifie qu'à la création toutes les pièces jointes {@code obligatoire} du type de dossier
+     * (référentiel {@code t_type_piece_jointe}) sont fournies dans la requête multipart (part
+     * {@code piece_<idTypePiece>} non vide). Sinon → 400 {@code erreurs:[{champ:"piecesJointes", message}]},
+     * une entrée par pièce manquante.
+     */
+    private void exigerPiecesObligatoires(String idTypeDossier, java.util.Map<Integer, MultipartFile> pieces) {
+        List<ErrorResponse.FieldError> manquantes = typePieceJointeRepository
+                .findByIdTypeDossierAndObligatoireTrue(idTypeDossier).stream()
+                .filter(t -> pieces == null
+                        || pieces.get(t.getIdTypePiece()) == null
+                        || pieces.get(t.getIdTypePiece()).isEmpty())
+                .map(t -> new ErrorResponse.FieldError("piecesJointes",
+                        "La pièce '" + t.getLibellePiece() + "' est obligatoire."))
+                .toList();
+        if (!manquantes.isEmpty()) {
+            throw new ChampsInvalidesException(manquantes);
+        }
     }
 
     /**

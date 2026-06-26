@@ -3998,6 +3998,67 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$", hasSize(7)));
     }
 
+    @Test
+    @DisplayName("Saisie PPM (multipart) : pièce obligatoire absente → 400 {champ:piecesJointes}")
+    void creation_sans_piece_obligatoire_400() throws Exception {
+        seedTypePiece("Plan de passation des marchés signé", true, "PPM", 1); // obligatoire
+        int opt = seedTypePiece("Avis de non-objection (si requis)", false, "PPM", 2); // optionnelle
+
+        // On fournit uniquement la pièce optionnelle : l'obligatoire manque → 400.
+        byte[] pdf = "%PDF-1.4 avis".getBytes(StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/saisies/ppm")
+                .file(new MockMultipartFile("data", "", "application/json",
+                        "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"2026-01-10\"}"
+                                .getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("piece_" + opt, "avis.pdf", "application/pdf", pdf))
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[0].champ").value("piecesJointes"))
+                .andExpect(jsonPath("$.erreurs[0].message")
+                        .value("La pièce 'Plan de passation des marchés signé' est obligatoire."));
+
+        // Aucune création persistée (validation avant persistance).
+        mvc.perform(get("/api/dossiers?statut=BROUILLON").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$[?(@.idTypeDossier=='PPM')]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Saisie PPM (multipart) : toutes les pièces obligatoires fournies → 201")
+    void creation_avec_toutes_pieces_ok() throws Exception {
+        int oblig = seedTypePiece("Plan de passation des marchés signé", true, "PPM", 1);
+        int opt = seedTypePiece("Avis de non-objection (si requis)", false, "PPM", 2);
+
+        byte[] pdf = "%PDF-1.4 piece".getBytes(StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/saisies/ppm")
+                .file(new MockMultipartFile("data", "", "application/json",
+                        "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"2026-01-10\"}"
+                                .getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("piece_" + oblig, "ppm.pdf", "application/pdf", pdf))
+                .file(new MockMultipartFile("piece_" + opt, "avis.pdf", "application/pdf", pdf))
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.statut").value("BROUILLON"))
+                .andExpect(jsonPath("$.idTypeDossier").value("PPM"));
+    }
+
+    @Test
+    @DisplayName("Saisie PPM (multipart) : pièce optionnelle omise mais obligatoire fournie → 201")
+    void creation_sans_piece_optionnelle_ok() throws Exception {
+        int oblig = seedTypePiece("Plan de passation des marchés signé", true, "PPM", 1);
+        seedTypePiece("Avis de non-objection (si requis)", false, "PPM", 2); // optionnelle, non fournie
+
+        byte[] pdf = "%PDF-1.4 piece".getBytes(StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/saisies/ppm")
+                .file(new MockMultipartFile("data", "", "application/json",
+                        "{\"idEntiteContract\":1,\"exercice\":2026,\"dateSignature\":\"2026-01-10\"}"
+                                .getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("piece_" + oblig, "ppm.pdf", "application/pdf", pdf))
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.statut").value("BROUILLON"))
+                .andExpect(jsonPath("$.idTypeDossier").value("PPM"));
+    }
+
     /** Crée un type de pièce dans le référentiel H2 et renvoie sa PK générée. */
     private int seedTypePiece(String libelle, boolean obligatoire, String typeDossier, int ordre) {
         cnm.prs.entity.TypePieceJointe t = new cnm.prs.entity.TypePieceJointe();

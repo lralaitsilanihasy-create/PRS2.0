@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
+import org.springframework.web.util.WebUtils;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -58,7 +59,11 @@ public class SaisieController {
     public ResponseEntity<DossierDto> saisirPpmAvecPieces(
             @Valid @RequestPart("data") SaisiePpmRequest req, HttpServletRequest request) {
         Map<Integer, MultipartFile> pieces = new HashMap<>();
-        if (request instanceof MultipartHttpServletRequest multipart) {
+        // Déballe la requête native : sous Spring Security, `request` est un wrapper qui n'est pas
+        // un MultipartHttpServletRequest (un simple instanceof échouerait et perdrait les pièces).
+        MultipartHttpServletRequest multipart =
+                WebUtils.getNativeRequest(request, MultipartHttpServletRequest.class);
+        if (multipart != null) {
             for (Iterator<String> it = multipart.getFileNames(); it.hasNext();) {
                 String nom = it.next();
                 if (nom != null && nom.startsWith("piece_")) {
