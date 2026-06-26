@@ -13,6 +13,12 @@ import cnm.prs.entity.PvExamen;
 @Repository
 public interface PvExamenRepository extends JpaRepository<PvExamen, Integer> {
 
+    /** Nombre de PV à un statut donné (ex. {@code SIGNE} = définitifs). */
+    long countByStatutPv(String statutPv);
+
+    /** Nombre de PV dont le statut diffère de la valeur donnée (ex. {@code <> SIGNE} = projets). */
+    long countByStatutPvNot(String statutPv);
+
     /** Plus grand ID_PV existant (0 si table vide) — pour allouer la PK assignée à la soumission d'examen. */
     @Query("select coalesce(max(p.idPv), 0) from PvExamen p")
     Integer findMaxId();

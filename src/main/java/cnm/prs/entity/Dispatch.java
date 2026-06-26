@@ -9,6 +9,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -40,8 +41,9 @@ public class Dispatch {
     @Column(name = "IM_CTRL_MEMBRE", length = 7)
     private String imCtrlMembre;
 
+    /** Date <strong>et heure</strong> du dispatch (TIMESTAMP). */
     @Column(name = "DATE_DISPATCH")
-    private LocalDate dateDispatch;
+    private LocalDateTime dateDispatch;
 
     @Column(name = "DATE_CTRL_ASSIGNE")
     private LocalDate dateCtrlAssigne;

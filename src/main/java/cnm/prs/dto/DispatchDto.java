@@ -29,7 +29,8 @@ public class DispatchDto {
     @Size(max = 7)
     private String imCtrlMembre;
 
-    private LocalDate dateDispatch;
+    /** Date et heure du dispatch, formatée {@code yyyy-MM-dd HH:mm}. */
+    private String dateDispatch;
 
     private LocalDate dateCtrlAssigne;
 

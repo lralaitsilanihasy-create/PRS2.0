@@ -1,5 +1,6 @@
 package cnm.prs;
 
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
@@ -1403,6 +1404,29 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.dateReception").value("2026-06-02 10:30"))
                 .andExpect(jsonPath("$.dateSoumission").value("2026-06-20 09:15"));
+    }
+
+    @Test
+    @DisplayName("Tableau de bord Président : compteurs de contenu présents (6 sections, valeurs ≥ 0)")
+    void dashboard_compteurs_president_ok() throws Exception {
+        mvc.perform(get("/api/kpis/tableau-bord").header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.compteurs").exists())
+                .andExpect(jsonPath("$.compteurs.predispatch").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.compteurs.dispatch").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.compteurs.projetsPV").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.compteurs.lettresRenvoi").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.compteurs.pvDefinitifs").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.compteurs.demandesRetrait").value(greaterThanOrEqualTo(0)));
+    }
+
+    @Test
+    @DisplayName("DispatchDto : dateDispatch comporte l'heure (yyyy-MM-dd HH:mm)")
+    void dispatch_dto_datetime_ok() throws Exception {
+        // Le dispatch 1 (localité ANT) est seedé à 2026-06-03 14:45.
+        mvc.perform(get("/api/dispatchs").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDispatch==1)].dateDispatch", hasItem("2026-06-03 14:45")));
     }
 
     @Test
@@ -4337,7 +4361,7 @@ class CnmWorkflowIntegrationTest {
         d.setIdReception(reception);
         d.setImCtrlCc(cc);
         d.setImCtrlMembre(membre);
-        d.setDateDispatch(LocalDate.of(2026, 6, 3));
+        d.setDateDispatch(LocalDateTime.of(2026, 6, 3, 14, 45));
         d.setInterimDispatch(false);
         return d;
     }

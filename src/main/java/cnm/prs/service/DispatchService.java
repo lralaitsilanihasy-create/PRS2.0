@@ -142,7 +142,7 @@ public class DispatchService {
         existing.setImCtrlDispatch(dto.getImCtrlDispatch());
         existing.setImCtrlCc(dto.getImCtrlCc());
         existing.setImCtrlMembre(dto.getImCtrlMembre());
-        existing.setDateDispatch(dto.getDateDispatch());
+        existing.setDateDispatch(DispatchMapper.toLocalDateTime(dto.getDateDispatch()));
         existing.setDateCtrlAssigne(dto.getDateCtrlAssigne());
         existing.setInstructions(dto.getInstructions());
         existing.setInterimDispatch(dto.getInterimDispatch());

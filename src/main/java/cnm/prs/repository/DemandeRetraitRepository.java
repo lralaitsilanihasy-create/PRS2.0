@@ -12,6 +12,9 @@ import cnm.prs.entity.DemandeRetrait;
 @Repository
 public interface DemandeRetraitRepository extends JpaRepository<DemandeRetrait, Integer> {
 
+    /** Nombre de demandes de retrait à un statut donné (compteur du tableau de bord). */
+    long countByStatut(String statut);
+
     /** Demandes d'une PRMP (suivi de ses propres demandes, §3.1). */
     List<DemandeRetrait> findByIdPrmp(String idPrmp);
 

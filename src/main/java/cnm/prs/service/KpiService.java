@@ -8,11 +8,19 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cnm.prs.dto.CompteursDto;
 import cnm.prs.dto.PointNonConformiteDto;
 import cnm.prs.dto.TableauBordDto;
 import cnm.prs.enums.ProfilUtilisateur;
+import cnm.prs.enums.StatutDossier;
+import cnm.prs.enums.StatutLettreRenvoi;
+import cnm.prs.enums.StatutPv;
+import cnm.prs.enums.StatutRetrait;
+import cnm.prs.repository.DemandeRetraitRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenDetailRepository;
+import cnm.prs.repository.LettreRenvoiRepository;
+import cnm.prs.repository.PvExamenRepository;
 import cnm.prs.repository.VerificationRepository;
 import cnm.prs.security.CurrentUser;
 
@@ -27,12 +35,19 @@ public class KpiService {
     private final DossierRepository dossierRepository;
     private final VerificationRepository verificationRepository;
     private final ExamenDetailRepository examenDetailRepository;
+    private final PvExamenRepository pvExamenRepository;
+    private final LettreRenvoiRepository lettreRenvoiRepository;
+    private final DemandeRetraitRepository demandeRetraitRepository;
 
     public KpiService(DossierRepository dossierRepository, VerificationRepository verificationRepository,
-            ExamenDetailRepository examenDetailRepository) {
+            ExamenDetailRepository examenDetailRepository, PvExamenRepository pvExamenRepository,
+            LettreRenvoiRepository lettreRenvoiRepository, DemandeRetraitRepository demandeRetraitRepository) {
         this.dossierRepository = dossierRepository;
         this.verificationRepository = verificationRepository;
         this.examenDetailRepository = examenDetailRepository;
+        this.pvExamenRepository = pvExamenRepository;
+        this.lettreRenvoiRepository = lettreRenvoiRepository;
+        this.demandeRetraitRepository = demandeRetraitRepository;
     }
 
     /**
@@ -44,7 +59,7 @@ public class KpiService {
         if (profil == ProfilUtilisateur.CHEF_COMMISSION) {
             String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
             if (localite == null) {
-                return new TableauBordDto(new LinkedHashMap<>(), 0, 0, 0.0, List.of());
+                return new TableauBordDto(new LinkedHashMap<>(), 0, 0, 0.0, List.of(), compteurs());
             }
             return calculer(localite);
         }
@@ -79,7 +94,22 @@ public class KpiService {
                 .limit(5)
                 .toList();
 
-        return new TableauBordDto(pipeline, nbSoumis, nbConformes, tauxConformite, topNonConformite);
+        return new TableauBordDto(pipeline, nbSoumis, nbConformes, tauxConformite, topNonConformite, compteurs());
+    }
+
+    /**
+     * Compteurs de contenu par section du menu Président — comptes <strong>globaux</strong> (toutes
+     * localités), alignés sur les sections du menu : prêts à dispatcher, dispatchés, projets de PV,
+     * lettres de renvoi soumises, PV signés, demandes de retrait en attente.
+     */
+    private CompteursDto compteurs() {
+        return new CompteursDto(
+                dossierRepository.countByStatut(StatutDossier.PRET_DISPATCH.name()),
+                dossierRepository.countByStatut(StatutDossier.DISPATCHE.name()),
+                pvExamenRepository.countByStatutPvNot(StatutPv.SIGNE.name()),
+                lettreRenvoiRepository.countByStatut(StatutLettreRenvoi.SOUMIS.name()),
+                pvExamenRepository.countByStatutPv(StatutPv.SIGNE.name()),
+                demandeRetraitRepository.countByStatut(StatutRetrait.EN_ATTENTE.name()));
     }
 
     private PointNonConformiteDto versPointNonConformite(Object[] ligne) {
