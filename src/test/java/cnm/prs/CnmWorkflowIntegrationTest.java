@@ -3971,6 +3971,33 @@ class CnmWorkflowIntegrationTest {
         assertTrue(java.util.Arrays.equals(pdf, recupere), "le contenu téléchargé est identique à l'envoyé");
     }
 
+    @Test
+    @DisplayName("Référentiel pièces jointes : 5 pièces pour le type PPM (filtre ?typeDossier=PPM)")
+    void type_piece_ppm_liste_ok() throws Exception {
+        seedReferentielPieces();
+        mvc.perform(get("/api/type-piece-jointes?typeDossier=PPM").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(5)));
+    }
+
+    @Test
+    @DisplayName("Référentiel pièces jointes : 8 pièces pour le type DAO (filtre ?typeDossier=DAO)")
+    void type_piece_dao_liste_ok() throws Exception {
+        seedReferentielPieces();
+        mvc.perform(get("/api/type-piece-jointes?typeDossier=DAO").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(8)));
+    }
+
+    @Test
+    @DisplayName("Référentiel pièces jointes : 7 pièces pour le type MAOO (filtre ?typeDossier=MAOO)")
+    void type_piece_maoo_liste_ok() throws Exception {
+        seedReferentielPieces();
+        mvc.perform(get("/api/type-piece-jointes?typeDossier=MAOO").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(7)));
+    }
+
     /** Crée un type de pièce dans le référentiel H2 et renvoie sa PK générée. */
     private int seedTypePiece(String libelle, boolean obligatoire, String typeDossier, int ordre) {
         cnm.prs.entity.TypePieceJointe t = new cnm.prs.entity.TypePieceJointe();
@@ -3979,6 +4006,38 @@ class CnmWorkflowIntegrationTest {
         t.setIdTypeDossier(typeDossier);
         t.setOrdre(ordre);
         return typePieceJointeRepository.save(t).getIdTypePiece();
+    }
+
+    /**
+     * Garnit le référentiel H2 avec le jeu initial complet (20 lignes : PPM 5, DAO 8, MAOO 7),
+     * miroir de la migration {@code 2026-06-26_type_piece_jointe_seed.sql}. Le type de dossier MAOO
+     * (absent du seed de base) est ajouté pour satisfaire la FK {@code tr_type_dossier}.
+     */
+    private void seedReferentielPieces() {
+        typeDossierRepository.save(new TypeDossier("MAOO", "Marché par appel d'offres ouvert"));
+        // PPM (5)
+        seedTypePiece("Plan de passation des marchés signé", true, "PPM", 1);
+        seedTypePiece("Budget prévisionnel de l'exercice", true, "PPM", 2);
+        seedTypePiece("Arrêté ou décision portant nomination de la PRMP", true, "PPM", 3);
+        seedTypePiece("Tableau récapitulatif des marchés", true, "PPM", 4);
+        seedTypePiece("Avis de non-objection (si requis)", false, "PPM", 5);
+        // DAO (8)
+        seedTypePiece("Dossier d'appel d'offres complet", true, "DAO", 1);
+        seedTypePiece("Cahier des clauses administratives générales", true, "DAO", 2);
+        seedTypePiece("Cahier des clauses techniques particulières", true, "DAO", 3);
+        seedTypePiece("Avis d'appel d'offres", true, "DAO", 4);
+        seedTypePiece("Estimation du coût des travaux/fournitures", true, "DAO", 5);
+        seedTypePiece("Garantie de soumission", true, "DAO", 6);
+        seedTypePiece("Avis de non-objection (si requis)", false, "DAO", 7);
+        seedTypePiece("Rapport d'évaluation des offres", false, "DAO", 8);
+        // MAOO (7)
+        seedTypePiece("Projet de marché signé", true, "MAOO", 1);
+        seedTypePiece("Cahier des charges", true, "MAOO", 2);
+        seedTypePiece("Devis estimatif détaillé", true, "MAOO", 3);
+        seedTypePiece("Procès-verbal d'ouverture des offres", true, "MAOO", 4);
+        seedTypePiece("Rapport d'analyse des offres", true, "MAOO", 5);
+        seedTypePiece("Attestation de capacité financière", false, "MAOO", 6);
+        seedTypePiece("Avis de non-objection (si requis)", false, "MAOO", 7);
     }
 
     // ------------------------------------------------------------------
