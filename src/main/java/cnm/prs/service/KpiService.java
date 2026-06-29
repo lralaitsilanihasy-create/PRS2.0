@@ -8,6 +8,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cnm.prs.dto.CompteursAssistantDto;
 import cnm.prs.dto.CompteursDto;
 import cnm.prs.dto.CompteursMembreDto;
 import cnm.prs.dto.CompteursPrmpDto;
@@ -147,6 +148,20 @@ public class KpiService {
         return new CompteursMembreDto(
                 dossierRepository.countAExaminerParMembre(StatutDossier.DISPATCHE.name(), im),
                 dossierRepository.countExaminesParMembre(examines, im));
+    }
+
+    /**
+     * Compteurs de contenu du menu Assistant contrôleur — filtrés sur sa localité : lettres de renvoi
+     * signées et PV définitifs (signés) de sa localité, les documents qu'il distribue. Sans localité → zéros.
+     */
+    public CompteursAssistantDto mesCompteursAssistant() {
+        String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+        if (localite == null) {
+            return new CompteursAssistantDto(0, 0);
+        }
+        return new CompteursAssistantDto(
+                lettreRenvoiRepository.countByStatutEtLocalite(StatutLettreRenvoi.SIGNE.name(), localite),
+                pvExamenRepository.countDefinitifsParLocalite(localite));
     }
 
     /**

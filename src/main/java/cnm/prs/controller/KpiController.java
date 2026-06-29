@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import cnm.prs.dto.CompteursAssistantDto;
 import cnm.prs.dto.CompteursMembreDto;
 import cnm.prs.dto.CompteursPrmpDto;
 import cnm.prs.dto.CompteursPublicationDto;
@@ -66,5 +67,12 @@ public class KpiController {
     @GetMapping("/mes-compteurs-publication")
     public CompteursPublicationDto mesCompteursPublication() {
         return kpiService.mesCompteursPublication();
+    }
+
+    /** Compteurs de contenu du menu Assistant contrôleur — filtrés sur sa localité (§3.7). */
+    @PreAuthorize("hasAnyRole('ASSISTANT_CONTROLEUR','ADMINISTRATEUR')")
+    @GetMapping("/mes-compteurs-assistant")
+    public CompteursAssistantDto mesCompteursAssistant() {
+        return kpiService.mesCompteursAssistant();
     }
 }

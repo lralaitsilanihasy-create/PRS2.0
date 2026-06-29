@@ -154,6 +154,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private PrmpEntiteRepository prmpEntiteRepository;
     @Autowired private cnm.prs.repository.TypePieceJointeRepository typePieceJointeRepository;
     @Autowired private cnm.prs.repository.PublicationRepository publicationRepository;
+    @Autowired private cnm.prs.repository.PvExamenRepository pvExamenRepository;
 
     private String tokenPresident;
     private String tokenCc;
@@ -1610,6 +1611,53 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(get("/api/kpis/mes-compteurs-publication").header("Authorization", tokenPublication))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.publiees").value(1));
+    }
+
+    @Test
+    @DisplayName("Menu assistant contrôleur : compteurs présents (2 sections, valeurs ≥ 0), filtrés sur sa localité")
+    void dashboard_compteurs_assistant_ok() throws Exception {
+        String tokenAss = bearer("CTRASS", ProfilUtilisateur.ASSISTANT_CONTROLEUR, TypeActeur.CONTROLEUR, "CTRASS", "ANT");
+        mvc.perform(get("/api/kpis/mes-compteurs-assistant").header("Authorization", tokenAss))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lettresRenvoi").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.pvDefinitifs").value(greaterThanOrEqualTo(0)));
+    }
+
+    @Test
+    @DisplayName("Menu assistant contrôleur : lettre SIGNÉE de sa localité → lettresRenvoi ≥ 1")
+    void dashboard_assist_lettres_ok() throws Exception {
+        String tokenAss = bearer("CTRASS", ProfilUtilisateur.ASSISTANT_CONTROLEUR, TypeActeur.CONTROLEUR, "CTRASS", "ANT");
+        // Examen 1 → dispatch 1 → réception 1 (CTRCC1, ANT) : une lettre SIGNÉE sur cet examen.
+        LettreRenvoi l = new LettreRenvoi();
+        l.setIdExamen(1); l.setIdDossier(1); l.setObjetLettre("Renvoi"); l.setStatut("SIGNE");
+        lettreRenvoiRepository.save(l);
+
+        mvc.perform(get("/api/kpis/mes-compteurs-assistant").header("Authorization", tokenAss))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lettresRenvoi").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    @DisplayName("Menu assistant contrôleur : PV signé de sa localité → pvDefinitifs ≥ 1")
+    void dashboard_assist_pvDefinitifs_ok() throws Exception {
+        String tokenAss = bearer("CTRASS", ProfilUtilisateur.ASSISTANT_CONTROLEUR, TypeActeur.CONTROLEUR, "CTRASS", "ANT");
+        seedPvSigne(400, 1); // PV signé sur l'examen 1 (localité ANT via réception 1)
+
+        mvc.perform(get("/api/kpis/mes-compteurs-assistant").header("Authorization", tokenAss))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pvDefinitifs").value(greaterThanOrEqualTo(1)));
+    }
+
+    /** Crée un PV signé H2 sur un examen (PK manuelle, avis seedé). */
+    private void seedPvSigne(int idPv, int idExamen) {
+        cnm.prs.entity.PvExamen pv = new cnm.prs.entity.PvExamen();
+        pv.setIdPv(idPv);
+        pv.setIdExamen(idExamen);
+        pv.setIdAvis("FAV");
+        pv.setImCtrlMembre("CTRMEM");
+        pv.setStatutPv("SIGNE");
+        pv.setNbNavettes(0);
+        pvExamenRepository.save(pv);
     }
 
     /** Crée une publication H2 au statut donné (PK manuelle). */
