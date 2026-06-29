@@ -12,8 +12,15 @@ import cnm.prs.entity.LettreRenvoi;
 @Repository
 public interface LettreRenvoiRepository extends JpaRepository<LettreRenvoi, Integer> {
 
-    /** Nombre de lettres de renvoi à un statut donné (compteur du tableau de bord). */
+    /** Nombre de lettres de renvoi à un statut donné (compteur du tableau de bord — vue globale). */
     long countByStatut(String statut);
+
+    /** Nombre de lettres à un statut donné dans une localité (via examen→dispatch→réception) — CC. */
+    @Query("""
+            select count(l) from LettreRenvoi l
+            where l.statut = :statut and l.examen.dispatch.reception.ctrlRecept.idLocalite = :loc
+            """)
+    long countByStatutEtLocalite(@Param("statut") String statut, @Param("loc") String loc);
 
     /** Lettres d'un Membre : celles de ses examens (attributaire {@code Examen.imCtrlMembre}). */
     @Query("select l from LettreRenvoi l where l.examen.imCtrlMembre = :im")

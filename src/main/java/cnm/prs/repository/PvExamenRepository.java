@@ -19,6 +19,16 @@ public interface PvExamenRepository extends JpaRepository<PvExamen, Integer> {
     /** Nombre de PV dont le statut diffère de la valeur donnée (ex. {@code <> SIGNE} = projets). */
     long countByStatutPvNot(String statutPv);
 
+    /** Nombre de projets de PV (≠ SIGNE) d'une localité (via réception → contrôleur) — compteur CC. */
+    @Query("select count(pv) from PvExamen pv where pv.statutPv <> 'SIGNE' "
+            + "and pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
+    long countProjetsParLocalite(@Param("loc") String loc);
+
+    /** Nombre de PV signés (définitifs) d'une localité (via réception → contrôleur) — compteur CC. */
+    @Query("select count(pv) from PvExamen pv where pv.statutPv = 'SIGNE' "
+            + "and pv.examen.dispatch.reception.ctrlRecept.idLocalite = :loc")
+    long countDefinitifsParLocalite(@Param("loc") String loc);
+
     /** Plus grand ID_PV existant (0 si table vide) — pour allouer la PK assignée à la soumission d'examen. */
     @Query("select coalesce(max(p.idPv), 0) from PvExamen p")
     Integer findMaxId();

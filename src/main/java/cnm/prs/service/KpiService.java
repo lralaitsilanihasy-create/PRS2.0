@@ -59,7 +59,8 @@ public class KpiService {
         if (profil == ProfilUtilisateur.CHEF_COMMISSION) {
             String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
             if (localite == null) {
-                return new TableauBordDto(new LinkedHashMap<>(), 0, 0, 0.0, List.of(), compteurs());
+                return new TableauBordDto(new LinkedHashMap<>(), 0, 0, 0.0, List.of(),
+                        new CompteursDto(0, 0, 0, 0, 0, 0));
             }
             return calculer(localite);
         }
@@ -94,22 +95,38 @@ public class KpiService {
                 .limit(5)
                 .toList();
 
-        return new TableauBordDto(pipeline, nbSoumis, nbConformes, tauxConformite, topNonConformite, compteurs());
+        return new TableauBordDto(pipeline, nbSoumis, nbConformes, tauxConformite, topNonConformite,
+                compteurs(localite));
     }
 
     /**
-     * Compteurs de contenu par section du menu Président — comptes <strong>globaux</strong> (toutes
-     * localités), alignés sur les sections du menu : prêts à dispatcher, dispatchés, projets de PV,
-     * lettres de renvoi soumises, PV signés, demandes de retrait en attente.
+     * Compteurs de contenu par section du menu : <strong>globaux</strong> pour le Président/Administrateur
+     * ({@code localite == null}), <strong>filtrés sur la localité</strong> pour le Chef de commission.
+     * Sections : prêts à dispatcher, dispatchés, projets de PV, lettres de renvoi soumises, PV signés,
+     * demandes de retrait en attente.
      */
-    private CompteursDto compteurs() {
+    private CompteursDto compteurs(String localite) {
+        String pretDispatch = StatutDossier.PRET_DISPATCH.name();
+        String dispatche = StatutDossier.DISPATCHE.name();
+        String signe = StatutPv.SIGNE.name();
+        String lettreSoumise = StatutLettreRenvoi.SOUMIS.name();
+        String retraitEnAttente = StatutRetrait.EN_ATTENTE.name();
+        if (localite == null) {
+            return new CompteursDto(
+                    dossierRepository.countByStatut(pretDispatch),
+                    dossierRepository.countByStatut(dispatche),
+                    pvExamenRepository.countByStatutPvNot(signe),
+                    lettreRenvoiRepository.countByStatut(lettreSoumise),
+                    pvExamenRepository.countByStatutPv(signe),
+                    demandeRetraitRepository.countByStatut(retraitEnAttente));
+        }
         return new CompteursDto(
-                dossierRepository.countByStatut(StatutDossier.PRET_DISPATCH.name()),
-                dossierRepository.countByStatut(StatutDossier.DISPATCHE.name()),
-                pvExamenRepository.countByStatutPvNot(StatutPv.SIGNE.name()),
-                lettreRenvoiRepository.countByStatut(StatutLettreRenvoi.SOUMIS.name()),
-                pvExamenRepository.countByStatutPv(StatutPv.SIGNE.name()),
-                demandeRetraitRepository.countByStatut(StatutRetrait.EN_ATTENTE.name()));
+                dossierRepository.countByStatutAndIdLocalite(pretDispatch, localite),
+                dossierRepository.countByStatutAndIdLocalite(dispatche, localite),
+                pvExamenRepository.countProjetsParLocalite(localite),
+                lettreRenvoiRepository.countByStatutEtLocalite(lettreSoumise, localite),
+                pvExamenRepository.countDefinitifsParLocalite(localite),
+                demandeRetraitRepository.countByStatutEtLocaliteDossier(retraitEnAttente, localite));
     }
 
     private PointNonConformiteDto versPointNonConformite(Object[] ligne) {

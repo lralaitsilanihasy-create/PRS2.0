@@ -16,8 +16,11 @@ import cnm.prs.entity.Dossier;
 @Repository
 public interface DossierRepository extends JpaRepository<Dossier, Integer> {
 
-    /** Nombre de dossiers à un statut donné (compteurs du tableau de bord). */
+    /** Nombre de dossiers à un statut donné (compteurs du tableau de bord — vue globale). */
     long countByStatut(String statut);
+
+    /** Nombre de dossiers à un statut donné dans une localité (compteurs scopés CC). */
+    long countByStatutAndIdLocalite(String statut, String idLocalite);
 
     /** Dossiers dont la date de référence est dans la période (pour les rapports périodiques). */
     List<Dossier> findByDateRefBetween(LocalDate debut, LocalDate fin);

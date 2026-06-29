@@ -1421,6 +1421,24 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Tableau de bord CC : compteurs filtrés sur sa localité (Président voit le global)")
+    void dashboard_compteurs_cc_localite_ok() throws Exception {
+        // Un dossier PRET_DISPATCH en ANT, un autre en TMS.
+        Dossier ant = dossier(170, "PRET_DISPATCH"); ant.setIdLocalite("ANT"); dossierRepository.save(ant);
+        Dossier tms = dossier(171, "PRET_DISPATCH"); tms.setIdLocalite("TMS"); dossierRepository.save(tms);
+
+        // CC d'ANT : ne compte que le dossier de sa localité.
+        mvc.perform(get("/api/kpis/tableau-bord").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.compteurs.predispatch").value(1));
+
+        // Président : vue globale → compte les deux localités.
+        mvc.perform(get("/api/kpis/tableau-bord").header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.compteurs.predispatch").value(greaterThanOrEqualTo(2)));
+    }
+
+    @Test
     @DisplayName("DispatchDto : dateDispatch comporte l'heure (yyyy-MM-dd HH:mm)")
     void dispatch_dto_datetime_ok() throws Exception {
         // Le dispatch 1 (localité ANT) est seedé à 2026-06-03 14:45.
