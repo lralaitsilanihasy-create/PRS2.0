@@ -41,13 +41,19 @@ public interface LettreRenvoiRepository extends JpaRepository<LettreRenvoi, Inte
             """)
     List<LettreRenvoi> findSigneesPourPrmp(@Param("idPrmp") String idPrmp);
 
-    /** Nombre de lettres SIGNE concernant les dossiers d'une PRMP (compteur du menu PRMP). */
+    /**
+     * Nombre de lettres SIGNE des dossiers d'une PRMP <strong>non encore lues</strong> par elle
+     * (compteur « Mes lettres de renvoi » du menu PRMP). Exclut celles tracées dans
+     * {@code t_lettre_renvoi_lue} pour cette PRMP.
+     */
     @Query("""
             select count(l) from LettreRenvoi l
             where l.statut = 'SIGNE'
               and exists (select 1 from Ppm p where p.idDossier = l.idDossier and p.idPrmp = :idPrmp)
+              and not exists (select 1 from LettreRenvoiLue lu
+                              where lu.idLettre = l.idLettre and lu.idPrmp = :idPrmp)
             """)
-    long countSigneesPourPrmp(@Param("idPrmp") String idPrmp);
+    long countSigneesNonLuesPourPrmp(@Param("idPrmp") String idPrmp);
 
     /** Vrai si la lettre relève de la localité (contrôle d'accès au {@code GET /{id}}). */
     @Query("""

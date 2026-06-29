@@ -111,7 +111,7 @@ public class KpiService {
                 dossierRepository.countByStatutAndIdPrmp(StatutDossier.EN_ATTENTE_DECISION_PRMP.name(), idPrmp),
                 dossierRepository.countByStatutInAndIdPrmp(
                         List.of(StatutDossier.PV_SIGNE.name(), StatutDossier.CLOTURE.name()), idPrmp),
-                lettreRenvoiRepository.countSigneesPourPrmp(idPrmp));
+                lettreRenvoiRepository.countSigneesNonLuesPourPrmp(idPrmp));
     }
 
     /**

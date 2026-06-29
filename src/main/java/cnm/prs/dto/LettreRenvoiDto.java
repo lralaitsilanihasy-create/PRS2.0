@@ -43,4 +43,7 @@ public class LettreRenvoiDto {
 
     /** Nom complet du signataire (« prénoms nom »), peuplé serveur en lecture (lecture seule). */
     private String nomSignataire;
+
+    /** Vrai si la lettre a déjà été lue par la PRMP courante (lecture seule). */
+    private Boolean lue;
 }

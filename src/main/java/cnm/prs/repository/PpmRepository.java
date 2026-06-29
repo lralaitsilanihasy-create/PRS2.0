@@ -27,6 +27,9 @@ public interface PpmRepository extends JpaRepository<Ppm, Integer> {
     /** Vrai si le PPM appartient à la PRMP (contrôle de visibilité de {@code GET /{id}}). */
     boolean existsByIdPpmAndIdPrmp(Integer idPpm, String idPrmp);
 
+    /** Vrai si le dossier appartient à la PRMP (via son PPM) — propriété pour l'accès aux lettres. */
+    boolean existsByIdDossierAndIdPrmp(Integer idDossier, String idPrmp);
+
     /**
      * PPM visibles d'une localité (§1) : ceux dont le dossier est de la localité donnée et
      * <strong>n'est pas un brouillon</strong> (les brouillons restent invisibles des contrôleurs).

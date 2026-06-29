@@ -155,6 +155,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private cnm.prs.repository.TypePieceJointeRepository typePieceJointeRepository;
     @Autowired private cnm.prs.repository.PublicationRepository publicationRepository;
     @Autowired private cnm.prs.repository.PvExamenRepository pvExamenRepository;
+    @Autowired private cnm.prs.repository.LettreRenvoiLueRepository lueRepository;
 
     private String tokenPresident;
     private String tokenCc;
@@ -1677,6 +1678,62 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(get("/api/kpis/mes-compteurs-admin").header("Authorization", tokenAdmin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.comptes").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    @DisplayName("Lettre de renvoi : marquée lue à la consultation du détail par la PRMP propriétaire")
+    void lettre_marquee_lue_apres_consultation() throws Exception {
+        int id = seedLettreSignee();
+        mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenPrmp))
+                .andExpect(status().isOk());
+        assertTrue(lueRepository.existsByIdLettreAndIdPrmp(id, "PRMP001"), "trace de lecture créée");
+    }
+
+    @Test
+    @DisplayName("Lettre de renvoi : 2ᵉ consultation → pas de doublon de lecture (UNIQUE)")
+    void lettre_deja_lue_pas_doublon() throws Exception {
+        int id = seedLettreSignee();
+        mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenPrmp)).andExpect(status().isOk());
+        mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenPrmp)).andExpect(status().isOk());
+        assertTrue(lueRepository.count() == 1, "une seule entrée de lecture malgré 2 consultations");
+    }
+
+    @Test
+    @DisplayName("Compteur PRMP : lettre SIGNÉE non lue → lettresRenvoi = 1")
+    void compteur_lettre_non_lue() throws Exception {
+        seedLettreSignee(); // non lue
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lettresRenvoi").value(1));
+    }
+
+    @Test
+    @DisplayName("Compteur PRMP : lettre SIGNÉE lue (consultée) → exclue, lettresRenvoi = 0")
+    void compteur_lettre_lue_exclu() throws Exception {
+        int id = seedLettreSignee();
+        mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenPrmp)).andExpect(status().isOk());
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lettresRenvoi").value(0));
+    }
+
+    @Test
+    @DisplayName("LettreRenvoiDto : flag lue = true après consultation par la PRMP")
+    void lettre_dto_lue_flag() throws Exception {
+        int id = seedLettreSignee();
+        mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lue").value(true));
+    }
+
+    /** Crée une lettre de renvoi SIGNÉE sur l'examen/dossier 1 (PPM de PRMP001) ; renvoie sa PK. */
+    private int seedLettreSignee() {
+        LettreRenvoi l = new LettreRenvoi();
+        l.setIdExamen(1);
+        l.setIdDossier(1);
+        l.setObjetLettre("Renvoi");
+        l.setStatut("SIGNE");
+        return lettreRenvoiRepository.save(l).getIdLettre();
     }
 
     /** Crée un PV signé H2 sur un examen (PK manuelle, avis seedé). */

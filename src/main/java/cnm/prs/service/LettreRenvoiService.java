@@ -1,6 +1,7 @@
 package cnm.prs.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -12,6 +13,7 @@ import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Examen;
 import cnm.prs.entity.LettreRenvoi;
+import cnm.prs.entity.LettreRenvoiLue;
 import cnm.prs.entity.Ppm;
 import cnm.prs.entity.Prmp;
 import cnm.prs.enums.ProfilUtilisateur;
@@ -23,6 +25,7 @@ import cnm.prs.mapper.LettreRenvoiMapper;
 import cnm.prs.repository.ControleurRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenRepository;
+import cnm.prs.repository.LettreRenvoiLueRepository;
 import cnm.prs.repository.LettreRenvoiRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
@@ -46,11 +49,12 @@ public class LettreRenvoiService {
     private final ControleurDirectory controleurDirectory;
     private final ControleurRepository controleurRepository;
     private final NotificationService notificationService;
+    private final LettreRenvoiLueRepository lueRepository;
 
     public LettreRenvoiService(LettreRenvoiRepository repository, ExamenRepository examenRepository,
             DossierRepository dossierRepository, PpmRepository ppmRepository, PrmpRepository prmpRepository,
             ControleurDirectory controleurDirectory, ControleurRepository controleurRepository,
-            NotificationService notificationService) {
+            NotificationService notificationService, LettreRenvoiLueRepository lueRepository) {
         this.repository = repository;
         this.examenRepository = examenRepository;
         this.dossierRepository = dossierRepository;
@@ -59,6 +63,7 @@ public class LettreRenvoiService {
         this.controleurDirectory = controleurDirectory;
         this.controleurRepository = controleurRepository;
         this.notificationService = notificationService;
+        this.lueRepository = lueRepository;
     }
 
     /**
@@ -81,7 +86,7 @@ public class LettreRenvoiService {
         } else {
             lettres = List.of();
         }
-        return lettres.stream().map(LettreRenvoiMapper::toDto).map(this::peuplerNomSignataire).toList();
+        return lettres.stream().map(LettreRenvoiMapper::toDto).map(this::peuplerNomSignataire).map(this::peuplerLue).toList();
     }
 
     /** Lettres signées concernant les dossiers de la PRMP connectée (lecture seule). */
@@ -92,14 +97,40 @@ public class LettreRenvoiService {
             return List.of();
         }
         return repository.findSigneesPourPrmp(idPrmp).stream()
-                .map(LettreRenvoiMapper::toDto).map(this::peuplerNomSignataire).toList();
+                .map(LettreRenvoiMapper::toDto).map(this::peuplerNomSignataire).map(this::peuplerLue).toList();
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Détail d'une lettre. Accès : périmètre de localité habituel <strong>ou</strong> PRMP propriétaire du
+     * dossier pour une lettre {@code SIGNE} (sinon la PRMP serait hors périmètre → 403). À cette occasion,
+     * la lettre est marquée « lue » pour la PRMP (trace {@code t_lettre_renvoi_lue}, idempotente, silencieuse).
+     */
     public LettreRenvoiDto findById(Integer id) {
         LettreRenvoi entity = exigerExistante(id);
-        Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
-        return peuplerNomSignataire(LettreRenvoiMapper.toDto(entity));
+        String ref = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        boolean prmpProprietaire = CurrentUser.profil().filter(p -> p == ProfilUtilisateur.PRMP).isPresent()
+                && ref != null
+                && StatutLettreRenvoi.SIGNE.name().equals(entity.getStatut())
+                && ppmRepository.existsByIdDossierAndIdPrmp(entity.getIdDossier(), ref);
+        if (!prmpProprietaire) {
+            // Périmètre de localité habituel (la PRMP non propriétaire reste hors périmètre → 403).
+            Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
+        } else if (!lueRepository.existsByIdLettreAndIdPrmp(id, ref)) {
+            // Marquage « lu » à la consultation par la PRMP propriétaire (silencieux, anti-doublon).
+            lueRepository.save(new LettreRenvoiLue(null, id, ref, LocalDateTime.now()));
+        }
+        LettreRenvoiDto dto = peuplerNomSignataire(LettreRenvoiMapper.toDto(entity));
+        dto.setLue(ref != null && lueRepository.existsByIdLettreAndIdPrmp(id, ref));
+        return dto;
+    }
+
+    /** Renseigne le flag {@code lue} pour la PRMP courante (trace {@code t_lettre_renvoi_lue}). */
+    private LettreRenvoiDto peuplerLue(LettreRenvoiDto dto) {
+        String ref = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        if (dto != null && dto.getIdLettre() != null) {
+            dto.setLue(ref != null && lueRepository.existsByIdLettreAndIdPrmp(dto.getIdLettre(), ref));
+        }
+        return dto;
     }
 
     /** Renseigne {@code nomSignataire} (« prénoms nom ») depuis {@code tr_controleur} si la lettre est signée. */
