@@ -1,5 +1,6 @@
 package cnm.prs.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -29,6 +30,13 @@ public interface ReceptionRepository extends JpaRepository<Reception, Integer> {
 
     /** Réceptions d'un dossier (filtre serveur {@code ?idDossier=} — ne charge que l'utile). */
     List<Reception> findByIdDossier(Integer idDossier);
+
+    /**
+     * Date/heure de réception la plus récente d'un dossier (navettes : on retient la dernière) —
+     * source de {@code datePredispatch}. {@code null} si le dossier n'a aucune réception datée.
+     */
+    @Query("select max(r.dateReception) from Reception r where r.idDossier = :idDossier")
+    LocalDateTime findDerniereDateReceptionByDossier(@Param("idDossier") Integer idDossier);
 
     /** Vrai si le dossier a déjà au moins une réception (test « déjà réceptionné » sans charger l'historique). */
     boolean existsByIdDossier(Integer idDossier);

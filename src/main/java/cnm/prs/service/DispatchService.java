@@ -49,7 +49,7 @@ public class DispatchService {
     @Transactional(readOnly = true)
     public List<DispatchDto> findAll() {
         return Visibilite.filtrer(repository::findAll, repository::findVisiblesParLocalite)
-                .stream().map(DispatchMapper::toDto).toList();
+                .stream().map(this::toDtoComplet).toList();
     }
 
     @Transactional(readOnly = true)
@@ -57,7 +57,24 @@ public class DispatchService {
         Dispatch entity = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Dispatch introuvable : " + id));
         Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
-        return DispatchMapper.toDto(entity);
+        return toDtoComplet(entity);
+    }
+
+    /**
+     * Mappe le dispatch puis enrichit {@code datePredispatch} = date/heure de réception du dossier
+     * par le secrétaire ({@code t_reception.DATE_RECEPTION} la plus récente du dossier rattaché,
+     * via la réception du dispatch). {@code null} si aucune réception datée.
+     */
+    private DispatchDto toDtoComplet(Dispatch entity) {
+        DispatchDto dto = DispatchMapper.toDto(entity);
+        Integer idDossier = entity.getIdReception() == null ? null
+                : receptionRepository.findById(entity.getIdReception())
+                        .map(Reception::getIdDossier).orElse(null);
+        if (idDossier != null) {
+            dto.setDatePredispatch(
+                    DispatchMapper.format(receptionRepository.findDerniereDateReceptionByDossier(idDossier)));
+        }
+        return dto;
     }
 
     public DispatchDto create(DispatchDto dto) {
@@ -70,7 +87,7 @@ public class DispatchService {
         avancerDossierVersDispatche(dto.getIdReception());
         // [Auto] Le Membre assigné est notifié qu'un dossier lui est transmis pour examen.
         notifierMembreAssigne(saved);
-        return DispatchMapper.toDto(saved);
+        return toDtoComplet(saved);
     }
 
     /** [Auto] Notifie le Membre assigné ({@code EXAMEN_A_FAIRE}) du dossier dispatché. */
@@ -146,7 +163,7 @@ public class DispatchService {
         existing.setDateCtrlAssigne(dto.getDateCtrlAssigne());
         existing.setInstructions(dto.getInstructions());
         existing.setInterimDispatch(dto.getInterimDispatch());
-        return DispatchMapper.toDto(repository.save(existing));
+        return toDtoComplet(repository.save(existing));
     }
 
     public void delete(Integer id) {

@@ -1430,6 +1430,37 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("DispatchDto : datePredispatch = date/heure de réception du dossier par le secrétaire")
+    void dispatch_dto_predispatch_ok() throws Exception {
+        // Dispatch 1 → réception 1 (dossier 1), seedée à 2026-06-02 10:30.
+        mvc.perform(get("/api/dispatchs").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDispatch==1)].datePredispatch", hasItem("2026-06-02 10:30")));
+    }
+
+    @Test
+    @DisplayName("DispatchDto : datePredispatch = null si le dossier n'a aucune réception datée")
+    void dispatch_dto_predispatch_null_ok() throws Exception {
+        // Réception sans date (dossier 161) + son dispatch → datePredispatch null.
+        Dossier d = dossier(161, "DISPATCHE");
+        d.setIdLocalite("ANT");
+        dossierRepository.save(d);
+        Reception r = new Reception();
+        r.setIdReception(161);
+        r.setIdDossier(161);
+        r.setNumPassage(1);
+        r.setTypePassage("INITIAL");
+        r.setImCtrlRecept("CTRCC1");
+        r.setComplet(false); // dateReception laissée à null
+        receptionRepository.save(r);
+        dispatchRepository.save(dispatch(161, 161, "CTRCC1", "CTRMEM"));
+
+        mvc.perform(get("/api/dispatchs/161").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.datePredispatch").value(nullValue()));
+    }
+
+    @Test
     @DisplayName("Scoping PPM/Marché : PRMP voit les siens, CC sa localité (hors brouillon), Président tout ; hors périmètre → 403")
     void scoping_ppmEtMarche() throws Exception {
         String tokenPrmp2 = bearer("PRMP002", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMP002", "ANT");
