@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import cnm.prs.dto.CompteursAdminDto;
 import cnm.prs.dto.CompteursAssistantDto;
 import cnm.prs.dto.CompteursMembreDto;
 import cnm.prs.dto.CompteursPrmpDto;
@@ -74,5 +75,12 @@ public class KpiController {
     @GetMapping("/mes-compteurs-assistant")
     public CompteursAssistantDto mesCompteursAssistant() {
         return kpiService.mesCompteursAssistant();
+    }
+
+    /** Compteurs de contenu du menu Administrateur — global (inscriptions, comptes, audit §3.8). */
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    @GetMapping("/mes-compteurs-admin")
+    public CompteursAdminDto mesCompteursAdmin() {
+        return kpiService.mesCompteursAdmin();
     }
 }

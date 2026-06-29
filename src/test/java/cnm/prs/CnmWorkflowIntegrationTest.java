@@ -1648,6 +1648,37 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$.pvDefinitifs").value(greaterThanOrEqualTo(1)));
     }
 
+    @Test
+    @DisplayName("Menu administrateur : compteurs présents (3 sections, valeurs ≥ 0)")
+    void dashboard_compteurs_admin_ok() throws Exception {
+        mvc.perform(get("/api/kpis/mes-compteurs-admin").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inscriptionsEnAttente").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.comptes").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.journalAudit").value(greaterThanOrEqualTo(0)));
+    }
+
+    @Test
+    @DisplayName("Menu administrateur : inscription PRMP EN_ATTENTE → inscriptionsEnAttente = 1")
+    void dashboard_admin_inscriptions_ok() throws Exception {
+        CompteAuth c = new CompteAuth("prmp.att", "x", "PRMP", "prmp.att", false);
+        c.setStatut("EN_ATTENTE");
+        compteAuthRepository.save(c);
+
+        mvc.perform(get("/api/kpis/mes-compteurs-admin").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inscriptionsEnAttente").value(1));
+    }
+
+    @Test
+    @DisplayName("Menu administrateur : comptes seedés comptés → comptes ≥ 1")
+    void dashboard_admin_comptes_ok() throws Exception {
+        // @BeforeEach crée plusieurs comptes d'authentification.
+        mvc.perform(get("/api/kpis/mes-compteurs-admin").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.comptes").value(greaterThanOrEqualTo(1)));
+    }
+
     /** Crée un PV signé H2 sur un examen (PK manuelle, avis seedé). */
     private void seedPvSigne(int idPv, int idExamen) {
         cnm.prs.entity.PvExamen pv = new cnm.prs.entity.PvExamen();

@@ -20,4 +20,7 @@ public interface CompteAuthRepository extends JpaRepository<CompteAuth, String> 
 
     /** Comptes par statut et type d'acteur (ex. inscriptions PRMP EN_ATTENTE). */
     List<CompteAuth> findByStatutAndTypeActeur(String statut, String typeActeur);
+
+    /** Nombre de comptes à un statut donné pour un type d'acteur (compteur du menu Administrateur). */
+    long countByStatutAndTypeActeur(String statut, String typeActeur);
 }

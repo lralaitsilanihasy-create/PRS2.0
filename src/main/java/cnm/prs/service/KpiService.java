@@ -8,6 +8,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cnm.prs.dto.CompteursAdminDto;
 import cnm.prs.dto.CompteursAssistantDto;
 import cnm.prs.dto.CompteursDto;
 import cnm.prs.dto.CompteursMembreDto;
@@ -19,10 +20,14 @@ import cnm.prs.dto.PointNonConformiteDto;
 import cnm.prs.dto.TableauBordDto;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
+import cnm.prs.enums.StatutCompte;
 import cnm.prs.enums.StatutLettreRenvoi;
 import cnm.prs.enums.StatutPublication;
 import cnm.prs.enums.StatutPv;
 import cnm.prs.enums.StatutRetrait;
+import cnm.prs.enums.TypeActeur;
+import cnm.prs.repository.AuditLogRepository;
+import cnm.prs.repository.CompteAuthRepository;
 import cnm.prs.repository.DemandeRetraitRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenDetailRepository;
@@ -51,12 +56,15 @@ public class KpiService {
     private final PpmRepository ppmRepository;
     private final ReceptionRepository receptionRepository;
     private final PublicationRepository publicationRepository;
+    private final CompteAuthRepository compteAuthRepository;
+    private final AuditLogRepository auditLogRepository;
 
     public KpiService(DossierRepository dossierRepository, VerificationRepository verificationRepository,
             ExamenDetailRepository examenDetailRepository, PvExamenRepository pvExamenRepository,
             LettreRenvoiRepository lettreRenvoiRepository, DemandeRetraitRepository demandeRetraitRepository,
             PpmRepository ppmRepository, ReceptionRepository receptionRepository,
-            PublicationRepository publicationRepository) {
+            PublicationRepository publicationRepository, CompteAuthRepository compteAuthRepository,
+            AuditLogRepository auditLogRepository) {
         this.dossierRepository = dossierRepository;
         this.verificationRepository = verificationRepository;
         this.examenDetailRepository = examenDetailRepository;
@@ -66,6 +74,8 @@ public class KpiService {
         this.ppmRepository = ppmRepository;
         this.receptionRepository = receptionRepository;
         this.publicationRepository = publicationRepository;
+        this.compteAuthRepository = compteAuthRepository;
+        this.auditLogRepository = auditLogRepository;
     }
 
     /**
@@ -148,6 +158,18 @@ public class KpiService {
         return new CompteursMembreDto(
                 dossierRepository.countAExaminerParMembre(StatutDossier.DISPATCHE.name(), im),
                 dossierRepository.countExaminesParMembre(examines, im));
+    }
+
+    /**
+     * Compteurs de contenu du menu Administrateur — comptes <strong>globaux</strong> (rôle transversal) :
+     * inscriptions PRMP en attente de validation, total des comptes d'authentification, total des entrées
+     * du journal d'audit.
+     */
+    public CompteursAdminDto mesCompteursAdmin() {
+        return new CompteursAdminDto(
+                compteAuthRepository.countByStatutAndTypeActeur(StatutCompte.EN_ATTENTE.name(), TypeActeur.PRMP.name()),
+                compteAuthRepository.count(),
+                auditLogRepository.count());
     }
 
     /**
