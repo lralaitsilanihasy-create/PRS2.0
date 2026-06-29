@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import cnm.prs.dto.CompteursPrmpDto;
 import cnm.prs.dto.TableauBordDto;
 import cnm.prs.service.KpiService;
 
@@ -26,5 +27,12 @@ public class KpiController {
     @GetMapping("/tableau-bord")
     public TableauBordDto tableauBord() {
         return kpiService.tableauBord();
+    }
+
+    /** Compteurs de contenu du menu PRMP — filtrés sur la PRMP authentifiée (§3.1). */
+    @PreAuthorize("hasRole('PRMP')")
+    @GetMapping("/mes-compteurs")
+    public CompteursPrmpDto mesCompteurs() {
+        return kpiService.mesCompteursPrmp();
     }
 }

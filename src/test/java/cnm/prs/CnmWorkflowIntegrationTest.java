@@ -1439,6 +1439,52 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Menu PRMP : compteurs présents (5 sections, valeurs ≥ 0), filtrés sur la PRMP du JWT")
+    void dashboard_compteurs_prmp_ok() throws Exception {
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.brouillons").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.ppmMarches").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.dossiersARectifier").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.dossiersVerifies").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.lettresRenvoi").value(greaterThanOrEqualTo(0)));
+    }
+
+    @Test
+    @DisplayName("Menu PRMP : 2 brouillons de la PRMP → brouillons = 2")
+    void dashboard_brouillons_ok() throws Exception {
+        Dossier b1 = dossier(180, "BROUILLON"); b1.setIdPrmp("PRMP001"); dossierRepository.save(b1);
+        Dossier b2 = dossier(181, "BROUILLON"); b2.setIdPrmp("PRMP001"); dossierRepository.save(b2);
+
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.brouillons").value(2));
+    }
+
+    @Test
+    @DisplayName("Menu PRMP : dossier EN_ATTENTE_DECISION_PRMP → dossiersARectifier = 1")
+    void dashboard_rectifier_ok() throws Exception {
+        Dossier d = dossier(182, "EN_ATTENTE_DECISION_PRMP"); d.setIdPrmp("PRMP001"); dossierRepository.save(d);
+
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dossiersARectifier").value(1));
+    }
+
+    @Test
+    @DisplayName("Menu PRMP : lettre SIGNÉE d'un dossier de la PRMP → lettresRenvoi ≥ 1")
+    void dashboard_lettres_ok() throws Exception {
+        // Le dossier 1 a un PPM de PRMP001 (seed) ; on lui attache une lettre SIGNÉE.
+        LettreRenvoi l = new LettreRenvoi();
+        l.setIdExamen(1); l.setIdDossier(1); l.setObjetLettre("Renvoi"); l.setStatut("SIGNE");
+        lettreRenvoiRepository.save(l);
+
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lettresRenvoi").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
     @DisplayName("DispatchDto : dateDispatch comporte l'heure (yyyy-MM-dd HH:mm)")
     void dispatch_dto_datetime_ok() throws Exception {
         // Le dispatch 1 (localité ANT) est seedé à 2026-06-03 14:45.

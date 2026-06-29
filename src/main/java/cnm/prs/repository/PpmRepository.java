@@ -21,6 +21,9 @@ public interface PpmRepository extends JpaRepository<Ppm, Integer> {
     /** PPM d'une PRMP (§3.1) — son périmètre propre, brouillons compris. */
     List<Ppm> findByIdPrmp(String idPrmp);
 
+    /** Nombre de PPM d'une PRMP (compteur « Mes PPM & marchés » du menu PRMP). */
+    long countByIdPrmp(String idPrmp);
+
     /** Vrai si le PPM appartient à la PRMP (contrôle de visibilité de {@code GET /{id}}). */
     boolean existsByIdPpmAndIdPrmp(Integer idPpm, String idPrmp);
 

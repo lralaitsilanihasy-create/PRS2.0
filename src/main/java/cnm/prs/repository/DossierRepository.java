@@ -22,6 +22,12 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
     /** Nombre de dossiers à un statut donné dans une localité (compteurs scopés CC). */
     long countByStatutAndIdLocalite(String statut, String idLocalite);
 
+    /** Nombre de dossiers d'une PRMP à un statut donné (compteurs du menu PRMP). */
+    long countByStatutAndIdPrmp(String statut, String idPrmp);
+
+    /** Nombre de dossiers d'une PRMP dans un ensemble de statuts (ex. vérifiés : PV_SIGNE/CLOTURE). */
+    long countByStatutInAndIdPrmp(java.util.Collection<String> statuts, String idPrmp);
+
     /** Dossiers dont la date de référence est dans la période (pour les rapports périodiques). */
     List<Dossier> findByDateRefBetween(LocalDate debut, LocalDate fin);
 

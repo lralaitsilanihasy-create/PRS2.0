@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.CompteursDto;
+import cnm.prs.dto.CompteursPrmpDto;
 import cnm.prs.dto.PointNonConformiteDto;
 import cnm.prs.dto.TableauBordDto;
 import cnm.prs.enums.ProfilUtilisateur;
@@ -20,6 +21,7 @@ import cnm.prs.repository.DemandeRetraitRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenDetailRepository;
 import cnm.prs.repository.LettreRenvoiRepository;
+import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PvExamenRepository;
 import cnm.prs.repository.VerificationRepository;
 import cnm.prs.security.CurrentUser;
@@ -38,16 +40,19 @@ public class KpiService {
     private final PvExamenRepository pvExamenRepository;
     private final LettreRenvoiRepository lettreRenvoiRepository;
     private final DemandeRetraitRepository demandeRetraitRepository;
+    private final PpmRepository ppmRepository;
 
     public KpiService(DossierRepository dossierRepository, VerificationRepository verificationRepository,
             ExamenDetailRepository examenDetailRepository, PvExamenRepository pvExamenRepository,
-            LettreRenvoiRepository lettreRenvoiRepository, DemandeRetraitRepository demandeRetraitRepository) {
+            LettreRenvoiRepository lettreRenvoiRepository, DemandeRetraitRepository demandeRetraitRepository,
+            PpmRepository ppmRepository) {
         this.dossierRepository = dossierRepository;
         this.verificationRepository = verificationRepository;
         this.examenDetailRepository = examenDetailRepository;
         this.pvExamenRepository = pvExamenRepository;
         this.lettreRenvoiRepository = lettreRenvoiRepository;
         this.demandeRetraitRepository = demandeRetraitRepository;
+        this.ppmRepository = ppmRepository;
     }
 
     /**
@@ -65,6 +70,25 @@ public class KpiService {
             return calculer(localite);
         }
         return calculer(null); // Président / Administrateur : toutes localités
+    }
+
+    /**
+     * Compteurs de contenu du menu PRMP — tous filtrés sur la PRMP authentifiée (JWT) : brouillons,
+     * PPM &amp; marchés, dossiers à rectifier non traités ({@code EN_ATTENTE_DECISION_PRMP}), dossiers
+     * vérifiés ({@code PV_SIGNE}/{@code CLOTURE}), lettres de renvoi signées. PRMP non identifiée → zéros.
+     */
+    public CompteursPrmpDto mesCompteursPrmp() {
+        String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        if (idPrmp == null) {
+            return new CompteursPrmpDto(0, 0, 0, 0, 0);
+        }
+        return new CompteursPrmpDto(
+                dossierRepository.countByStatutAndIdPrmp(StatutDossier.BROUILLON.name(), idPrmp),
+                ppmRepository.countByIdPrmp(idPrmp),
+                dossierRepository.countByStatutAndIdPrmp(StatutDossier.EN_ATTENTE_DECISION_PRMP.name(), idPrmp),
+                dossierRepository.countByStatutInAndIdPrmp(
+                        List.of(StatutDossier.PV_SIGNE.name(), StatutDossier.CLOTURE.name()), idPrmp),
+                lettreRenvoiRepository.countSigneesPourPrmp(idPrmp));
     }
 
     /** Calcule le tableau de bord, global si {@code localite == null}, sinon limité à cette localité. */
