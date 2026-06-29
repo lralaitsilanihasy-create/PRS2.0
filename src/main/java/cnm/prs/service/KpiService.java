@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.CompteursDto;
+import cnm.prs.dto.CompteursMembreDto;
 import cnm.prs.dto.CompteursPrmpDto;
 import cnm.prs.dto.CompteursSecretaireDto;
 import cnm.prs.dto.CompteursVerificateurDto;
@@ -123,6 +124,23 @@ public class KpiService {
         return new CompteursSecretaireDto(
                 dossierRepository.countAReceptionnerParLocalite(localite),
                 receptionRepository.countByLocalite(localite));
+    }
+
+    /**
+     * Compteurs de contenu du menu Membre — filtrés sur le Membre attributaire (son IM) : dossiers à
+     * examiner ({@code DISPATCHE}) et examinés ({@code EXAMINE}/{@code PV_SIGNE}/{@code EN_VERIFICATION}/
+     * {@code CLOTURE}). Membre non identifié → zéros.
+     */
+    public CompteursMembreDto mesCompteursMembre() {
+        String im = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        if (im == null) {
+            return new CompteursMembreDto(0, 0);
+        }
+        List<String> examines = List.of(StatutDossier.EXAMINE.name(), StatutDossier.PV_SIGNE.name(),
+                StatutDossier.EN_VERIFICATION.name(), StatutDossier.CLOTURE.name());
+        return new CompteursMembreDto(
+                dossierRepository.countAExaminerParMembre(StatutDossier.DISPATCHE.name(), im),
+                dossierRepository.countExaminesParMembre(examines, im));
     }
 
     /** Calcule le tableau de bord, global si {@code localite == null}, sinon limité à cette localité. */

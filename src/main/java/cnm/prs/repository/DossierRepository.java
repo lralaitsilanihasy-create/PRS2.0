@@ -197,6 +197,15 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             """)
     List<Dossier> findAExaminerParMembre(@Param("statut") String statut, @Param("im") String im);
 
+    /** Compteur « à examiner » du Membre (miroir de {@link #findAExaminerParMembre}). */
+    @Query("""
+            select count(d) from Dossier d where d.statut = :statut
+              and exists (select 1 from Reception r, Dispatch di
+                          where r.idDossier = d.idDossier and di.idReception = r.idReception
+                            and di.imCtrlMembre = :im)
+            """)
+    long countAExaminerParMembre(@Param("statut") String statut, @Param("im") String im);
+
     /**
      * Dossiers d'un ensemble de statuts attribués à un Membre, <strong>paginés</strong> — historique
      * « examinés » (EXAMINE + PV_SIGNE + CLOTURE) du Membre attributaire.
@@ -209,6 +218,15 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             """)
     Page<Dossier> findExaminesParMembre(@Param("statuts") List<String> statuts, @Param("im") String im,
             Pageable pageable);
+
+    /** Compteur « examinés » du Membre (miroir de {@link #findExaminesParMembre}). */
+    @Query("""
+            select count(d) from Dossier d where d.statut in :statuts
+              and exists (select 1 from Reception r, Dispatch di
+                          where r.idDossier = d.idDossier and di.idReception = r.idReception
+                            and di.imCtrlMembre = :im)
+            """)
+    long countExaminesParMembre(@Param("statuts") List<String> statuts, @Param("im") String im);
 
     /**
      * File « à vérifier » du Vérificateur (§3.6, ⚠️ règle ajoutée) : dossiers de la localité encore

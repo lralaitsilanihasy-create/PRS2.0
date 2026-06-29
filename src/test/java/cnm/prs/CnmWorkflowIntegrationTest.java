@@ -1553,6 +1553,37 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Menu membre : compteurs présents (2 sections, valeurs ≥ 0), filtrés sur le Membre attributaire")
+    void dashboard_compteurs_membre_ok() throws Exception {
+        mvc.perform(get("/api/kpis/mes-compteurs-membre").header("Authorization", tokenMembre))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aExaminer").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.examines").value(greaterThanOrEqualTo(0)));
+    }
+
+    @Test
+    @DisplayName("Menu membre : dossier DISPATCHE qui lui est attribué → aExaminer = 1")
+    void dashboard_membre_aExaminer_ok() throws Exception {
+        // Dossier DISPATCHE + réception + dispatch attribué à CTRMEM (le Membre du token).
+        Dossier d = dossier(210, "DISPATCHE"); dossierRepository.save(d);
+        receptionRepository.save(reception(210, 210, "CTRCC1", true));
+        dispatchRepository.save(dispatch(210, 210, "CTRCC1", "CTRMEM"));
+
+        mvc.perform(get("/api/kpis/mes-compteurs-membre").header("Authorization", tokenMembre))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aExaminer").value(1));
+    }
+
+    @Test
+    @DisplayName("Menu membre : dossier EXAMINE attribué (seed) → examines ≥ 1")
+    void dashboard_membre_examines_ok() throws Exception {
+        // Le dossier 1 (EXAMINE) est dispatché à CTRMEM dans @BeforeEach.
+        mvc.perform(get("/api/kpis/mes-compteurs-membre").header("Authorization", tokenMembre))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.examines").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
     @DisplayName("DispatchDto : dateDispatch comporte l'heure (yyyy-MM-dd HH:mm)")
     void dispatch_dto_datetime_ok() throws Exception {
         // Le dispatch 1 (localité ANT) est seedé à 2026-06-03 14:45.

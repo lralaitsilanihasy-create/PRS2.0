@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import cnm.prs.dto.CompteursMembreDto;
 import cnm.prs.dto.CompteursPrmpDto;
 import cnm.prs.dto.CompteursSecretaireDto;
 import cnm.prs.dto.CompteursVerificateurDto;
@@ -50,5 +51,12 @@ public class KpiController {
     @GetMapping("/mes-compteurs-secretaire")
     public CompteursSecretaireDto mesCompteursSecretaire() {
         return kpiService.mesCompteursSecretaire();
+    }
+
+    /** Compteurs de contenu du menu Membre — filtrés sur le Membre attributaire (§2.4). */
+    @PreAuthorize("@perm.peutExercer('MEMBRE') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/mes-compteurs-membre")
+    public CompteursMembreDto mesCompteursMembre() {
+        return kpiService.mesCompteursMembre();
     }
 }
