@@ -74,6 +74,13 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             """)
     List<Dossier> findAReceptionnerParLocalite(@Param("localite") String localite);
 
+    /** Compteur « à réceptionner » du Secrétaire (miroir de {@link #findAReceptionnerParLocalite}). */
+    @Query("""
+            select count(d) from Dossier d where d.statut = 'SOUMIS' and d.idLocalite = :localite
+              and not exists (select 1 from Reception r where r.idDossier = d.idDossier)
+            """)
+    long countAReceptionnerParLocalite(@Param("localite") String localite);
+
     /** Statut du dossier rattaché à une réception (précondition du dispatch, §2.2/§2.3). */
     @Query("select d.statut from Dossier d, Reception r where r.idReception = :idReception and d.idDossier = r.idDossier")
     Optional<String> findStatutByReception(@Param("idReception") Integer idReception);

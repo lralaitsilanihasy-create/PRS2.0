@@ -1522,6 +1522,37 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Menu secrétaire : compteurs présents (2 sections, valeurs ≥ 0), filtrés sur sa localité")
+    void dashboard_compteurs_secretaire_ok() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        mvc.perform(get("/api/kpis/mes-compteurs-secretaire").header("Authorization", tokenSec))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aReceptionner").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.receptions").value(greaterThanOrEqualTo(0)));
+    }
+
+    @Test
+    @DisplayName("Menu secrétaire : dossier SOUMIS sans réception de sa localité → aReceptionner = 1")
+    void dashboard_sec_aReceptionner_ok() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        Dossier d = dossier(200, "SOUMIS"); d.setIdLocalite("ANT"); dossierRepository.save(d); // pas de réception
+
+        mvc.perform(get("/api/kpis/mes-compteurs-secretaire").header("Authorization", tokenSec))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aReceptionner").value(1));
+    }
+
+    @Test
+    @DisplayName("Menu secrétaire : réceptions de sa localité comptées (réception ANT seedée) → receptions ≥ 1")
+    void dashboard_sec_receptions_ok() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        // La réception 1 (CTRCC1, localité ANT) est seedée dans @BeforeEach.
+        mvc.perform(get("/api/kpis/mes-compteurs-secretaire").header("Authorization", tokenSec))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.receptions").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
     @DisplayName("DispatchDto : dateDispatch comporte l'heure (yyyy-MM-dd HH:mm)")
     void dispatch_dto_datetime_ok() throws Exception {
         // Le dispatch 1 (localité ANT) est seedé à 2026-06-03 14:45.

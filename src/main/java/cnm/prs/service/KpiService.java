@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.CompteursDto;
 import cnm.prs.dto.CompteursPrmpDto;
+import cnm.prs.dto.CompteursSecretaireDto;
 import cnm.prs.dto.CompteursVerificateurDto;
 import cnm.prs.dto.PointNonConformiteDto;
 import cnm.prs.dto.TableauBordDto;
@@ -24,6 +25,7 @@ import cnm.prs.repository.ExamenDetailRepository;
 import cnm.prs.repository.LettreRenvoiRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PvExamenRepository;
+import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.repository.VerificationRepository;
 import cnm.prs.security.CurrentUser;
 
@@ -42,11 +44,12 @@ public class KpiService {
     private final LettreRenvoiRepository lettreRenvoiRepository;
     private final DemandeRetraitRepository demandeRetraitRepository;
     private final PpmRepository ppmRepository;
+    private final ReceptionRepository receptionRepository;
 
     public KpiService(DossierRepository dossierRepository, VerificationRepository verificationRepository,
             ExamenDetailRepository examenDetailRepository, PvExamenRepository pvExamenRepository,
             LettreRenvoiRepository lettreRenvoiRepository, DemandeRetraitRepository demandeRetraitRepository,
-            PpmRepository ppmRepository) {
+            PpmRepository ppmRepository, ReceptionRepository receptionRepository) {
         this.dossierRepository = dossierRepository;
         this.verificationRepository = verificationRepository;
         this.examenDetailRepository = examenDetailRepository;
@@ -54,6 +57,7 @@ public class KpiService {
         this.lettreRenvoiRepository = lettreRenvoiRepository;
         this.demandeRetraitRepository = demandeRetraitRepository;
         this.ppmRepository = ppmRepository;
+        this.receptionRepository = receptionRepository;
     }
 
     /**
@@ -105,6 +109,20 @@ public class KpiService {
                 dossierRepository.countAVerifierParLocalite(localite),
                 dossierRepository.countVerifiesParLocalite(localite),
                 dossierRepository.countEnAttentePrmpParLocalite(localite));
+    }
+
+    /**
+     * Compteurs de contenu du menu Secrétaire — filtrés sur sa localité : dossiers à réceptionner
+     * ({@code SOUMIS} sans réception) et réceptions enregistrées dans sa localité. Sans localité → zéros.
+     */
+    public CompteursSecretaireDto mesCompteursSecretaire() {
+        String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+        if (localite == null) {
+            return new CompteursSecretaireDto(0, 0);
+        }
+        return new CompteursSecretaireDto(
+                dossierRepository.countAReceptionnerParLocalite(localite),
+                receptionRepository.countByLocalite(localite));
     }
 
     /** Calcule le tableau de bord, global si {@code localite == null}, sinon limité à cette localité. */
