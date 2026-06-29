@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import cnm.prs.dto.CompteursDto;
 import cnm.prs.dto.CompteursMembreDto;
 import cnm.prs.dto.CompteursPrmpDto;
+import cnm.prs.dto.CompteursPublicationDto;
 import cnm.prs.dto.CompteursSecretaireDto;
 import cnm.prs.dto.CompteursVerificateurDto;
 import cnm.prs.dto.PointNonConformiteDto;
@@ -18,6 +19,7 @@ import cnm.prs.dto.TableauBordDto;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.StatutLettreRenvoi;
+import cnm.prs.enums.StatutPublication;
 import cnm.prs.enums.StatutPv;
 import cnm.prs.enums.StatutRetrait;
 import cnm.prs.repository.DemandeRetraitRepository;
@@ -25,6 +27,7 @@ import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenDetailRepository;
 import cnm.prs.repository.LettreRenvoiRepository;
 import cnm.prs.repository.PpmRepository;
+import cnm.prs.repository.PublicationRepository;
 import cnm.prs.repository.PvExamenRepository;
 import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.repository.VerificationRepository;
@@ -46,11 +49,13 @@ public class KpiService {
     private final DemandeRetraitRepository demandeRetraitRepository;
     private final PpmRepository ppmRepository;
     private final ReceptionRepository receptionRepository;
+    private final PublicationRepository publicationRepository;
 
     public KpiService(DossierRepository dossierRepository, VerificationRepository verificationRepository,
             ExamenDetailRepository examenDetailRepository, PvExamenRepository pvExamenRepository,
             LettreRenvoiRepository lettreRenvoiRepository, DemandeRetraitRepository demandeRetraitRepository,
-            PpmRepository ppmRepository, ReceptionRepository receptionRepository) {
+            PpmRepository ppmRepository, ReceptionRepository receptionRepository,
+            PublicationRepository publicationRepository) {
         this.dossierRepository = dossierRepository;
         this.verificationRepository = verificationRepository;
         this.examenDetailRepository = examenDetailRepository;
@@ -59,6 +64,7 @@ public class KpiService {
         this.demandeRetraitRepository = demandeRetraitRepository;
         this.ppmRepository = ppmRepository;
         this.receptionRepository = receptionRepository;
+        this.publicationRepository = publicationRepository;
     }
 
     /**
@@ -141,6 +147,18 @@ public class KpiService {
         return new CompteursMembreDto(
                 dossierRepository.countAExaminerParMembre(StatutDossier.DISPATCHE.name(), im),
                 dossierRepository.countExaminesParMembre(examines, im));
+    }
+
+    /**
+     * Compteurs de contenu du menu Chargé de publication — comptes <strong>globaux</strong> du workflow
+     * de publication (rôle transversal) : à publier ({@code EN_ATTENTE}), publiées ({@code PUBLIE}),
+     * retirées ({@code RETIRE}).
+     */
+    public CompteursPublicationDto mesCompteursPublication() {
+        return new CompteursPublicationDto(
+                publicationRepository.countByStatutPubli(StatutPublication.EN_ATTENTE.name()),
+                publicationRepository.countByStatutPubli(StatutPublication.PUBLIE.name()),
+                publicationRepository.countByStatutPubli(StatutPublication.RETIRE.name()));
     }
 
     /** Calcule le tableau de bord, global si {@code localite == null}, sinon limité à cette localité. */

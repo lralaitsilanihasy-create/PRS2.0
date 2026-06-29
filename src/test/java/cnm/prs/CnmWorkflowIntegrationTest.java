@@ -153,6 +153,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private EntiteContractRepository entiteContractRepository;
     @Autowired private PrmpEntiteRepository prmpEntiteRepository;
     @Autowired private cnm.prs.repository.TypePieceJointeRepository typePieceJointeRepository;
+    @Autowired private cnm.prs.repository.PublicationRepository publicationRepository;
 
     private String tokenPresident;
     private String tokenCc;
@@ -1581,6 +1582,44 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(get("/api/kpis/mes-compteurs-membre").header("Authorization", tokenMembre))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.examines").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    @DisplayName("Menu chargé de publication : compteurs présents (3 sections, valeurs ≥ 0)")
+    void dashboard_compteurs_publication_ok() throws Exception {
+        mvc.perform(get("/api/kpis/mes-compteurs-publication").header("Authorization", tokenPublication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aPublier").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.publiees").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.retirees").value(greaterThanOrEqualTo(0)));
+    }
+
+    @Test
+    @DisplayName("Menu chargé de publication : publication EN_ATTENTE → aPublier = 1")
+    void dashboard_pub_aPublier_ok() throws Exception {
+        seedPublication(300, "EN_ATTENTE");
+        mvc.perform(get("/api/kpis/mes-compteurs-publication").header("Authorization", tokenPublication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aPublier").value(1));
+    }
+
+    @Test
+    @DisplayName("Menu chargé de publication : publication PUBLIE → publiees = 1")
+    void dashboard_pub_publiees_ok() throws Exception {
+        seedPublication(301, "PUBLIE");
+        mvc.perform(get("/api/kpis/mes-compteurs-publication").header("Authorization", tokenPublication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.publiees").value(1));
+    }
+
+    /** Crée une publication H2 au statut donné (PK manuelle). */
+    private void seedPublication(int id, String statut) {
+        cnm.prs.entity.Publication p = new cnm.prs.entity.Publication();
+        p.setIdPublication(id);
+        p.setTypeObjet("PV");
+        p.setIdObjet(1);
+        p.setStatutPubli(statut);
+        publicationRepository.save(p);
     }
 
     @Test

@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import cnm.prs.dto.CompteursMembreDto;
 import cnm.prs.dto.CompteursPrmpDto;
+import cnm.prs.dto.CompteursPublicationDto;
 import cnm.prs.dto.CompteursSecretaireDto;
 import cnm.prs.dto.CompteursVerificateurDto;
 import cnm.prs.dto.TableauBordDto;
@@ -58,5 +59,12 @@ public class KpiController {
     @GetMapping("/mes-compteurs-membre")
     public CompteursMembreDto mesCompteursMembre() {
         return kpiService.mesCompteursMembre();
+    }
+
+    /** Compteurs de contenu du menu Chargé de publication — workflow de publication, global (§3.7). */
+    @PreAuthorize("hasAnyRole('CHARGE_PUBLICATION','ADMINISTRATEUR')")
+    @GetMapping("/mes-compteurs-publication")
+    public CompteursPublicationDto mesCompteursPublication() {
+        return kpiService.mesCompteursPublication();
     }
 }
