@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cnm.prs.dto.CompteursDto;
 import cnm.prs.dto.CompteursPrmpDto;
+import cnm.prs.dto.CompteursVerificateurDto;
 import cnm.prs.dto.PointNonConformiteDto;
 import cnm.prs.dto.TableauBordDto;
 import cnm.prs.enums.ProfilUtilisateur;
@@ -89,6 +90,21 @@ public class KpiService {
                 dossierRepository.countByStatutInAndIdPrmp(
                         List.of(StatutDossier.PV_SIGNE.name(), StatutDossier.CLOTURE.name()), idPrmp),
                 lettreRenvoiRepository.countSigneesPourPrmp(idPrmp));
+    }
+
+    /**
+     * Compteurs de contenu du menu Contrôleur vérificateur — filtrés sur sa localité, miroir de ses
+     * trois worklists : à vérifier, vérifiés/clôturés, en attente de décision PRMP. Sans localité → zéros.
+     */
+    public CompteursVerificateurDto mesCompteursVerificateur() {
+        String localite = CurrentUser.localite().filter(s -> !s.isBlank()).orElse(null);
+        if (localite == null) {
+            return new CompteursVerificateurDto(0, 0, 0);
+        }
+        return new CompteursVerificateurDto(
+                dossierRepository.countAVerifierParLocalite(localite),
+                dossierRepository.countVerifiesParLocalite(localite),
+                dossierRepository.countEnAttentePrmpParLocalite(localite));
     }
 
     /** Calcule le tableau de bord, global si {@code localite == null}, sinon limité à cette localité. */

@@ -1485,6 +1485,43 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Menu vérificateur : compteurs présents (3 sections, valeurs ≥ 0), filtrés sur sa localité")
+    void dashboard_compteurs_verificateur_ok() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        mvc.perform(get("/api/kpis/mes-compteurs-verificateur").header("Authorization", tokenVer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aVerifier").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.verifies").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.enAttentePrmp").value(greaterThanOrEqualTo(0)));
+    }
+
+    @Test
+    @DisplayName("Menu vérificateur : dossier EN_VERIFICATION de sa localité → aVerifier = 1")
+    void dashboard_verif_aVerifier_ok() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        Dossier d = dossier(190, "EN_VERIFICATION"); dossierRepository.save(d);
+        receptionRepository.save(reception(190, 190, "CTRCC1", true)); // réception ANT (CTRCC1)
+
+        mvc.perform(get("/api/kpis/mes-compteurs-verificateur").header("Authorization", tokenVer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aVerifier").value(1))
+                .andExpect(jsonPath("$.enAttentePrmp").value(0));
+    }
+
+    @Test
+    @DisplayName("Menu vérificateur : dossier EN_ATTENTE_DECISION_PRMP → enAttentePrmp = 1 (compté aussi dans aVerifier)")
+    void dashboard_verif_enAttentePrmp_ok() throws Exception {
+        String tokenVer = bearer("CTRVER", ProfilUtilisateur.VERIFICATEUR, TypeActeur.CONTROLEUR, "CTRVER", "ANT");
+        Dossier d = dossier(191, "EN_ATTENTE_DECISION_PRMP"); dossierRepository.save(d);
+        receptionRepository.save(reception(191, 191, "CTRCC1", true)); // réception ANT
+
+        mvc.perform(get("/api/kpis/mes-compteurs-verificateur").header("Authorization", tokenVer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enAttentePrmp").value(1))
+                .andExpect(jsonPath("$.aVerifier").value(1));
+    }
+
+    @Test
     @DisplayName("DispatchDto : dateDispatch comporte l'heure (yyyy-MM-dd HH:mm)")
     void dispatch_dto_datetime_ok() throws Exception {
         // Le dispatch 1 (localité ANT) est seedé à 2026-06-03 14:45.

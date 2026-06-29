@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import cnm.prs.dto.CompteursPrmpDto;
+import cnm.prs.dto.CompteursVerificateurDto;
 import cnm.prs.dto.TableauBordDto;
 import cnm.prs.service.KpiService;
 
@@ -34,5 +35,12 @@ public class KpiController {
     @GetMapping("/mes-compteurs")
     public CompteursPrmpDto mesCompteurs() {
         return kpiService.mesCompteursPrmp();
+    }
+
+    /** Compteurs de contenu du menu Contrôleur vérificateur — filtrés sur sa localité (§3.6). */
+    @PreAuthorize("@perm.peutExercer('VERIFICATEUR') or hasRole('ADMINISTRATEUR')")
+    @GetMapping("/mes-compteurs-verificateur")
+    public CompteursVerificateurDto mesCompteursVerificateur() {
+        return kpiService.mesCompteursVerificateur();
     }
 }

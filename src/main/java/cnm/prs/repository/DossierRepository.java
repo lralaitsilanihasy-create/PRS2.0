@@ -216,6 +216,14 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
             """)
     List<Dossier> findAVerifierParLocalite(@Param("loc") String loc);
 
+    /** Compteur « à vérifier » du Vérificateur (miroir de {@link #findAVerifierParLocalite}). */
+    @Query("""
+            select count(d) from Dossier d where d.statut in ('EN_VERIFICATION', 'EN_ATTENTE_DECISION_PRMP')
+              and exists (select 1 from Reception r
+                          where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :loc)
+            """)
+    long countAVerifierParLocalite(@Param("loc") String loc);
+
     /**
      * Historique « vérifiés / clôturés » du Vérificateur (§3.6, ⚠️ règle ajoutée), paginé, lecture seule :
      * dossiers CLOTURE de la localité ayant un PV SIGNE — qu'ils aient été <strong>auto-clôturés</strong>
@@ -229,6 +237,16 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
                             and pv.statutPv = 'SIGNE' and r.ctrlRecept.idLocalite = :loc)
             """)
     Page<Dossier> findVerifiesParLocalite(@Param("loc") String loc, Pageable pageable);
+
+    /** Compteur « vérifiés / clôturés » du Vérificateur (miroir de {@link #findVerifiesParLocalite}). */
+    @Query("""
+            select count(d) from Dossier d where d.statut = 'CLOTURE'
+              and exists (select 1 from Reception r, Dispatch di, Examen e, PvExamen pv
+                          where r.idDossier = d.idDossier and di.idReception = r.idReception
+                            and e.idDispatch = di.idDispatch and pv.idExamen = e.idExamen
+                            and pv.statutPv = 'SIGNE' and r.ctrlRecept.idLocalite = :loc)
+            """)
+    long countVerifiesParLocalite(@Param("loc") String loc);
 
     /** Dossiers retirables de la PRMP (SOUMIS/PRET_DISPATCH dont elle est propriétaire) — liste déroulante (⚠️ règle ajoutée). */
     @Query("""
@@ -255,4 +273,12 @@ public interface DossierRepository extends JpaRepository<Dossier, Integer> {
                           where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :loc)
             """)
     List<Dossier> findEnAttentePrmpParLocalite(@Param("loc") String loc);
+
+    /** Compteur « en attente PRMP » du Vérificateur (miroir de {@link #findEnAttentePrmpParLocalite}). */
+    @Query("""
+            select count(d) from Dossier d where d.statut = 'EN_ATTENTE_DECISION_PRMP'
+              and exists (select 1 from Reception r
+                          where r.idDossier = d.idDossier and r.ctrlRecept.idLocalite = :loc)
+            """)
+    long countEnAttentePrmpParLocalite(@Param("loc") String loc);
 }
