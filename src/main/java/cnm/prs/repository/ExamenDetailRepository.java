@@ -12,6 +12,9 @@ import cnm.prs.entity.ExamenDetail;
 @Repository
 public interface ExamenDetailRepository extends JpaRepository<ExamenDetail, Integer> {
 
+    /** Lignes de grille de contrôle d'un examen (pour l'ANNEXE du PV : observations des points non conformes). */
+    List<ExamenDetail> findByIdExamen(Integer idExamen);
+
     /**
      * Statistiques de non-conformité par point de contrôle (§3.2 / §3.7).
      * Renvoie [idPointCtrl, libellé, nb total d'occurrences, nb non conformes].

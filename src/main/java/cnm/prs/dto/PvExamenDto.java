@@ -62,4 +62,11 @@ public class PvExamenDto {
     /** Référence officielle du PV (dérivée du dossier) — lecture seule, générée serveur. */
     @Size(max = 120)
     private String refePv;
+
+    /** Vérificateur désigné Secrétaire de séance (matricule). Posé à la soumission de l'examen. */
+    @Size(max = 7)
+    private String idSecretaireSeance;
+
+    /** Nom complet du secrétaire de séance (« prénoms nom ») — lecture seule, peuplé serveur. */
+    private String nomSecretaireSeance;
 }

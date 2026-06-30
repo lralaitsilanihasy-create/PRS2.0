@@ -25,6 +25,7 @@ import cnm.prs.enums.TypeObjet;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.PvExamenMapper;
+import cnm.prs.repository.ControleurRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.PrmpRepository;
 import cnm.prs.repository.PvExamenRepository;
@@ -51,16 +52,21 @@ public class PvExamenService {
     private final NotificationService notificationService;
     private final ControleurDirectory controleurDirectory;
     private final DossierRepository dossierRepository;
+    private final ControleurRepository controleurRepository;
+    private final PvDocumentService pvDocumentService;
 
     public PvExamenService(PvExamenRepository repository, PvNavetteRepository navetteRepository,
             PrmpRepository prmpRepository, NotificationService notificationService,
-            ControleurDirectory controleurDirectory, DossierRepository dossierRepository) {
+            ControleurDirectory controleurDirectory, DossierRepository dossierRepository,
+            ControleurRepository controleurRepository, PvDocumentService pvDocumentService) {
         this.repository = repository;
         this.navetteRepository = navetteRepository;
         this.prmpRepository = prmpRepository;
         this.notificationService = notificationService;
         this.controleurDirectory = controleurDirectory;
         this.dossierRepository = dossierRepository;
+        this.controleurRepository = controleurRepository;
+        this.pvDocumentService = pvDocumentService;
     }
 
     /** Projets de PV : tous les PV NON signés (les signés sont exposés par {@link #definitifs()}). */
@@ -81,7 +87,7 @@ public class PvExamenService {
     public PvExamenDto findById(Integer id) {
         PvExamen entity = load(id);
         Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
-        return PvExamenMapper.toDto(entity);
+        return peuplerNomSecretaire(PvExamenMapper.toDto(entity));
     }
 
     /**
@@ -91,12 +97,14 @@ public class PvExamenService {
      */
     /**
      * ⚠️ Règle ajoutée — crée le Projet de PV d'un examen à sa soumission (PK {@code idPv} allouée
-     * serveur, max+1) avec l'avis choisi. Réutilise {@link #create(PvExamenDto)}.
+     * serveur, max+1) avec l'avis choisi et le Vérificateur désigné Secrétaire de séance
+     * ({@code idSecretaireSeance}, déjà validé). Réutilise {@link #create(PvExamenDto)}.
      */
-    public PvExamenDto creerProjet(Integer idExamen, String idAvis) {
+    public PvExamenDto creerProjet(Integer idExamen, String idAvis, String idSecretaireSeance) {
         PvExamenDto dto = new PvExamenDto();
         dto.setIdExamen(idExamen);
         dto.setIdAvis(idAvis);
+        dto.setIdSecretaireSeance(idSecretaireSeance);
         dto.setIdPv(repository.findMaxId() + 1);
         return create(dto);
     }
@@ -120,7 +128,25 @@ public class PvExamenService {
                     "Un PV existe déjà pour ce dossier (référence " + refePv + ").");
         }
         entity.setRefePv(refePv);
-        return PvExamenMapper.toDto(repository.save(entity));
+        PvExamen saved = repository.save(entity);
+        // ⚠️ Règle ajoutée — génère le PDF du Projet de PV si éligible (avis FAVR + lignes en AOO + centrale).
+        pvDocumentService.genererSiEligible(saved).ifPresent(chemin -> {
+            saved.setCheminDocument(chemin);
+            repository.save(saved);
+        });
+        return peuplerNomSecretaire(PvExamenMapper.toDto(saved));
+    }
+
+    /** Renseigne {@code nomSecretaireSeance} (« prénoms nom ») depuis {@code tr_controleur} (lecture seule). */
+    private PvExamenDto peuplerNomSecretaire(PvExamenDto dto) {
+        if (dto != null && dto.getIdSecretaireSeance() != null) {
+            controleurRepository.findById(dto.getIdSecretaireSeance()).ifPresent(c -> {
+                String n = ((c.getPrenomsCont() == null ? "" : c.getPrenomsCont()) + " "
+                        + (c.getNomCont() == null ? "" : c.getNomCont())).trim();
+                dto.setNomSecretaireSeance(n.isBlank() ? null : n);
+            });
+        }
+        return dto;
     }
 
     /**

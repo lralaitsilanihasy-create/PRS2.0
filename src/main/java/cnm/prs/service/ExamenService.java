@@ -13,6 +13,8 @@ import cnm.prs.entity.Examen;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
 import cnm.prs.exception.BusinessRuleException;
+import cnm.prs.exception.ChampsInvalidesException;
+import cnm.prs.exception.ErrorResponse;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.ExamenMapper;
 import cnm.prs.repository.DispatchRepository;
@@ -32,25 +34,54 @@ public class ExamenService {
     private final DispatchRepository dispatchRepository;
     private final DossierRepository dossierRepository;
     private final PvExamenService pvExamenService;
+    private final ControleurDirectory controleurDirectory;
 
     public ExamenService(ExamenRepository repository, DispatchRepository dispatchRepository,
-            DossierRepository dossierRepository, PvExamenService pvExamenService) {
+            DossierRepository dossierRepository, PvExamenService pvExamenService,
+            ControleurDirectory controleurDirectory) {
         this.repository = repository;
         this.dispatchRepository = dispatchRepository;
         this.dossierRepository = dossierRepository;
         this.pvExamenService = pvExamenService;
+        this.controleurDirectory = controleurDirectory;
     }
 
     /**
      * ⚠️ Règle ajoutée — soumission de l'examen : produit le <strong>Projet de PV</strong>
      * (via {@link PvExamenService}, {@code idPv} alloué serveur) avec l'avis fourni
-     * ({@code idAvis}, obligatoire sur le PV). La lettre de renvoi est une action séparée.
+     * ({@code idAvis}, obligatoire sur le PV). Le <strong>Vérificateur désigné Secrétaire de séance</strong>
+     * ({@code idSecretaireSeance}) est obligatoire et doit être un VERIFICATEUR de la localité du dossier
+     * (sinon 400 {@code erreurs:[{champ:idSecretaireSeance}]}). La lettre de renvoi est une action séparée.
      */
     public PvExamenDto soumettre(Integer idExamen, ExamenSoumissionRequest req) {
         if (!repository.existsById(idExamen)) {
             throw new ResourceNotFoundException("Examen introuvable : " + idExamen);
         }
-        return pvExamenService.creerProjet(idExamen, req.idAvis());
+        String idSecretaire = validerSecretaireSeance(idExamen, req.idSecretaireSeance());
+        return pvExamenService.creerProjet(idExamen, req.idAvis(), idSecretaire);
+    }
+
+    /**
+     * Valide le Secrétaire de séance : présent et VERIFICATEUR de la localité du dossier de l'examen.
+     * @return le matricule validé (trimé)
+     * @throws ChampsInvalidesException (→ 400) si absent ou non vérificateur de la localité
+     */
+    private String validerSecretaireSeance(Integer idExamen, String idSecretaire) {
+        if (idSecretaire == null || idSecretaire.isBlank()) {
+            throw champInvalide("Le secrétaire de séance (vérificateur) est obligatoire.");
+        }
+        // Localité du circuit (réception : examen→dispatch→réception→contrôleur récepteur), cf. lettres de renvoi.
+        String localite = repository.findLocaliteByExamen(idExamen).orElse(null);
+        boolean valide = localite != null && controleurDirectory.verificateurs(localite).stream()
+                .anyMatch(c -> idSecretaire.trim().equals(c.getImControleur()));
+        if (!valide) {
+            throw champInvalide("Le secrétaire de séance doit être un vérificateur de la localité du dossier.");
+        }
+        return idSecretaire.trim();
+    }
+
+    private ChampsInvalidesException champInvalide(String message) {
+        return new ChampsInvalidesException(List.of(new ErrorResponse.FieldError("idSecretaireSeance", message)));
     }
 
     @Transactional(readOnly = true)

@@ -86,6 +86,7 @@ import cnm.prs.repository.LocaliteRepository;
 import cnm.prs.repository.MarchePrevisionRepository;
 import cnm.prs.repository.MarcheRepository;
 import cnm.prs.repository.ModePassationRepository;
+import cnm.prs.service.PvDocumentContexte;
 import cnm.prs.repository.NatureRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
@@ -146,6 +147,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private NatureRepository natureRepository;
     @Autowired private SituationRepository situationRepository;
     @Autowired private ModePassationRepository modePassationRepository;
+    @Autowired private cnm.prs.service.PvDocumentGenerator pvDocumentGenerator;
     @Autowired private SeuilRepository seuilRepository;
     @Autowired private ReglePassationRepository reglePassationRepository;
     @Autowired private TypeDossierRepository typeDossierRepository;
@@ -4107,10 +4109,107 @@ class CnmWorkflowIntegrationTest {
     @DisplayName("Soumission examen → Projet de PV créé (toujours un PV)")
     void examen_soumettre_pv_ok() throws Exception {
         mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"idAvis\":\"FAV\"}"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idAvis\":\"FAV\",\"idSecretaireSeance\":\"CTRVER\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.idExamen").value(1))
                 .andExpect(jsonPath("$.statutPv").value("BROUILLON"));
+    }
+
+    @Test
+    @DisplayName("Soumission examen sans secrétaire de séance → 400")
+    void soumission_examen_sans_secretaire_400() throws Exception {
+        mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idAvis\":\"FAV\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[0].champ").value("idSecretaireSeance"));
+    }
+
+    @Test
+    @DisplayName("Soumission examen — secrétaire non vérificateur (autre profil/localité) → 400")
+    void soumission_examen_secretaire_invalide_400() throws Exception {
+        // CTRMEM est un MEMBRE (pas un vérificateur) → secrétaire de séance invalide.
+        mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idAvis\":\"FAV\",\"idSecretaireSeance\":\"CTRMEM\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erreurs[0].champ").value("idSecretaireSeance"));
+    }
+
+    @Test
+    @DisplayName("Soumission examen — secrétaire vérificateur valide → 201, PV avec secrétaire de séance")
+    void soumission_examen_secretaire_ok() throws Exception {
+        mvc.perform(post("/api/examens/1/soumettre").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idAvis\":\"FAV\",\"idSecretaireSeance\":\"CTRVER\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.statutPv").value("BROUILLON"))
+                .andExpect(jsonPath("$.idSecretaireSeance").value("CTRVER"))
+                .andExpect(jsonPath("$.nomSecretaireSeance").value("Prenoms NomCTRVER"));
+    }
+
+    // --- Document du Projet de PV (génération directe via le générateur, modèle Word central) ---
+
+    private PvDocumentContexte ctxPv(String nomPresident, String nomChefCommission,
+            java.util.List<PvDocumentContexte.Observation> observations) {
+        return new PvDocumentContexte(
+                java.time.LocalDate.of(2026, 6, 23),       // date d'examen
+                "00007/PPM/CRM-ANT/PV/2026",               // refPv
+                java.time.LocalDate.of(2026, 6, 15),       // date de réception
+                "Ministère de l'Économie et des Finances", // entité contractante
+                2026,                                       // exercice
+                "ANTANANARIVO",                             // localité (libellé)
+                nomPresident, nomChefCommission,
+                "Paul MEMBRE", "Vero VERIFICATEUR", observations);
+    }
+
+    private java.util.List<PvDocumentContexte.Observation> troisObservations() {
+        return java.util.List.of(
+                new PvDocumentContexte.Observation("Conformité au budget", "AU_LIEU_DE_A", "LIRE_ALPHA"),
+                new PvDocumentContexte.Observation("Conformité au budget", "AU_LIEU_DE_B", "LIRE_BRAVO"),
+                new PvDocumentContexte.Observation("Délais de passation", "AU_LIEU_DE_C", "LIRE_CHARLIE"));
+    }
+
+    @Test
+    @DisplayName("Document PV — le PDF contient l'image de l'emblème")
+    void document_pv_genere_embleme_present() throws Exception {
+        byte[] pdf = pvDocumentGenerator.genererPdf(ctxPv("Jean PRESIDENT", null, troisObservations()));
+        assertTrue(contientImage(pdf), "le PDF du PV contient au moins un objet image (emblème)");
+    }
+
+    @Test
+    @DisplayName("Document PV — date d'examen en toutes lettres dans « L'an … »")
+    void document_pv_date_examen_toutes_lettres() throws Exception {
+        byte[] pdf = pvDocumentGenerator.genererPdf(ctxPv("Jean PRESIDENT", null, troisObservations()));
+        assertTrue(texteDuPdf(pdf).contains("vingt-trois juin deux mille vingt-six"),
+                "la date d'examen apparaît en toutes lettres");
+    }
+
+    @Test
+    @DisplayName("Document PV — bloc présents filtré : PV sans Président → ligne Président absente")
+    void document_pv_presents_filtre_signataires() throws Exception {
+        // Signé par le Membre + le Chef de commission, pas par le Président.
+        byte[] pdf = pvDocumentGenerator.genererPdf(ctxPv(null, "Chef COMMISSION", troisObservations()));
+        assertFalse(texteDuPdf(pdf).contains("Président de la Commission Nationale des Marchés"),
+                "la ligne Président est retirée quand le Président n'a pas signé");
+    }
+
+    @Test
+    @DisplayName("Document PV — ANNEXE : une ligne par observation (3 observations → 3 lignes)")
+    void document_pv_annexe_observations_multiples() throws Exception {
+        String texte = texteDuPdf(pvDocumentGenerator.genererPdf(
+                ctxPv("Jean PRESIDENT", null, troisObservations())));
+        assertTrue(texte.contains("LIRE_ALPHA") && texte.contains("LIRE_BRAVO") && texte.contains("LIRE_CHARLIE"),
+                "les 3 observations apparaissent dans l'ANNEXE");
+    }
+
+    @Test
+    @DisplayName("Document PV — aucun placeholder résiduel <...>")
+    void document_pv_aucun_placeholder() throws Exception {
+        String texte = texteDuPdf(pvDocumentGenerator.genererPdf(
+                ctxPv("Jean PRESIDENT", "Chef COMMISSION", troisObservations())));
+        assertFalse(java.util.regex.Pattern.compile("<[A-Z]").matcher(texte).find(),
+                "aucun placeholder <...> ne subsiste dans le PDF du PV");
     }
 
     @Test

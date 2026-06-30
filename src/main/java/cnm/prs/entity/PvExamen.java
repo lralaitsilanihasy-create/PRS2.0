@@ -79,6 +79,14 @@ public class PvExamen {
     @Column(name = "REFE_PV", length = 120)
     private String refePv;
 
+    /** Vérificateur désigné Secrétaire de séance à la soumission de l'examen (FK {@code tr_controleur}). */
+    @Column(name = "ID_SECRETAIRE_SEANCE", length = 7)
+    private String idSecretaireSeance;
+
+    /** Chemin du PDF du Projet de PV sur le FSX (renseigné si le PV est éligible à la génération). */
+    @Column(name = "CHEMIN_DOCUMENT", length = 500)
+    private String cheminDocument;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_AVIS", insertable = false, updatable = false)
     @JsonIgnore
