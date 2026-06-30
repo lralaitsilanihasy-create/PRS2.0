@@ -4407,6 +4407,18 @@ class CnmWorkflowIntegrationTest {
                 "localité du dossier injectée dans l'en-tête régional");
     }
 
+    @Test
+    @DisplayName("Document régional : signataire « Le Chef de la Commission Régionale des Marchés »")
+    void document_genere_signataire_regional_ok() throws Exception {
+        int id = seedLettreSoumiseLoc(733, "TMS");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", tokenCc))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertTrue(texteDuPdf(pdf).contains("Le Chef de la Commission Régionale des Marchés"),
+                "ligne signataire régionale corrigée dans le modèle");
+    }
+
     /** Signe une lettre (dossier localisé) et renvoie le PDF téléchargé. */
     private byte[] signerEtPdf(int idDossier, String localite, String token) throws Exception {
         int id = seedLettreSoumiseLoc(idDossier, localite);
