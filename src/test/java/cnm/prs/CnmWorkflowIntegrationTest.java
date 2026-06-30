@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -4281,6 +4282,94 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statut").value("SIGNE"))
                 .andExpect(jsonPath("$.imSignataire").value("CTRPRE"));
+    }
+
+    @Test
+    @DisplayName("Signature lettre (centrale ANT) : le CC signe → 200")
+    void signature_centrale_cc_ok() throws Exception {
+        int id = seedLettreSoumiseLoc(710, "ANT");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("SIGNE"));
+    }
+
+    @Test
+    @DisplayName("Signature lettre (centrale ANT) : le Président signe → 200")
+    void signature_centrale_president_ok() throws Exception {
+        int id = seedLettreSoumiseLoc(711, "ANT");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenPresident))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("SIGNE"));
+    }
+
+    @Test
+    @DisplayName("Signature lettre (régionale TMS) : le CC signe → 200")
+    void signature_regionale_cc_ok() throws Exception {
+        int id = seedLettreSoumiseLoc(712, "TMS");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.statut").value("SIGNE"));
+    }
+
+    @Test
+    @DisplayName("Signature lettre (régionale TMS) : le Président signe → 403")
+    void signature_regionale_president_403() throws Exception {
+        int id = seedLettreSoumiseLoc(713, "TMS");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenPresident))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Document : signature centrale → PDF généré, téléchargeable")
+    void document_genere_centrale_ok() throws Exception {
+        int id = seedLettreSoumiseLoc(714, "ANT");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        assertTrue(pdf.length > 0 && new String(pdf, 0, 4, StandardCharsets.ISO_8859_1).equals("%PDF"),
+                "PDF généré (en-tête %PDF)");
+    }
+
+    @Test
+    @DisplayName("Document : signature régionale → PDF généré, téléchargeable")
+    void document_genere_regionale_ok() throws Exception {
+        int id = seedLettreSoumiseLoc(715, "TMS");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF));
+    }
+
+    @Test
+    @DisplayName("Document : le PDF ne contient plus aucun placeholder <...>")
+    void document_placeholders_remplaces() throws Exception {
+        int id = seedLettreSoumiseLoc(716, "ANT");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", tokenCc))
+                .andReturn().getResponse().getContentAsByteArray();
+        String contenu = new String(pdf, StandardCharsets.ISO_8859_1);
+        assertTrue(contenu.contains("LETTRE DE RENVOI"), "texte rendu présent dans le PDF (non compressé)");
+        assertFalse(contenu.contains("DATE_LETTRE") || contenu.contains("NOM_ENTITE_CONTRACT")
+                || contenu.contains("REFERENCE DOSSIER") || contenu.contains("CORPS DE LA LETTRE"),
+                "aucun placeholder résiduel dans le PDF");
+    }
+
+    /** Crée un dossier localisé (entité 1) + une lettre SOUMIS (examen 1) ; renvoie la PK de la lettre. */
+    private int seedLettreSoumiseLoc(int idDossier, String localite) {
+        Dossier d = dossier(idDossier, "EXAMINE");
+        d.setIdLocalite(localite);
+        d.setIdEntiteContract(1);
+        dossierRepository.save(d);
+        LettreRenvoi l = new LettreRenvoi();
+        l.setIdExamen(1);
+        l.setIdDossier(idDossier);
+        l.setObjetLettre("Renvoi");
+        l.setCorpsLettre("Corps de la lettre de renvoi.");
+        l.setDateLettre(LocalDate.of(2026, 6, 20));
+        l.setDateExamen(LocalDate.of(2026, 6, 15));
+        l.setStatut("SOUMIS");
+        return lettreRenvoiRepository.save(l).getIdLettre();
     }
 
     /** Lettre de renvoi de l'examen 1 (localité ANT) au statut SOUMIS. */

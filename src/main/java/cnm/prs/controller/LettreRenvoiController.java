@@ -2,7 +2,9 @@ package cnm.prs.controller;
 
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -48,6 +50,16 @@ public class LettreRenvoiController {
     @GetMapping("/{id}")
     public LettreRenvoiDto findById(@PathVariable Integer id) {
         return service.findById(id);
+    }
+
+    /** Document PDF de la lettre signée (généré à la signature). Authentifié, dans le périmètre. */
+    @GetMapping("/{id}/document")
+    public ResponseEntity<byte[]> document(@PathVariable Integer id) {
+        byte[] pdf = service.telechargerDocument(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"lettre-renvoi-" + id + ".pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
     }
 
     /** Création d'une lettre de renvoi pendant l'examen (statut BROUILLON). */

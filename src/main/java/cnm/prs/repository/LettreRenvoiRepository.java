@@ -55,6 +55,10 @@ public interface LettreRenvoiRepository extends JpaRepository<LettreRenvoi, Inte
             """)
     long countSigneesNonLuesPourPrmp(@Param("idPrmp") String idPrmp);
 
+    /** Localité de la lettre via la réception (repli quand {@code dossier.idLocalite} est absent). */
+    @Query("select l.examen.dispatch.reception.ctrlRecept.idLocalite from LettreRenvoi l where l.idLettre = :id")
+    java.util.Optional<String> findLocaliteByLettre(@Param("id") Integer id);
+
     /** Vrai si la lettre relève de la localité (contrôle d'accès au {@code GET /{id}}). */
     @Query("""
             select (count(l) > 0) from LettreRenvoi l

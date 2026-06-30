@@ -64,6 +64,11 @@ public class LettreRenvoi {
     @Column(name = "IM_SIGNATAIRE", length = 7)
     private String imSignataire;
 
+    /** Document PDF de la lettre signée, généré à la signature (bytea ; H2 : grand varbinary). */
+    @Column(name = "DOCUMENT_PDF", length = 1_000_000)
+    @JsonIgnore
+    private byte[] documentPdf;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_EXAMEN", insertable = false, updatable = false)
     @JsonIgnore

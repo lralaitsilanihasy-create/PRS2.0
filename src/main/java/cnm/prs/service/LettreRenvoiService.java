@@ -1,12 +1,22 @@
 package cnm.prs.service;
 
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.lowagie.text.Document;
+import com.lowagie.text.Font;
+import com.lowagie.text.FontFactory;
+import com.lowagie.text.PageSize;
+import com.lowagie.text.Paragraph;
+import com.lowagie.text.pdf.PdfWriter;
 
 import cnm.prs.dto.LettreRenvoiDto;
 import cnm.prs.entity.Controleur;
@@ -25,6 +35,8 @@ import cnm.prs.mapper.LettreRenvoiMapper;
 import cnm.prs.repository.ControleurRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenRepository;
+import cnm.prs.entity.EntiteContract;
+import cnm.prs.repository.EntiteContractRepository;
 import cnm.prs.repository.LettreRenvoiLueRepository;
 import cnm.prs.repository.LettreRenvoiRepository;
 import cnm.prs.repository.PpmRepository;
@@ -50,11 +62,14 @@ public class LettreRenvoiService {
     private final ControleurRepository controleurRepository;
     private final NotificationService notificationService;
     private final LettreRenvoiLueRepository lueRepository;
+    private final EntiteContractRepository entiteContractRepository;
 
     public LettreRenvoiService(LettreRenvoiRepository repository, ExamenRepository examenRepository,
             DossierRepository dossierRepository, PpmRepository ppmRepository, PrmpRepository prmpRepository,
             ControleurDirectory controleurDirectory, ControleurRepository controleurRepository,
-            NotificationService notificationService, LettreRenvoiLueRepository lueRepository) {
+            NotificationService notificationService, LettreRenvoiLueRepository lueRepository,
+            EntiteContractRepository entiteContractRepository) {
+        this.entiteContractRepository = entiteContractRepository;
         this.repository = repository;
         this.examenRepository = examenRepository;
         this.dossierRepository = dossierRepository;
@@ -108,10 +123,7 @@ public class LettreRenvoiService {
     public LettreRenvoiDto findById(Integer id) {
         LettreRenvoi entity = exigerExistante(id);
         String ref = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
-        boolean prmpProprietaire = CurrentUser.profil().filter(p -> p == ProfilUtilisateur.PRMP).isPresent()
-                && ref != null
-                && StatutLettreRenvoi.SIGNE.name().equals(entity.getStatut())
-                && ppmRepository.existsByIdDossierAndIdPrmp(entity.getIdDossier(), ref);
+        boolean prmpProprietaire = estPrmpProprietaireSignee(entity);
         if (!prmpProprietaire) {
             // Périmètre de localité habituel (la PRMP non propriétaire reste hors périmètre → 403).
             Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
@@ -122,6 +134,15 @@ public class LettreRenvoiService {
         LettreRenvoiDto dto = peuplerNomSignataire(LettreRenvoiMapper.toDto(entity));
         dto.setLue(ref != null && lueRepository.existsByIdLettreAndIdPrmp(id, ref));
         return dto;
+    }
+
+    /** Vrai si l'appelant est la PRMP propriétaire du dossier d'une lettre {@code SIGNE}. */
+    private boolean estPrmpProprietaireSignee(LettreRenvoi entity) {
+        String ref = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        return CurrentUser.profil().filter(p -> p == ProfilUtilisateur.PRMP).isPresent()
+                && ref != null
+                && StatutLettreRenvoi.SIGNE.name().equals(entity.getStatut())
+                && ppmRepository.existsByIdDossierAndIdPrmp(entity.getIdDossier(), ref);
     }
 
     /** Renseigne le flag {@code lue} pour la PRMP courante (trace {@code t_lettre_renvoi_lue}). */
@@ -203,21 +224,106 @@ public class LettreRenvoiService {
     }
 
     /**
-     * Signature par le CC ou le Président (rôle contrôlé au contrôleur) : SOUMIS → SIGNE ;
-     * {@code imSignataire} = JWT. Notifie la PRMP du dossier ({@code LETTRE_RENVOI_RECUE}) et les
-     * Assistants contrôleurs de la localité ({@code LETTRE_RENVOI_COPIE}).
+     * Signature par le CC ou le Président : SOUMIS → SIGNE ; {@code imSignataire} = JWT.
+     * <strong>Règle de localité (⚠️ ajoutée)</strong> : localité <strong>centrale</strong> ({@code ANT}) →
+     * CC ou Président ; localité <strong>régionale</strong> (autre) → <strong>CC uniquement</strong>
+     * (Président → 403). La localité est celle du dossier ({@code idLocalite}), avec repli sur la localité
+     * de réception si absente. À la signature, le <strong>PDF</strong> de la lettre est généré (modèle
+     * centrale/régionale) et stocké. Notifie la PRMP et les Assistants contrôleurs de la localité.
      */
     public LettreRenvoiDto signer(Integer id) {
         LettreRenvoi lettre = exigerExistante(id);
         if (!StatutLettreRenvoi.SOUMIS.name().equals(lettre.getStatut())) {
             throw new BusinessRuleException("Signature impossible : statut « " + lettre.getStatut() + " » (attendu SOUMIS).");
         }
-        lettre.setImSignataire(CurrentUser.ref().filter(s -> !s.isBlank())
-                .orElseThrow(() -> new AccessDeniedException("Signataire non identifié.")));
+        Dossier dossier = lettre.getIdDossier() == null ? null
+                : dossierRepository.findById(lettre.getIdDossier()).orElse(null);
+        String localite = dossier == null ? null : dossier.getIdLocalite();
+        if (localite == null || localite.isBlank()) {
+            localite = repository.findLocaliteByLettre(id).orElse(null);   // repli : localité de réception
+        }
+        boolean centrale = "ANT".equals(localite);
+        if (!centrale && CurrentUser.profil().orElse(null) != ProfilUtilisateur.CHEF_COMMISSION) {
+            throw new AccessDeniedException(
+                    "Seul le Chef de Commission peut signer une lettre de renvoi pour une localité régionale.");
+        }
+        String im = CurrentUser.ref().filter(s -> !s.isBlank())
+                .orElseThrow(() -> new AccessDeniedException("Signataire non identifié."));
+        lettre.setImSignataire(im);
         lettre.setStatut(StatutLettreRenvoi.SIGNE.name());
+        lettre.setDocumentPdf(genererPdf(lettre, dossier, nomComplet(im), centrale));
         LettreRenvoi saved = repository.save(lettre);
         notifierSignature(saved);
-        return LettreRenvoiMapper.toDto(saved);
+        return peuplerNomSignataire(LettreRenvoiMapper.toDto(saved));
+    }
+
+    /**
+     * Document PDF de la lettre signée (téléchargement). Accès : périmètre de localité habituel
+     * ou PRMP propriétaire (lettre {@code SIGNE}). 404 si la lettre n'a pas (encore) de document.
+     */
+    @Transactional(readOnly = true)
+    public byte[] telechargerDocument(Integer id) {
+        LettreRenvoi lettre = exigerExistante(id);
+        if (!estPrmpProprietaireSignee(lettre)) {
+            Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
+        }
+        if (lettre.getDocumentPdf() == null || lettre.getDocumentPdf().length == 0) {
+            throw new ResourceNotFoundException("Aucun document pour la lettre : " + id);
+        }
+        return lettre.getDocumentPdf();
+    }
+
+    /** Génère le PDF de la lettre (mise en page maison OpenPDF). Tolère les champs absents. */
+    private byte[] genererPdf(LettreRenvoi lettre, Dossier dossier, String nomSignataire, boolean centrale) {
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.FRENCH);
+        String dateLettre = lettre.getDateLettre() == null ? "" : lettre.getDateLettre().format(fmt);
+        String dateExamen = lettre.getDateExamen() == null ? "" : lettre.getDateExamen().format(fmt);
+        String reference = dossier == null || dossier.getRefeDossier() == null ? "" : dossier.getRefeDossier();
+        String entite = dossier == null || dossier.getIdEntiteContract() == null ? ""
+                : entiteContractRepository.findById(dossier.getIdEntiteContract())
+                        .map(EntiteContract::getLibelleEntite).orElse("");
+        String corps = lettre.getCorpsLettre() == null ? "" : lettre.getCorpsLettre();
+        String labelSignataire = centrale ? "Le Président ou le Chef de Commission," : "Le Chef de Commission,";
+
+        Font titre = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16);
+        Font corpsFont = FontFactory.getFont(FontFactory.HELVETICA, 11);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        Document document = new Document(PageSize.A4);
+        try {
+            PdfWriter writer = PdfWriter.getInstance(document, baos);
+            writer.setCompressionLevel(0);   // contenu non compressé (placeholders vérifiables)
+            document.open();
+            document.add(new Paragraph("LETTRE DE RENVOI", titre));
+            document.add(new Paragraph(" "));
+            document.add(new Paragraph("Date : " + dateLettre, corpsFont));
+            document.add(new Paragraph("Entité contractante : " + entite, corpsFont));
+            document.add(new Paragraph("Référence dossier : " + reference, corpsFont));
+            document.add(new Paragraph("Date d'examen : " + dateExamen, corpsFont));
+            document.add(new Paragraph(" "));
+            document.add(new Paragraph(corps, corpsFont));
+            document.add(new Paragraph(" "));
+            document.add(new Paragraph(labelSignataire, corpsFont));
+            document.add(new Paragraph(nomSignataire == null ? "" : nomSignataire, corpsFont));
+            document.close();
+            return baos.toByteArray();
+        } catch (RuntimeException e) {
+            if (document.isOpen()) {
+                document.close();
+            }
+            throw new BusinessRuleException("Génération du document de la lettre impossible : " + e.getMessage());
+        }
+    }
+
+    /** « Prénoms Nom » d'un contrôleur (signataire effectif), ou l'IM si introuvable. */
+    private String nomComplet(String im) {
+        if (im == null) {
+            return "";
+        }
+        return controleurRepository.findById(im).map(c -> {
+            String n = ((c.getPrenomsCont() == null ? "" : c.getPrenomsCont()) + " "
+                    + (c.getNomCont() == null ? "" : c.getNomCont())).trim();
+            return n.isBlank() ? im : n;
+        }).orElse(im);
     }
 
     public void delete(Integer id) {
