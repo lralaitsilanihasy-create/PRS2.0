@@ -23,14 +23,28 @@ public final class NombreEnLettres {
             "", "", "vingt", "trente", "quarante", "cinquante", "soixante", "", "quatre-vingt", ""
     };
 
-    /** Date en toutes lettres, ex. {@code "vingt-trois juin deux mille vingt-six"} (1er jour → « premier »). */
-    public static String dateEnLettres(LocalDate date) {
+    /**
+     * Date pour la formule juridique « L'an … » du PV : <strong>année en toutes lettres</strong> + « et le »
+     * + <strong>jour</strong> (en toutes lettres, 1er → « premier ») + <strong>mois</strong>.
+     * Ex. {@code 23/06/2026 → "deux mille vingt-six et le vingt-trois juin"}.
+     */
+    public static String dateExamenPourLAn(LocalDate date) {
         if (date == null) {
             return "";
         }
+        return anneeEnLettres(date.getYear()) + " et le " + jourMoisEnLettres(date);
+    }
+
+    /** Année en toutes lettres (orthographe standard « mille » pour 2000+), ex. {@code 2026 → "deux mille vingt-six"}. */
+    public static String anneeEnLettres(int annee) {
+        return cardinal(annee);
+    }
+
+    /** Jour (en toutes lettres, 1er → « premier ») + nom du mois, ex. {@code 23/06 → "vingt-trois juin"}. */
+    public static String jourMoisEnLettres(LocalDate date) {
         String jour = date.getDayOfMonth() == 1 ? "premier" : cardinal(date.getDayOfMonth());
         String mois = date.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH);
-        return jour + " " + mois + " " + cardinal(date.getYear());
+        return jour + " " + mois;
     }
 
     /** Entier en toutes lettres (0 à 999 999). */

@@ -136,8 +136,10 @@ public class PvDocumentGenerator {
                 m.put(CHEF_COMMISSION, ctx.nomChefCommission());
             }
             if (texte.contains(DATE_EXAMEN)) {
+                // « L'an … » (paragraphe juridique, marqueur « instituée ») → année + « et le » + jour mois ;
+                // « Séance du … » → format chiffres « jj mois aaaa ».
                 m.put(DATE_EXAMEN, texte.contains(MARQUEUR_LAN)
-                        ? NombreEnLettres.dateEnLettres(ctx.dateExamen()) : fmt(ctx.dateExamen()));
+                        ? NombreEnLettres.dateExamenPourLAn(ctx.dateExamen()) : fmt(ctx.dateExamen()));
             }
             remplacerDansParagraphe(p, m);
         }
