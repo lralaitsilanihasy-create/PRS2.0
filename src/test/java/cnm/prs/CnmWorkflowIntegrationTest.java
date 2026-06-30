@@ -4341,18 +4341,53 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Document : le PDF ne contient plus aucun placeholder <...>")
-    void document_placeholders_remplaces() throws Exception {
-        int id = seedLettreSoumiseLoc(716, "ANT");
-        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
-                .andExpect(status().isOk());
-        byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", tokenCc))
-                .andReturn().getResponse().getContentAsByteArray();
-        String contenu = new String(pdf, StandardCharsets.ISO_8859_1);
-        assertTrue(contenu.contains("LETTRE DE RENVOI"), "texte rendu présent dans le PDF (non compressé)");
+    @DisplayName("Document : en-tête républicain présent (REPOBLIKAN'I MADAGASIKARA)")
+    void document_genere_entete_present() throws Exception {
+        assertTrue(signerEtLireDocument(716, tokenCc).contains("REPOBLIKAN'I MADAGASIKARA"),
+                "en-tête républicain présent dans le PDF");
+    }
+
+    @Test
+    @DisplayName("Document : objet présent (Objet : lettre de renvoi)")
+    void document_genere_objet_present() throws Exception {
+        assertTrue(signerEtLireDocument(717, tokenCc).contains("Objet : lettre de renvoi"),
+                "objet présent dans le PDF");
+    }
+
+    @Test
+    @DisplayName("Document : aucun placeholder résiduel <...>")
+    void document_genere_aucun_placeholder() throws Exception {
+        String contenu = signerEtLireDocument(718, tokenCc);
         assertFalse(contenu.contains("DATE_LETTRE") || contenu.contains("NOM_ENTITE_CONTRACT")
-                || contenu.contains("REFERENCE DOSSIER") || contenu.contains("CORPS DE LA LETTRE"),
-                "aucun placeholder résiduel dans le PDF");
+                || contenu.contains("REFERENCE DOSSIER") || contenu.contains("DATE EXAMEN")
+                || contenu.contains("CORPS DE LA LETTRE") || contenu.contains("NOM ET PRENOMS"),
+                "aucun placeholder littéral ne subsiste dans le PDF");
+    }
+
+    @Test
+    @DisplayName("Document : nom réel du signataire présent (pas un texte générique)")
+    void document_genere_signataire_reel() throws Exception {
+        // nomComplet de CTRCC1 = « Prenoms NomCTRCC1 » (helper controleur).
+        assertTrue(signerEtLireDocument(719, tokenCc).contains("NomCTRCC1"),
+                "nom réel du signataire présent dans le PDF");
+    }
+
+    @Test
+    @DisplayName("Document : corps de la lettre saisi présent")
+    void document_genere_corps_lettre_present() throws Exception {
+        assertTrue(signerEtLireDocument(720, tokenCc).contains("Corps de la lettre de renvoi"),
+                "texte du corps présent dans le PDF");
+    }
+
+    /** Crée une lettre ANT, la fait signer puis renvoie le contenu du PDF (ISO-8859-1, non compressé). */
+    private String signerEtLireDocument(int idDossier, String token) throws Exception {
+        int id = seedLettreSoumiseLoc(idDossier, "ANT");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", token))
+                .andExpect(status().isOk());
+        byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        return new String(pdf, StandardCharsets.ISO_8859_1);
     }
 
     /** Crée un dossier localisé (entité 1) + une lettre SOUMIS (examen 1) ; renvoie la PK de la lettre. */
