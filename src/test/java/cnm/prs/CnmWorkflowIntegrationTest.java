@@ -4213,6 +4213,36 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Téléchargement PV — GET /document renvoie le PDF stocké (FSX)")
+    void pv_document_telechargement_ok() throws Exception {
+        byte[] contenu = "%PDF-1.5 contenu du PV".getBytes(StandardCharsets.US_ASCII);
+        java.nio.file.Path fichier = java.nio.file.Files.createTempFile("pv-doc-", ".pdf");
+        java.nio.file.Files.write(fichier, contenu);
+        cnm.prs.entity.PvExamen pv = new cnm.prs.entity.PvExamen();
+        pv.setIdPv(80);
+        pv.setIdExamen(1);
+        pv.setIdAvis("FAVR");
+        pv.setImCtrlMembre("CTRMEM");
+        pv.setStatutPv("BROUILLON");
+        pv.setNbNavettes(0);
+        pv.setCheminDocument(fichier.toString());
+        pvExamenRepository.save(pv);
+
+        var resp = mvc.perform(get("/api/pv-examens/80/document").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        org.junit.jupiter.api.Assertions.assertEquals(MediaType.APPLICATION_PDF_VALUE, resp.getContentType());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(contenu, resp.getContentAsByteArray());
+    }
+
+    @Test
+    @DisplayName("Téléchargement PV — PV sans document → 404")
+    void pv_document_absent_404() throws Exception {
+        seedPvSigne(81, 1);   // PV sans CHEMIN_DOCUMENT
+        mvc.perform(get("/api/pv-examens/81/document").header("Authorization", tokenAdmin))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     @DisplayName("Lettre de renvoi — création pendant l'examen (Membre, objetLettre ignoré) → 201 BROUILLON")
     void lettre_creation_pendant_examen_ok() throws Exception {
         // objetLettre encore envoyé par un ancien frontend : ignoré (compat rétroactive), pas d'erreur.

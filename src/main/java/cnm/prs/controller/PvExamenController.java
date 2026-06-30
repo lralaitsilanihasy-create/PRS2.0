@@ -2,7 +2,9 @@ package cnm.prs.controller;
 
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,6 +51,16 @@ public class PvExamenController {
     @GetMapping("/{id}")
     public PvExamenDto findById(@PathVariable Integer id) {
         return service.findById(id);
+    }
+
+    /** Document PDF du Projet de PV (généré à la soumission si éligible). Authentifié, dans le périmètre. */
+    @GetMapping("/{id}/document")
+    public ResponseEntity<byte[]> document(@PathVariable Integer id) {
+        byte[] pdf = service.telechargerDocument(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"pv-" + id + ".pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
     }
 
     // Rédaction / édition du projet de PV : Membre (rédacteur), CC ou Président (§3.5).

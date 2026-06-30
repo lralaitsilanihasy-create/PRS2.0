@@ -1,5 +1,8 @@
 package cnm.prs.service;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -88,6 +91,26 @@ public class PvExamenService {
         PvExamen entity = load(id);
         Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
         return peuplerNomSecretaire(PvExamenMapper.toDto(entity));
+    }
+
+    /**
+     * Document PDF du Projet de PV (téléchargement). Accès : périmètre de localité habituel (même contrôle
+     * que {@link #findById}). Lit le fichier sur le FSX ({@code CHEMIN_DOCUMENT}) ; 404 si le PV n'a pas de
+     * document (non éligible à la génération) ou si le fichier est introuvable.
+     */
+    @Transactional(readOnly = true)
+    public byte[] telechargerDocument(Integer id) {
+        PvExamen pv = load(id);
+        Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
+        String chemin = pv.getCheminDocument();
+        if (chemin == null || chemin.isBlank()) {
+            throw new ResourceNotFoundException("Aucun document pour le PV : " + id);
+        }
+        try {
+            return Files.readAllBytes(Path.of(chemin));
+        } catch (IOException e) {
+            throw new ResourceNotFoundException("Document du PV introuvable sur le FSX : " + id);
+        }
     }
 
     /**
