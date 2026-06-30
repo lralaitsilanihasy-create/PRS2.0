@@ -1414,6 +1414,33 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Réception — dateReception « yyyy-MM-dd » sans heure → 201 (plus d'erreur de parsing index 10)")
+    void reception_creation_date_simple_ok() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        Dossier d = dossier(300, "SOUMIS");
+        d.setIdLocalite("ANT");
+        d.setIdTypeDossier("PPM");
+        dossierRepository.save(d);
+        mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":300,\"numPassage\":1,\"typePassage\":\"INITIAL\",\"complet\":true,"
+                        + "\"dateReception\":\"2026-06-30\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.dateReception", org.hamcrest.Matchers.startsWith("2026-06-30")));
+    }
+
+    @Test
+    @DisplayName("Réception — parsing : date simple → 30/06/2026 (heure complétée) ; date-heure préservée")
+    void reception_date_stockee_correctement() {
+        // Date seule « yyyy-MM-dd » : jour correct, heure complétée par le serveur (non nulle).
+        java.time.LocalDateTime dSimple = cnm.prs.mapper.ReceptionMapper.toLocalDateTime("2026-06-30");
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalDate.of(2026, 6, 30), dSimple.toLocalDate());
+        // Une date-heure complète « yyyy-MM-dd HH:mm » reste correctement parsée (heure conservée).
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalDateTime.of(2026, 6, 30, 14, 30),
+                cnm.prs.mapper.ReceptionMapper.toLocalDateTime("2026-06-30 14:30"));
+    }
+
+    @Test
     @DisplayName("Tableau de bord Président : compteurs de contenu présents (6 sections, valeurs ≥ 0)")
     void dashboard_compteurs_president_ok() throws Exception {
         mvc.perform(get("/api/kpis/tableau-bord").header("Authorization", tokenPresident))

@@ -1,6 +1,8 @@
 package cnm.prs.mapper;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 
 import cnm.prs.dto.ReceptionDto;
@@ -22,9 +24,22 @@ public final class ReceptionMapper {
         return dt == null ? null : dt.format(FMT);
     }
 
-    /** {@code yyyy-MM-dd HH:mm} &rarr; {@link LocalDateTime} ({@code null}/vide &rarr; {@code null}). */
+    /**
+     * Texte &rarr; {@link LocalDateTime} ({@code null}/vide &rarr; {@code null}). Accepte une
+     * <strong>date seule</strong> {@code yyyy-MM-dd} (envoyée par le formulaire de réception) en
+     * <strong>complétant l'heure manquante</strong> avec l'heure courante du serveur, ou une date-heure
+     * complète {@code yyyy-MM-dd HH:mm}. {@code t_reception.DATE_RECEPTION} est un TIMESTAMP, on conserve donc l'heure.
+     */
     public static LocalDateTime toLocalDateTime(String s) {
-        return (s == null || s.isBlank()) ? null : LocalDateTime.parse(s.trim(), FMT);
+        if (s == null || s.isBlank()) {
+            return null;
+        }
+        String t = s.trim();
+        // Date seule (« yyyy-MM-dd », 10 caractères) → compléter avec l'heure courante (le formulaire n'envoie pas l'heure).
+        if (t.length() <= 10) {
+            return LocalDate.parse(t).atTime(LocalTime.now());
+        }
+        return LocalDateTime.parse(t, FMT);
     }
 
     public static ReceptionDto toDto(Reception entity) {
