@@ -76,14 +76,14 @@ public class PvExamenService {
     @Transactional(readOnly = true)
     public List<PvExamenDto> projets() {
         return Visibilite.filtrer(repository::findProjets, repository::findProjetsParLocalite)
-                .stream().map(PvExamenMapper::toDto).toList();
+                .stream().map(PvExamenMapper::toDto).map(this::peuplerNomSecretaire).toList();
     }
 
     /** PV définitifs : uniquement les PV signés ({@code statutPv = SIGNE}). */
     @Transactional(readOnly = true)
     public List<PvExamenDto> definitifs() {
         return Visibilite.filtrer(repository::findDefinitifs, repository::findDefinitifsParLocalite)
-                .stream().map(PvExamenMapper::toDto).toList();
+                .stream().map(PvExamenMapper::toDto).map(this::peuplerNomSecretaire).toList();
     }
 
     @Transactional(readOnly = true)

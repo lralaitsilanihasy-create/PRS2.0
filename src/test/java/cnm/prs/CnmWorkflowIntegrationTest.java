@@ -4366,6 +4366,23 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("PV définitifs — nomSecretaireSeance peuplé dans la liste (pas seulement le détail)")
+    void pv_definitifs_nom_secretaire_peuple() throws Exception {
+        cnm.prs.entity.PvExamen pv = new cnm.prs.entity.PvExamen();
+        pv.setIdPv(120);
+        pv.setIdExamen(1);
+        pv.setIdAvis("FAVR");
+        pv.setImCtrlMembre("CTRMEM");
+        pv.setStatutPv("SIGNE");
+        pv.setNbNavettes(0);
+        pv.setIdSecretaireSeance("CTRVER");
+        pvExamenRepository.save(pv);
+        mvc.perform(get("/api/pv-examens/definitifs").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idPv==120)].nomSecretaireSeance", hasItem("Prenoms NomCTRVER")));
+    }
+
+    @Test
     @DisplayName("Lettre de renvoi — création pendant l'examen (Membre, objetLettre ignoré) → 201 BROUILLON")
     void lettre_creation_pendant_examen_ok() throws Exception {
         // objetLettre encore envoyé par un ancien frontend : ignoré (compat rétroactive), pas d'erreur.
