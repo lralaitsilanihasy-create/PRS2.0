@@ -4294,11 +4294,75 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Téléchargement PV — PV sans document → 404")
+    @DisplayName("Téléchargement PV — PV non éligible sans document → 404")
     void pv_document_absent_404() throws Exception {
-        seedPvSigne(81, 1);   // PV sans CHEMIN_DOCUMENT
+        seedPvSigne(81, 1);   // PV avis FAV (non éligible) sans CHEMIN_DOCUMENT → pas de régénération
         mvc.perform(get("/api/pv-examens/81/document").header("Authorization", tokenAdmin))
                 .andExpect(status().isNotFound());
+    }
+
+    /** Rend l'examen 1 (dossier 1, ppm 1) éligible (1 ligne de marché en AOO) puis crée + signe un PV FAVR. */
+    private void signerPvEligible(int idPv) throws Exception {
+        modePassationRepository.save(new ModePassation(1, "AOO", null, null, null, null));
+        cnm.prs.entity.Marche m = marche(9500, 1, 1);   // dossier 1, ppm 1
+        m.setIdMode(1);                                  // appel d'offres ouvert
+        marcheRepository.save(m);
+        signerPvAvecAvis(idPv, "FAVR");                  // → SIGNE → génération du document si éligible
+    }
+
+    @Test
+    @DisplayName("Signature PV éligible → document généré et stocké (chemin_document non NULL + fichier présent)")
+    void signature_pv_genere_document_ok() throws Exception {
+        signerPvEligible(110);
+        cnm.prs.entity.PvExamen pv = pvExamenRepository.findById(110).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertNotNull(pv.getCheminDocument(),
+                "chemin_document renseigné après la signature finale");
+        assertTrue(java.nio.file.Files.exists(java.nio.file.Path.of(pv.getCheminDocument())),
+                "le fichier PDF est présent sur le FSX");
+    }
+
+    @Test
+    @DisplayName("Téléchargement PV après signature → 200 application/pdf")
+    void document_pv_telechargement_ok() throws Exception {
+        signerPvEligible(111);
+        var resp = mvc.perform(get("/api/pv-examens/111/document").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        org.junit.jupiter.api.Assertions.assertEquals(MediaType.APPLICATION_PDF_VALUE, resp.getContentType());
+        assertTrue(resp.getContentAsByteArray().length > 0, "le PDF n'est pas vide");
+    }
+
+    @Test
+    @DisplayName("PV signé sans document (ancien) → régénération paresseuse au téléchargement → 200")
+    void migration_pv_anciens_sans_document() throws Exception {
+        signerPvEligible(112);
+        cnm.prs.entity.PvExamen pv = pvExamenRepository.findById(112).orElseThrow();
+        pv.setCheminDocument(null);            // simule un PV signé avant le correctif (chemin_document NULL)
+        pvExamenRepository.save(pv);
+        mvc.perform(get("/api/pv-examens/112/document").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertNotNull(
+                pvExamenRepository.findById(112).orElseThrow().getCheminDocument(),
+                "chemin_document régénéré à la demande");
+    }
+
+    @Test
+    @DisplayName("Grille de contrôle — point « Conformité au budget » non conforme → observations chargées (>= 1)")
+    void pv_detail_observations_chargees() throws Exception {
+        PointsCtrl pc = new PointsCtrl();
+        pc.setIdPointCtrl(1);
+        pc.setLibelPointCtrl("Conformité au budget");
+        pc.setObligatoire(true);
+        pc.setIdTypeDossier("PPM");
+        pointsCtrlRepository.save(pc);
+        mvc.perform(post("/api/examen-details").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDetailExamen\":530,\"idExamen\":1,\"idPtControle\":1,\"conforme\":false,"
+                        + "\"observations\":[{\"auLieuDe\":\"250 000 000\",\"lire\":\"200 000 000\",\"ordre\":1}]}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/examen-details/530").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.conforme").value(false))
+                .andExpect(jsonPath("$.observations.length()").value(1));
     }
 
     @Test

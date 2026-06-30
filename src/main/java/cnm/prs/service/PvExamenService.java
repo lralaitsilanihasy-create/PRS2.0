@@ -94,22 +94,41 @@ public class PvExamenService {
     }
 
     /**
-     * Document PDF du Projet de PV (téléchargement). Accès : périmètre de localité habituel (même contrôle
-     * que {@link #findById}). Lit le fichier sur le FSX ({@code CHEMIN_DOCUMENT}) ; 404 si le PV n'a pas de
-     * document (non éligible à la génération) ou si le fichier est introuvable.
+     * Document PDF du PV (téléchargement). Accès : périmètre de localité habituel (même contrôle que
+     * {@link #findById}). Lit le fichier sur le FSX ({@code CHEMIN_DOCUMENT}). Si le chemin est absent
+     * (PV signé <strong>avant</strong> ce correctif) ou le fichier introuvable, tente une
+     * <strong>régénération paresseuse</strong> (si le PV est éligible) — ce qui sert aussi de migration des
+     * anciens PV signés sans document. 404 seulement si le PV n'est pas éligible à la génération.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public byte[] telechargerDocument(Integer id) {
         PvExamen pv = load(id);
         Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
-        String chemin = pv.getCheminDocument();
-        if (chemin == null || chemin.isBlank()) {
+        byte[] pdf = lireFsx(pv.getCheminDocument());
+        if (pdf == null) {
+            String chemin = pvDocumentService.genererSiEligible(pv).orElse(null);
+            if (chemin != null) {
+                pv.setCheminDocument(chemin);
+                repository.save(pv);
+                pdf = lireFsx(chemin);
+            }
+        }
+        if (pdf == null) {
             throw new ResourceNotFoundException("Aucun document pour le PV : " + id);
         }
+        return pdf;
+    }
+
+    /** Lit le PDF sur le FSX, ou {@code null} si chemin vide / fichier absent / illisible. */
+    private byte[] lireFsx(String chemin) {
+        if (chemin == null || chemin.isBlank()) {
+            return null;
+        }
         try {
-            return Files.readAllBytes(Path.of(chemin));
+            Path p = Path.of(chemin);
+            return Files.exists(p) ? Files.readAllBytes(p) : null;
         } catch (IOException e) {
-            throw new ResourceNotFoundException("Document du PV introuvable sur le FSX : " + id);
+            return null;
         }
     }
 
@@ -152,11 +171,6 @@ public class PvExamenService {
         }
         entity.setRefePv(refePv);
         PvExamen saved = repository.save(entity);
-        // ⚠️ Règle ajoutée — génère le PDF du Projet de PV si éligible (avis FAVR + lignes en AOO + centrale).
-        pvDocumentService.genererSiEligible(saved).ifPresent(chemin -> {
-            saved.setCheminDocument(chemin);
-            repository.save(saved);
-        });
         return peuplerNomSecretaire(PvExamenMapper.toDto(saved));
     }
 
@@ -438,6 +452,9 @@ public class PvExamenService {
         if (membreSigne && coSigne) {
             pv.setStatutPv(StatutPv.SIGNE.name());
             pv.setDatePv(today);
+            // ⚠️ Règle ajoutée — à la signature finale, génère et stocke le PDF du PV (présents complets)
+            // si éligible (avis FAVR + localité centrale + lignes de marché en appel d'offres ouvert).
+            pvDocumentService.genererSiEligible(pv).ifPresent(pv::setCheminDocument);
             PvExamenDto dto = PvExamenMapper.toDto(repository.save(pv));
             // [Auto] ⚠️ Règle ajoutée — branchement du circuit selon l'avis du PV.
             brancherSelonAvis(pv);
