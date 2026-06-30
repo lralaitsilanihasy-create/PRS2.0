@@ -156,6 +156,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private cnm.prs.repository.PublicationRepository publicationRepository;
     @Autowired private cnm.prs.repository.PvExamenRepository pvExamenRepository;
     @Autowired private cnm.prs.repository.LettreRenvoiLueRepository lueRepository;
+    @Autowired private cnm.prs.repository.DemandeRetraitVueRepository demandeRetraitVueRepository;
 
     private String tokenPresident;
     private String tokenCc;
@@ -1724,6 +1725,53 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenPrmp))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.lue").value(true));
+    }
+
+    @Test
+    @DisplayName("Demandes de retrait : ouverture de l'écran (mes-demandes) → consultation enregistrée")
+    void demande_retrait_vue_maj_ok() throws Exception {
+        mvc.perform(get("/api/demande-retraits/mes-demandes").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk());
+        assertTrue(demandeRetraitVueRepository.findByIdPrmp("PRMP001").isPresent(),
+                "date de dernière consultation enregistrée pour la PRMP");
+    }
+
+    @Test
+    @DisplayName("Compteur PRMP : demande décidée (ACCEPTEE) après la dernière vue → demandesRetraitNouvelles = 1")
+    void compteur_demandes_nouvelles_ok() throws Exception {
+        // Aucune consultation préalable → seuil = époque → la décision récente est comptée.
+        seedDemandeDecision("ACCEPTEE", LocalDateTime.of(2026, 6, 20, 9, 0));
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.demandesRetraitNouvelles").value(1));
+    }
+
+    @Test
+    @DisplayName("Compteur PRMP : demande décidée AVANT la dernière vue → exclue, demandesRetraitNouvelles = 0")
+    void compteur_demandes_anciennes_exclu() throws Exception {
+        seedDemandeDecision("ACCEPTEE", LocalDateTime.of(2026, 1, 1, 0, 0)); // décision ancienne
+        demandeRetraitVueRepository.save(
+                new cnm.prs.entity.DemandeRetraitVue(null, "PRMP001", LocalDateTime.of(2026, 6, 1, 0, 0)));
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.demandesRetraitNouvelles").value(0));
+    }
+
+    @Test
+    @DisplayName("Compteur PRMP : demande EN_ATTENTE → jamais comptée, demandesRetraitNouvelles = 0")
+    void compteur_demandes_en_attente_exclu() throws Exception {
+        seedDemandeDecision("EN_ATTENTE", null); // pas de décision
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.demandesRetraitNouvelles").value(0));
+    }
+
+    /** Crée une demande de retrait de PRMP001 (dossier 1) au statut/date de décision donnés. */
+    private void seedDemandeDecision(String statut, LocalDateTime dateDecision) {
+        DemandeRetrait d = demandeRetrait(0, 1, "PRMP001");
+        d.setStatut(statut);
+        d.setDateDecision(dateDecision);
+        demandeRetraitRepository.save(d);
     }
 
     /** Crée une lettre de renvoi SIGNÉE sur l'examen/dossier 1 (PPM de PRMP001) ; renvoie sa PK. */

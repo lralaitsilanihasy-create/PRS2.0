@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import cnm.prs.dto.DemandeRetraitDto;
 import cnm.prs.entity.Controleur;
 import cnm.prs.entity.DemandeRetrait;
+import cnm.prs.entity.DemandeRetraitVue;
 import cnm.prs.entity.Dossier;
 import cnm.prs.entity.Prmp;
 import cnm.prs.enums.ProfilUtilisateur;
@@ -21,6 +22,7 @@ import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.DemandeRetraitMapper;
 import cnm.prs.repository.DemandeRetraitRepository;
+import cnm.prs.repository.DemandeRetraitVueRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.PrmpRepository;
 import cnm.prs.security.CurrentUser;
@@ -38,15 +40,36 @@ public class DemandeRetraitService {
     private final PrmpRepository prmpRepository;
     private final NotificationService notificationService;
     private final ControleurDirectory controleurDirectory;
+    private final DemandeRetraitVueRepository vueRepository;
 
     public DemandeRetraitService(DemandeRetraitRepository repository, DossierRepository dossierRepository,
             PrmpRepository prmpRepository, NotificationService notificationService,
-            ControleurDirectory controleurDirectory) {
+            ControleurDirectory controleurDirectory, DemandeRetraitVueRepository vueRepository) {
         this.repository = repository;
         this.dossierRepository = dossierRepository;
         this.prmpRepository = prmpRepository;
         this.notificationService = notificationService;
         this.controleurDirectory = controleurDirectory;
+        this.vueRepository = vueRepository;
+    }
+
+    /**
+     * Écran « Mes demandes de retrait » de la PRMP : renvoie ses demandes <strong>et marque l'écran
+     * consulté</strong> (UPSERT {@code t_demande_retrait_vue.dateDerniereVue = now} pour cette PRMP),
+     * ce qui remet à zéro le compteur de nouveautés. PRMP non identifiée → liste vide.
+     */
+    public List<DemandeRetraitDto> mesDemandes() {
+        String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
+        if (idPrmp == null) {
+            return List.of();
+        }
+        List<DemandeRetraitDto> demandes = repository.findByIdPrmp(idPrmp).stream()
+                .map(DemandeRetraitMapper::toDto).toList();
+        DemandeRetraitVue vue = vueRepository.findByIdPrmp(idPrmp)
+                .orElseGet(() -> new DemandeRetraitVue(null, idPrmp, null));
+        vue.setDateDerniereVue(LocalDateTime.now());
+        vueRepository.save(vue);
+        return demandes;
     }
 
     /**

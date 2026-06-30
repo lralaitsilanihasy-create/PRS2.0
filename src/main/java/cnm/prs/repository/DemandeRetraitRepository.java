@@ -22,6 +22,19 @@ public interface DemandeRetraitRepository extends JpaRepository<DemandeRetrait, 
             """)
     long countByStatutEtLocaliteDossier(@Param("statut") String statut, @Param("loc") String loc);
 
+    /**
+     * Nombre de demandes d'une PRMP <strong>décidées</strong> ({@code ACCEPTEE}/{@code REFUSEE})
+     * après un seuil (dernière consultation de l'écran) — compteur « nouveautés » du menu PRMP.
+     * {@code DATE_DECISION} est posée au passage ACCEPTEE/REFUSEE (null pour EN_ATTENTE, donc exclu).
+     */
+    @Query("""
+            select count(dr) from DemandeRetrait dr
+            where dr.idPrmp = :idPrmp and dr.statut in ('ACCEPTEE', 'REFUSEE')
+              and dr.dateDecision > :seuil
+            """)
+    long countNouvellesDecisionsPourPrmp(@Param("idPrmp") String idPrmp,
+            @Param("seuil") java.time.LocalDateTime seuil);
+
     /** Demandes d'une PRMP (suivi de ses propres demandes, §3.1). */
     List<DemandeRetrait> findByIdPrmp(String idPrmp);
 

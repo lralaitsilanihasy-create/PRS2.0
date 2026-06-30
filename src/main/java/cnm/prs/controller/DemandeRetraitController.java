@@ -42,6 +42,16 @@ public class DemandeRetraitController {
         return service.findById(id);
     }
 
+    /**
+     * Écran « Mes demandes de retrait » de la PRMP. ⚠️ À l'ouverture, marque l'écran consulté
+     * (met à jour {@code dateDerniereVue}), ce qui remet à zéro le compteur de nouveautés.
+     */
+    @PreAuthorize("hasRole('PRMP')")
+    @GetMapping("/mes-demandes")
+    public List<DemandeRetraitDto> mesDemandes() {
+        return service.mesDemandes();
+    }
+
     /** File « à valider » du CC (sa localité) / Président (toutes localités) : demandes EN_ATTENTE. */
     @PreAuthorize("hasRole('CHEF_COMMISSION') or hasRole('PRESIDENT')")
     @GetMapping("/a-valider")

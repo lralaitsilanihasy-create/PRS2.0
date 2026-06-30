@@ -8,12 +8,15 @@ package cnm.prs.dto;
  * @param dossiersARectifier  mes dossiers à rectifier non traités
  *                            ({@code t_dossier.STATUT = EN_ATTENTE_DECISION_PRMP})
  * @param dossiersVerifies    mes dossiers vérifiés ({@code t_dossier.STATUT IN (PV_SIGNE, CLOTURE)})
- * @param lettresRenvoi       mes lettres de renvoi signées ({@code t_lettre_renvoi.STATUT = SIGNE})
+ * @param lettresRenvoi       mes lettres de renvoi signées non lues ({@code STATUT = SIGNE} sans trace de lecture)
+ * @param demandesRetraitNouvelles mes demandes de retrait passées à {@code ACCEPTEE}/{@code REFUSEE}
+ *                            depuis ma dernière consultation de l'écran « Demandes de retrait »
  */
 public record CompteursPrmpDto(
         long brouillons,
         long ppmMarches,
         long dossiersARectifier,
         long dossiersVerifies,
-        long lettresRenvoi) {
+        long lettresRenvoi,
+        long demandesRetraitNouvelles) {
 }

@@ -29,6 +29,7 @@ import cnm.prs.enums.TypeActeur;
 import cnm.prs.repository.AuditLogRepository;
 import cnm.prs.repository.CompteAuthRepository;
 import cnm.prs.repository.DemandeRetraitRepository;
+import cnm.prs.repository.DemandeRetraitVueRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenDetailRepository;
 import cnm.prs.repository.LettreRenvoiRepository;
@@ -58,13 +59,15 @@ public class KpiService {
     private final PublicationRepository publicationRepository;
     private final CompteAuthRepository compteAuthRepository;
     private final AuditLogRepository auditLogRepository;
+    private final DemandeRetraitVueRepository demandeRetraitVueRepository;
 
     public KpiService(DossierRepository dossierRepository, VerificationRepository verificationRepository,
             ExamenDetailRepository examenDetailRepository, PvExamenRepository pvExamenRepository,
             LettreRenvoiRepository lettreRenvoiRepository, DemandeRetraitRepository demandeRetraitRepository,
             PpmRepository ppmRepository, ReceptionRepository receptionRepository,
             PublicationRepository publicationRepository, CompteAuthRepository compteAuthRepository,
-            AuditLogRepository auditLogRepository) {
+            AuditLogRepository auditLogRepository, DemandeRetraitVueRepository demandeRetraitVueRepository) {
+        this.demandeRetraitVueRepository = demandeRetraitVueRepository;
         this.dossierRepository = dossierRepository;
         this.verificationRepository = verificationRepository;
         this.examenDetailRepository = examenDetailRepository;
@@ -103,15 +106,20 @@ public class KpiService {
     public CompteursPrmpDto mesCompteursPrmp() {
         String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
         if (idPrmp == null) {
-            return new CompteursPrmpDto(0, 0, 0, 0, 0);
+            return new CompteursPrmpDto(0, 0, 0, 0, 0, 0);
         }
+        // Demandes décidées (ACCEPTEE/REFUSEE) depuis la dernière consultation de l'écran (sinon tout l'historique).
+        java.time.LocalDateTime seuil = demandeRetraitVueRepository.findByIdPrmp(idPrmp)
+                .map(cnm.prs.entity.DemandeRetraitVue::getDateDerniereVue)
+                .orElse(java.time.LocalDateTime.of(1970, 1, 1, 0, 0));
         return new CompteursPrmpDto(
                 dossierRepository.countByStatutAndIdPrmp(StatutDossier.BROUILLON.name(), idPrmp),
                 ppmRepository.countByIdPrmp(idPrmp),
                 dossierRepository.countByStatutAndIdPrmp(StatutDossier.EN_ATTENTE_DECISION_PRMP.name(), idPrmp),
                 dossierRepository.countByStatutInAndIdPrmp(
                         List.of(StatutDossier.PV_SIGNE.name(), StatutDossier.CLOTURE.name()), idPrmp),
-                lettreRenvoiRepository.countSigneesNonLuesPourPrmp(idPrmp));
+                lettreRenvoiRepository.countSigneesNonLuesPourPrmp(idPrmp),
+                demandeRetraitRepository.countNouvellesDecisionsPourPrmp(idPrmp, seuil));
     }
 
     /**
