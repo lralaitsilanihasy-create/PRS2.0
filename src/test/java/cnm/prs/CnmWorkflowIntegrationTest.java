@@ -1441,6 +1441,28 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Dispatch — dateDispatch « yyyy-MM-dd » sans heure → 201 (heure complétée, plus d'erreur index 10)")
+    void dispatch_date_simple_acceptee() throws Exception {
+        dossierRepository.save(dossier(310, "PRET_DISPATCH"));
+        receptionRepository.save(reception(410, 310, "CTRSEC", true));   // CTRSEC = localité ANT
+        mvc.perform(post("/api/dispatchs").header("Authorization", tokenCc)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDispatch\":310,\"idReception\":410,\"imCtrlMembre\":\"CTRMEM\","
+                        + "\"interimDispatch\":false,\"dateDispatch\":\"2026-06-30\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.dateDispatch", org.hamcrest.Matchers.startsWith("2026-06-30 ")));
+    }
+
+    @Test
+    @DisplayName("Dispatch — parsing : date simple → 30/06/2026 (heure complétée) ; date-heure préservée")
+    void dispatch_date_parsing_ok() {
+        java.time.LocalDateTime dSimple = cnm.prs.mapper.DispatchMapper.toLocalDateTime("2026-06-30");
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalDate.of(2026, 6, 30), dSimple.toLocalDate());
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalDateTime.of(2026, 6, 30, 14, 30),
+                cnm.prs.mapper.DispatchMapper.toLocalDateTime("2026-06-30 14:30"));
+    }
+
+    @Test
     @DisplayName("Tableau de bord Président : compteurs de contenu présents (6 sections, valeurs ≥ 0)")
     void dashboard_compteurs_president_ok() throws Exception {
         mvc.perform(get("/api/kpis/tableau-bord").header("Authorization", tokenPresident))

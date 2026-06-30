@@ -1,6 +1,8 @@
 package cnm.prs.mapper;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 
 import cnm.prs.dto.DispatchDto;
@@ -22,9 +24,22 @@ public final class DispatchMapper {
         return dt == null ? null : dt.format(FMT);
     }
 
-    /** {@code yyyy-MM-dd HH:mm} &rarr; {@link LocalDateTime} ({@code null}/vide &rarr; {@code null}). */
+    /**
+     * Texte &rarr; {@link LocalDateTime} ({@code null}/vide &rarr; {@code null}). Accepte une
+     * <strong>date seule</strong> {@code yyyy-MM-dd} (envoyée par un {@code <input type="date">}) en
+     * <strong>complétant l'heure manquante</strong> avec l'heure courante du serveur, ou une date-heure
+     * complète {@code yyyy-MM-dd HH:mm}. {@code t_dispatch.DATE_DISPATCH} est un TIMESTAMP, on conserve l'heure.
+     */
     public static LocalDateTime toLocalDateTime(String s) {
-        return (s == null || s.isBlank()) ? null : LocalDateTime.parse(s.trim(), FMT);
+        if (s == null || s.isBlank()) {
+            return null;
+        }
+        String t = s.trim();
+        // Date seule (« yyyy-MM-dd », 10 caractères) → compléter avec l'heure courante (l'input HTML n'envoie pas l'heure).
+        if (t.length() <= 10) {
+            return LocalDate.parse(t).atTime(LocalTime.now());
+        }
+        return LocalDateTime.parse(t, FMT);
     }
 
     public static DispatchDto toDto(Dispatch entity) {
