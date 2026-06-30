@@ -1,6 +1,5 @@
 package cnm.prs.service;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,14 +13,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import com.lowagie.text.Document;
-import com.lowagie.text.Element;
-import com.lowagie.text.Font;
-import com.lowagie.text.FontFactory;
-import com.lowagie.text.PageSize;
-import com.lowagie.text.Paragraph;
-import com.lowagie.text.pdf.PdfWriter;
 
 import cnm.prs.dto.LettreRenvoiDto;
 import cnm.prs.entity.Controleur;
@@ -70,6 +61,7 @@ public class LettreRenvoiService {
     private final LettreRenvoiLueRepository lueRepository;
     private final EntiteContractRepository entiteContractRepository;
     private final LocaliteRepository localiteRepository;
+    private final LettreRenvoiDocumentGenerator documentGenerator;
 
     @Value("${storage.lettre-renvoi.path:${java.io.tmpdir}/prs-fsx/LR}")
     private String cheminStockageLr;
@@ -78,7 +70,9 @@ public class LettreRenvoiService {
             DossierRepository dossierRepository, PpmRepository ppmRepository, PrmpRepository prmpRepository,
             ControleurDirectory controleurDirectory, ControleurRepository controleurRepository,
             NotificationService notificationService, LettreRenvoiLueRepository lueRepository,
-            EntiteContractRepository entiteContractRepository, LocaliteRepository localiteRepository) {
+            EntiteContractRepository entiteContractRepository, LocaliteRepository localiteRepository,
+            LettreRenvoiDocumentGenerator documentGenerator) {
+        this.documentGenerator = documentGenerator;
         this.localiteRepository = localiteRepository;
         this.entiteContractRepository = entiteContractRepository;
         this.repository = repository;
@@ -264,7 +258,8 @@ public class LettreRenvoiService {
                 .map(l -> l.getLibelleLocalite() == null ? "" : l.getLibelleLocalite()).orElse("");
         lettre.setImSignataire(im);
         lettre.setStatut(StatutLettreRenvoi.SIGNE.name());
-        byte[] pdf = genererPdf(lettre, dossier, nomComplet(im), centrale, localiteLibelle);
+        byte[] pdf = documentGenerator.genererPdf(centrale,
+                construireRemplacements(lettre, dossier, nomComplet(im), centrale, localiteLibelle));
         lettre.setCheminDocument(stockerSurFsx(lettre, pdf));   // PDF écrit sur le FSX (répertoire LR/)
         LettreRenvoi saved = repository.save(lettre);
         notifierSignature(saved);
@@ -312,14 +307,13 @@ public class LettreRenvoiService {
     }
 
     /**
-     * Génère le PDF de la lettre de renvoi en reproduisant la mise en page du modèle officiel
-     * (en-tête républicain, devise, ministère, CNM, type de commission selon la localité, objet/réf,
-     * corps, signataire réel). Variante <strong>centrale</strong> (ANT) ou <strong>régionale</strong>.
-     * Génération programmatique OpenPDF (les modèles {@code .docx} et une chaîne docx→PDF ne sont pas
-     * disponibles dans l'environnement). Tolère les champs absents.
+     * Construit la table des remplacements de placeholders du modèle Word selon la localité.
+     * Communs aux deux modèles ; le central a le placeholder « PRESIDENT OU CHEF DE COMMISSION », le
+     * régional a « LOCALITE DOSSIER » et « CHEF DE COMMISSION ». Le nom du signataire remplace
+     * <strong>uniquement</strong> le placeholder (aucun libellé de rôle ajouté).
      */
-    private byte[] genererPdf(LettreRenvoi lettre, Dossier dossier, String nomSignataire, boolean centrale,
-            String localiteLibelle) {
+    private java.util.Map<String, String> construireRemplacements(LettreRenvoi lettre, Dossier dossier,
+            String nomSignataire, boolean centrale, String localiteLibelle) {
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.FRENCH);
         String dateLettre = lettre.getDateLettre() == null ? "" : lettre.getDateLettre().format(fmt);
         String dateExamen = lettre.getDateExamen() == null ? "" : lettre.getDateExamen().format(fmt);
@@ -329,66 +323,20 @@ public class LettreRenvoiService {
                         .map(EntiteContract::getLibelleEntite).orElse("");
         String corps = lettre.getCorpsLettre() == null ? "" : lettre.getCorpsLettre();
         String nom = nomSignataire == null ? "" : nomSignataire;
-        String loc = localiteLibelle == null ? "" : localiteLibelle.toUpperCase(Locale.FRENCH);
-        // Type de commission : centrale (ANT) ; régionale → suffixe localité du dossier (placeholder <LOCALITE DOSSIER>).
-        String typeCommission = centrale ? "COMMISSION CENTRALE DES MARCHES"
-                : ("COMMISSION REGIONALE DES MARCHES " + loc).trim();
-        String labelSignataire = centrale ? "Le Président ou le Chef de Commission,"
-                : "Le Chef de la Commission Régionale des Marchés";
 
-        Font enteteGras = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13);
-        Font devise = FontFactory.getFont(FontFactory.HELVETICA, 10, Font.ITALIC);
-        Font gras = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11);
-        Font normal = FontFactory.getFont(FontFactory.HELVETICA, 11);
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        Document document = new Document(PageSize.A4);
-        try {
-            PdfWriter writer = PdfWriter.getInstance(document, baos);
-            writer.setCompressionLevel(0);   // contenu non compressé (vérification des placeholders)
-            document.open();
-            // En-tête républicain (centré, gras + devise en italique).
-            document.add(centre(new Paragraph("REPOBLIKAN'I MADAGASIKARA", enteteGras)));
-            document.add(centre(new Paragraph("Fitiavana - Tanindrazana - Fandrosoana", devise)));
-            document.add(centre(new Paragraph("MINISTERE DE L'ECONOMIE ET DES FINANCES", gras)));
-            document.add(centre(new Paragraph("COMMISSION NATIONALE DES MARCHES (CNM)", gras)));
-            document.add(centre(new Paragraph(typeCommission, gras)));
-            document.add(new Paragraph(" "));
-            document.add(droite(new Paragraph("Antananarivo, le " + dateLettre, normal)));
-            document.add(new Paragraph(" "));
-            document.add(new Paragraph(
-                    "Madame/Monsieur la Personne Responsable des Marchés Publics de " + entite, normal));
-            document.add(new Paragraph(" "));
-            document.add(new Paragraph("Objet : lettre de renvoi", gras));
-            document.add(new Paragraph("Réf : " + reference, normal));
-            document.add(new Paragraph(" "));
-            document.add(new Paragraph("Faisant suite à la séance d'instruction du " + dateExamen
-                    + " relative au dossier susvisé, la Commission a l'honneur de vous retourner ledit dossier "
-                    + "pour les motifs ci-après :", normal));
-            document.add(new Paragraph(" "));
-            document.add(new Paragraph(corps, normal));
-            document.add(new Paragraph(" "));
-            document.add(new Paragraph(" "));
-            document.add(droite(new Paragraph(labelSignataire, normal)));
-            document.add(droite(new Paragraph(nom, gras)));
-            document.close();
-            return baos.toByteArray();
-        } catch (RuntimeException e) {
-            if (document.isOpen()) {
-                document.close();
-            }
-            throw new BusinessRuleException("Génération du document de la lettre impossible : " + e.getMessage());
+        java.util.Map<String, String> m = new java.util.HashMap<>();
+        m.put("<DATE_LETTRE>", dateLettre);
+        m.put("<NOM_ENTITE_CONTRACT>", entite);
+        m.put("<REFERENCE DOSSIER>", reference);
+        m.put("<DATE EXAMEN>", dateExamen);
+        m.put("<CORPS DE LA LETTRE>", corps);
+        if (centrale) {
+            m.put("<NOM ET PRENOMS DU PRESIDENT OU CHEF DE COMMISSION>", nom);
+        } else {
+            m.put("<LOCALITE DOSSIER>", localiteLibelle == null ? "" : localiteLibelle.toUpperCase(Locale.FRENCH));
+            m.put("<NOM ET PRENOMS DU CHEF DE COMMISSION>", nom);
         }
-    }
-
-    private static Paragraph centre(Paragraph p) {
-        p.setAlignment(Element.ALIGN_CENTER);
-        return p;
-    }
-
-    private static Paragraph droite(Paragraph p) {
-        p.setAlignment(Element.ALIGN_RIGHT);
-        return p;
+        return m;
     }
 
     /** « Prénoms Nom » d'un contrôleur (signataire effectif), ou l'IM si introuvable. */

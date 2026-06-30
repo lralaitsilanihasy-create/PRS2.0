@@ -4317,20 +4317,15 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Document : signature centrale → PDF généré, téléchargeable")
+    @DisplayName("Document : signature centrale → PDF téléchargeable (200, application/pdf)")
     void document_genere_centrale_ok() throws Exception {
-        int id = seedLettreSoumiseLoc(714, "ANT");
-        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
-                .andExpect(status().isOk());
-        byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", tokenCc))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsByteArray();
+        byte[] pdf = signerEtPdf(714, "ANT", tokenCc);
         assertTrue(pdf.length > 0 && new String(pdf, 0, 4, StandardCharsets.ISO_8859_1).equals("%PDF"),
                 "PDF généré (en-tête %PDF)");
     }
 
     @Test
-    @DisplayName("Document : signature régionale → PDF généré, téléchargeable")
+    @DisplayName("Document : signature régionale → PDF téléchargeable (200, application/pdf)")
     void document_genere_regionale_ok() throws Exception {
         int id = seedLettreSoumiseLoc(715, "TMS");
         mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
@@ -4341,41 +4336,49 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Document : en-tête républicain présent (REPOBLIKAN'I MADAGASIKARA)")
-    void document_genere_entete_present() throws Exception {
-        assertTrue(signerEtLireDocument(716, tokenCc).contains("REPOBLIKAN'I MADAGASIKARA"),
-                "en-tête républicain présent dans le PDF");
+    @DisplayName("Document : texte EXACT du modèle (pas une paraphrase)")
+    void document_texte_identique_modele() throws Exception {
+        String texte = texteDuPdf(signerEtPdf(740, "ANT", tokenCc));
+        assertTrue(texte.contains("Commission Nationale des Marchés renvoie")
+                && texte.contains("une séance ultérieure en demandant au service de"),
+                "phrase exacte du modèle présente dans le PDF");
     }
 
     @Test
-    @DisplayName("Document : objet présent (Objet : lettre de renvoi)")
-    void document_genere_objet_present() throws Exception {
-        assertTrue(signerEtLireDocument(717, tokenCc).contains("Objet : lettre de renvoi"),
-                "objet présent dans le PDF");
+    @DisplayName("Document : le PDF contient l'image de l'emblème")
+    void document_contient_image() throws Exception {
+        assertTrue(contientImage(signerEtPdf(741, "ANT", tokenCc)), "le PDF contient au moins un objet image");
+    }
+
+    @Test
+    @DisplayName("Document : signataire = nom réel seul (pas de texte parasite)")
+    void document_signataire_sans_texte_parasite() throws Exception {
+        String texte = texteDuPdf(signerEtPdf(742, "ANT", tokenCc));
+        assertFalse(texte.contains("Le Président ou le Chef de Commission,"),
+                "pas de libellé de rôle parasite codé en dur");
+        assertTrue(texte.contains("NomCTRCC1"), "nom réel du signataire présent");
     }
 
     @Test
     @DisplayName("Document : aucun placeholder résiduel <...>")
-    void document_genere_aucun_placeholder() throws Exception {
-        String contenu = signerEtLireDocument(718, tokenCc);
-        assertFalse(contenu.contains("DATE_LETTRE") || contenu.contains("NOM_ENTITE_CONTRACT")
-                || contenu.contains("REFERENCE DOSSIER") || contenu.contains("DATE EXAMEN")
-                || contenu.contains("CORPS DE LA LETTRE") || contenu.contains("NOM ET PRENOMS"),
-                "aucun placeholder littéral ne subsiste dans le PDF");
+    void document_aucun_placeholder_residuel() throws Exception {
+        String texte = texteDuPdf(signerEtPdf(743, "ANT", tokenCc));
+        assertFalse(java.util.regex.Pattern.compile("<[A-Z _]+>").matcher(texte).find(),
+                "aucun placeholder <...> ne subsiste dans le texte du PDF");
     }
 
     @Test
-    @DisplayName("Document : nom réel du signataire présent (pas un texte générique)")
-    void document_genere_signataire_reel() throws Exception {
-        // nomComplet de CTRCC1 = « Prenoms NomCTRCC1 » (helper controleur).
-        assertTrue(signerEtLireDocument(719, tokenCc).contains("NomCTRCC1"),
-                "nom réel du signataire présent dans le PDF");
+    @DisplayName("Document : en-tête républicain présent")
+    void document_genere_entete_present() throws Exception {
+        String texte = texteDuPdf(signerEtPdf(744, "ANT", tokenCc));
+        assertTrue(texte.contains("REPOBLIKAN") && texte.contains("MADAGASIKARA"),
+                "en-tête républicain présent dans le PDF");
     }
 
     @Test
     @DisplayName("Document : corps de la lettre saisi présent")
     void document_genere_corps_lettre_present() throws Exception {
-        assertTrue(signerEtLireDocument(720, tokenCc).contains("Corps de la lettre de renvoi"),
+        assertTrue(texteDuPdf(signerEtPdf(745, "ANT", tokenCc)).contains("Corps de la lettre de renvoi"),
                 "texte du corps présent dans le PDF");
     }
 
@@ -4395,37 +4398,48 @@ class CnmWorkflowIntegrationTest {
     @Test
     @DisplayName("Document régional : en-tête contient la localité du dossier (TOAMASINA)")
     void document_genere_localite_dossier_ok() throws Exception {
-        assertTrue(signerEtLireDocumentRegional(731).contains("COMMISSION REGIONALE DES MARCHES TOAMASINA"),
-                "localité du dossier dans l'en-tête régional");
-    }
-
-    @Test
-    @DisplayName("Document régional : signataire « Le Chef de la Commission Régionale des Marchés »")
-    void document_genere_signataire_regional_ok() throws Exception {
-        assertTrue(signerEtLireDocumentRegional(732).contains("Le Chef de la Commission Régionale des Marchés"),
-                "libellé signataire régional présent");
-    }
-
-    /** Crée une lettre régionale (TMS), la fait signer (CC) puis renvoie le contenu du PDF. */
-    private String signerEtLireDocumentRegional(int idDossier) throws Exception {
-        int id = seedLettreSoumiseLoc(idDossier, "TMS");
+        int id = seedLettreSoumiseLoc(731, "TMS");
         mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
                 .andExpect(status().isOk());
         byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", tokenCc))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsByteArray();
-        return new String(pdf, StandardCharsets.ISO_8859_1);
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertTrue(texteDuPdf(pdf).contains("COMMISSION REGIONALE DES MARCHES TOAMASINA"),
+                "localité du dossier injectée dans l'en-tête régional");
     }
 
-    /** Crée une lettre ANT, la fait signer puis renvoie le contenu du PDF (ISO-8859-1, non compressé). */
-    private String signerEtLireDocument(int idDossier, String token) throws Exception {
-        int id = seedLettreSoumiseLoc(idDossier, "ANT");
+    /** Signe une lettre (dossier localisé) et renvoie le PDF téléchargé. */
+    private byte[] signerEtPdf(int idDossier, String localite, String token) throws Exception {
+        int id = seedLettreSoumiseLoc(idDossier, localite);
         mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", token))
                 .andExpect(status().isOk());
-        byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", token))
+        return mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", token))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
-        return new String(pdf, StandardCharsets.ISO_8859_1);
+    }
+
+    /** Texte extrait du PDF (PDFBox), espaces normalisés (FOP coupe les lignes au fil de la mise en page). */
+    private String texteDuPdf(byte[] pdf) throws Exception {
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            return new org.apache.pdfbox.text.PDFTextStripper().getText(doc).replaceAll("\\s+", " ");
+        }
+    }
+
+    /** Vrai si le PDF contient au moins un objet image (PDFBox). */
+    private boolean contientImage(byte[] pdf) throws Exception {
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            for (org.apache.pdfbox.pdmodel.PDPage page : doc.getPages()) {
+                org.apache.pdfbox.pdmodel.PDResources res = page.getResources();
+                if (res == null) {
+                    continue;
+                }
+                for (org.apache.pdfbox.cos.COSName name : res.getXObjectNames()) {
+                    if (res.getXObject(name) instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
     }
 
     /** Crée un dossier localisé (entité 1) + une lettre SOUMIS (examen 1) ; renvoie la PK de la lettre. */
