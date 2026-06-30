@@ -4252,6 +4252,26 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Document PV — titre « COMMISSION CENTRALE » sans « /REGIONALE »")
+    void document_pv_titre_sans_regionale() throws Exception {
+        String texte = texteDuPdf(pvDocumentGenerator.genererPdf(
+                ctxPv("Jean PRESIDENT", null, troisObservations())));
+        assertTrue(texte.contains("PROCES-VERBAL DE LA COMMISSION CENTRALE"),
+                "le titre porte « COMMISSION CENTRALE »");
+        assertFalse(texte.contains("REGIONALE"), "« /REGIONALE » est retiré du titre");
+    }
+
+    @Test
+    @DisplayName("Document PV — phrase d'avis « Commission Centrale » sans « /Régionale »")
+    void document_pv_avis_sans_regionale() throws Exception {
+        String texte = texteDuPdf(pvDocumentGenerator.genererPdf(
+                ctxPv("Jean PRESIDENT", null, troisObservations())));
+        assertTrue(texte.contains("La Commission Centrale des Marchés émet un AVIS FAVORABLE"),
+                "la phrase d'avis porte « Commission Centrale »");
+        assertFalse(texte.contains("Régionale"), "« /Régionale » est retiré de la phrase d'avis");
+    }
+
+    @Test
     @DisplayName("Téléchargement PV — GET /document renvoie le PDF stocké (FSX)")
     void pv_document_telechargement_ok() throws Exception {
         byte[] contenu = "%PDF-1.5 contenu du PV".getBytes(StandardCharsets.US_ASCII);
