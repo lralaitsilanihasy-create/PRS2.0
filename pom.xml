@@ -57,16 +57,16 @@
 			<artifactId>poi-ooxml</artifactId>
 			<version>5.2.5</version>
 		</dependency>
-		<!-- Conversion docx -> PDF 100% Java (sans LibreOffice) : docx4j + Apache FOP. -->
+		<!-- Conversion docx -> PDF fidele au modele Word via MS Word (documents4j local). -->
 		<dependency>
-			<groupId>org.docx4j</groupId>
-			<artifactId>docx4j-export-fo</artifactId>
-			<version>11.5.0</version>
+			<groupId>com.documents4j</groupId>
+			<artifactId>documents4j-local</artifactId>
+			<version>1.1.13</version>
 		</dependency>
 		<dependency>
-			<groupId>org.docx4j</groupId>
-			<artifactId>docx4j-JAXB-ReferenceImpl</artifactId>
-			<version>11.5.0</version>
+			<groupId>com.documents4j</groupId>
+			<artifactId>documents4j-transformer-msoffice-word</artifactId>
+			<version>1.1.13</version>
 		</dependency>
 		<!-- Extraction texte/images du PDF pour les tests de generation. -->
 		<dependency>

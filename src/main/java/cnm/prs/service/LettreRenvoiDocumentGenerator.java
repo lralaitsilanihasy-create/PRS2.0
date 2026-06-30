@@ -14,24 +14,33 @@ import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
-import org.docx4j.Docx4J;
-import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.springframework.stereotype.Component;
 
+import com.documents4j.api.DocumentType;
+import com.documents4j.api.IConverter;
+import com.documents4j.job.LocalConverter;
+
 import cnm.prs.exception.BusinessRuleException;
+import jakarta.annotation.PreDestroy;
 
 /**
  * Génère le PDF d'une lettre de renvoi <strong>à partir du modèle Word fourni</strong> :
  * copie du {@code .docx} ({@code resources/templates/LR_CENTRALE.docx} ou {@code LR_REGIONALE.docx}),
  * remplacement des placeholders <strong>au niveau du paragraphe</strong> (gère les placeholders
- * scindés sur plusieurs runs), puis conversion en PDF 100 % Java (docx4j + Apache FOP, sans LibreOffice).
- * La mise en forme et l'emblème du modèle sont conservés.
+ * scindés sur plusieurs runs), puis conversion en PDF <strong>via Microsoft Word</strong>
+ * (documents4j local) pour un rendu fidèle au modèle. La mise en forme et l'emblème sont conservés.
+ *
+ * <p>Pré-requis machine : Microsoft Word installé (automation COM). Le convertisseur est
+ * initialisé à la première utilisation et fermé à l'arrêt de l'application.</p>
  */
 @Component
 public class LettreRenvoiDocumentGenerator {
 
     private static final String MODELE_CENTRALE = "/templates/LR_CENTRALE.docx";
     private static final String MODELE_REGIONALE = "/templates/LR_REGIONALE.docx";
+
+    /** Convertisseur Word, initialisé paresseusement (démarre MS Word) et réutilisé. */
+    private volatile IConverter convertisseur;
 
     /**
      * @param centrale      {@code true} → modèle central (ANT) ; {@code false} → modèle régional
@@ -50,14 +59,40 @@ public class LettreRenvoiDocumentGenerator {
             doc.write(docxOut);
             doc.close();
 
-            WordprocessingMLPackage pkg = WordprocessingMLPackage.load(new ByteArrayInputStream(docxOut.toByteArray()));
             ByteArrayOutputStream pdfOut = new ByteArrayOutputStream();
-            Docx4J.toPDF(pkg, pdfOut);
+            convertisseur().convert(new ByteArrayInputStream(docxOut.toByteArray()))
+                    .as(DocumentType.DOCX)
+                    .to(pdfOut)
+                    .as(DocumentType.PDF)
+                    .execute();
             return pdfOut.toByteArray();
         } catch (BusinessRuleException e) {
             throw e;
         } catch (Exception e) {
             throw new BusinessRuleException("Génération du document de la lettre impossible : " + e.getMessage());
+        }
+    }
+
+    /** Convertisseur Word partagé, créé à la première demande (initialisation paresseuse, thread-safe). */
+    private IConverter convertisseur() {
+        IConverter c = convertisseur;
+        if (c == null) {
+            synchronized (this) {
+                c = convertisseur;
+                if (c == null) {
+                    c = LocalConverter.builder().build();
+                    convertisseur = c;
+                }
+            }
+        }
+        return c;
+    }
+
+    @PreDestroy
+    void fermerConvertisseur() {
+        IConverter c = convertisseur;
+        if (c != null) {
+            c.shutDown();
         }
     }
 
