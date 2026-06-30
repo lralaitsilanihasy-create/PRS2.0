@@ -64,10 +64,15 @@ public class LettreRenvoi {
     @Column(name = "IM_SIGNATAIRE", length = 7)
     private String imSignataire;
 
-    /** Document PDF de la lettre signée, généré à la signature (bytea ; H2 : grand varbinary). */
+    /** Document PDF de la lettre signée (bytea ; H2 : grand varbinary). Conservé pour compatibilité ;
+     *  le stockage de référence est désormais le fichier ({@link #cheminDocument}). */
     @Column(name = "DOCUMENT_PDF", length = 1_000_000)
     @JsonIgnore
     private byte[] documentPdf;
+
+    /** Chemin du PDF stocké sur le système de fichiers (FSX, répertoire LR/), posé à la signature. */
+    @Column(name = "CHEMIN_DOCUMENT", length = 500)
+    private String cheminDocument;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_EXAMEN", insertable = false, updatable = false)

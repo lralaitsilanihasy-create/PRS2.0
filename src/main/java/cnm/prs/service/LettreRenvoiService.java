@@ -1,12 +1,16 @@
 package cnm.prs.service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +42,7 @@ import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.ExamenRepository;
 import cnm.prs.entity.EntiteContract;
 import cnm.prs.repository.EntiteContractRepository;
+import cnm.prs.repository.LocaliteRepository;
 import cnm.prs.repository.LettreRenvoiLueRepository;
 import cnm.prs.repository.LettreRenvoiRepository;
 import cnm.prs.repository.PpmRepository;
@@ -64,12 +69,17 @@ public class LettreRenvoiService {
     private final NotificationService notificationService;
     private final LettreRenvoiLueRepository lueRepository;
     private final EntiteContractRepository entiteContractRepository;
+    private final LocaliteRepository localiteRepository;
+
+    @Value("${storage.lettre-renvoi.path:${java.io.tmpdir}/prs-fsx/LR}")
+    private String cheminStockageLr;
 
     public LettreRenvoiService(LettreRenvoiRepository repository, ExamenRepository examenRepository,
             DossierRepository dossierRepository, PpmRepository ppmRepository, PrmpRepository prmpRepository,
             ControleurDirectory controleurDirectory, ControleurRepository controleurRepository,
             NotificationService notificationService, LettreRenvoiLueRepository lueRepository,
-            EntiteContractRepository entiteContractRepository) {
+            EntiteContractRepository entiteContractRepository, LocaliteRepository localiteRepository) {
+        this.localiteRepository = localiteRepository;
         this.entiteContractRepository = entiteContractRepository;
         this.repository = repository;
         this.examenRepository = examenRepository;
@@ -250,17 +260,37 @@ public class LettreRenvoiService {
         }
         String im = CurrentUser.ref().filter(s -> !s.isBlank())
                 .orElseThrow(() -> new AccessDeniedException("Signataire non identifié."));
+        String localiteLibelle = localite == null ? "" : localiteRepository.findById(localite)
+                .map(l -> l.getLibelleLocalite() == null ? "" : l.getLibelleLocalite()).orElse("");
         lettre.setImSignataire(im);
         lettre.setStatut(StatutLettreRenvoi.SIGNE.name());
-        lettre.setDocumentPdf(genererPdf(lettre, dossier, nomComplet(im), centrale));
+        byte[] pdf = genererPdf(lettre, dossier, nomComplet(im), centrale, localiteLibelle);
+        lettre.setCheminDocument(stockerSurFsx(lettre, pdf));   // PDF écrit sur le FSX (répertoire LR/)
         LettreRenvoi saved = repository.save(lettre);
         notifierSignature(saved);
         return peuplerNomSignataire(LettreRenvoiMapper.toDto(saved));
     }
 
+    /** Écrit le PDF dans le répertoire FSX LR/ sous {@code {refLettre nettoyée}.pdf} ; renvoie le chemin. */
+    private String stockerSurFsx(LettreRenvoi lettre, byte[] pdf) {
+        String base = lettre.getRefLettre() != null && !lettre.getRefLettre().isBlank()
+                ? lettre.getRefLettre() : ("lettre-" + lettre.getIdLettre());
+        String nomFichier = base.replace('/', '_').replace('\\', '_') + ".pdf";
+        try {
+            Path dir = Path.of(cheminStockageLr);
+            Files.createDirectories(dir);
+            Path fichier = dir.resolve(nomFichier);
+            Files.write(fichier, pdf);
+            return fichier.toString();
+        } catch (IOException e) {
+            throw new BusinessRuleException("Stockage du document de la lettre impossible : " + e.getMessage());
+        }
+    }
+
     /**
-     * Document PDF de la lettre signée (téléchargement). Accès : périmètre de localité habituel
-     * ou PRMP propriétaire (lettre {@code SIGNE}). 404 si la lettre n'a pas (encore) de document.
+     * Document PDF de la lettre signée (téléchargement). Accès : périmètre de localité habituel ou PRMP
+     * propriétaire (lettre {@code SIGNE}). Lit le fichier sur le FSX ({@code CHEMIN_DOCUMENT}), avec repli
+     * sur le contenu en base ({@code DOCUMENT_PDF}). 404 si la lettre n'a pas de document.
      */
     @Transactional(readOnly = true)
     public byte[] telechargerDocument(Integer id) {
@@ -268,10 +298,17 @@ public class LettreRenvoiService {
         if (!estPrmpProprietaireSignee(lettre)) {
             Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
         }
-        if (lettre.getDocumentPdf() == null || lettre.getDocumentPdf().length == 0) {
-            throw new ResourceNotFoundException("Aucun document pour la lettre : " + id);
+        if (lettre.getCheminDocument() != null && !lettre.getCheminDocument().isBlank()) {
+            try {
+                return Files.readAllBytes(Path.of(lettre.getCheminDocument()));
+            } catch (IOException e) {
+                throw new ResourceNotFoundException("Document introuvable sur le FSX pour la lettre : " + id);
+            }
         }
-        return lettre.getDocumentPdf();
+        if (lettre.getDocumentPdf() != null && lettre.getDocumentPdf().length > 0) {
+            return lettre.getDocumentPdf();   // repli compatibilité (lettres signées avant le stockage FSX)
+        }
+        throw new ResourceNotFoundException("Aucun document pour la lettre : " + id);
     }
 
     /**
@@ -281,7 +318,8 @@ public class LettreRenvoiService {
      * Génération programmatique OpenPDF (les modèles {@code .docx} et une chaîne docx→PDF ne sont pas
      * disponibles dans l'environnement). Tolère les champs absents.
      */
-    private byte[] genererPdf(LettreRenvoi lettre, Dossier dossier, String nomSignataire, boolean centrale) {
+    private byte[] genererPdf(LettreRenvoi lettre, Dossier dossier, String nomSignataire, boolean centrale,
+            String localiteLibelle) {
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.FRENCH);
         String dateLettre = lettre.getDateLettre() == null ? "" : lettre.getDateLettre().format(fmt);
         String dateExamen = lettre.getDateExamen() == null ? "" : lettre.getDateExamen().format(fmt);
@@ -291,8 +329,12 @@ public class LettreRenvoiService {
                         .map(EntiteContract::getLibelleEntite).orElse("");
         String corps = lettre.getCorpsLettre() == null ? "" : lettre.getCorpsLettre();
         String nom = nomSignataire == null ? "" : nomSignataire;
-        String typeCommission = centrale ? "COMMISSION CENTRALE DES MARCHES" : "COMMISSION REGIONALE DES MARCHES";
-        String labelSignataire = centrale ? "Le Président ou le Chef de Commission," : "Le Chef de Commission,";
+        String loc = localiteLibelle == null ? "" : localiteLibelle.toUpperCase(Locale.FRENCH);
+        // Type de commission : centrale (ANT) ; régionale → suffixe localité du dossier (placeholder <LOCALITE DOSSIER>).
+        String typeCommission = centrale ? "COMMISSION CENTRALE DES MARCHES"
+                : ("COMMISSION REGIONALE DES MARCHES " + loc).trim();
+        String labelSignataire = centrale ? "Le Président ou le Chef de Commission,"
+                : "Le Chef de la Commission Régionale des Marchés";
 
         Font enteteGras = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13);
         Font devise = FontFactory.getFont(FontFactory.HELVETICA, 10, Font.ITALIC);

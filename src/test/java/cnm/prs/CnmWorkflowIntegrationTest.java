@@ -4379,6 +4379,44 @@ class CnmWorkflowIntegrationTest {
                 "texte du corps présent dans le PDF");
     }
 
+    @Test
+    @DisplayName("Document : PDF stocké sur le FSX (répertoire LR/) à la signature")
+    void document_genere_stocke_fsx_ok() throws Exception {
+        int id = seedLettreSoumiseLoc(730, "ANT");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        String chemin = lettreRenvoiRepository.findById(id).orElseThrow().getCheminDocument();
+        assertTrue(chemin != null && java.nio.file.Files.exists(java.nio.file.Path.of(chemin)),
+                "fichier PDF présent sur le FSX : " + chemin);
+        assertTrue(chemin.endsWith("00007_PPM_CRM-ANT_LR_2026.pdf"),
+                "nom de fichier dérivé de refLettre avec '/' remplacés par '_'");
+    }
+
+    @Test
+    @DisplayName("Document régional : en-tête contient la localité du dossier (TOAMASINA)")
+    void document_genere_localite_dossier_ok() throws Exception {
+        assertTrue(signerEtLireDocumentRegional(731).contains("COMMISSION REGIONALE DES MARCHES TOAMASINA"),
+                "localité du dossier dans l'en-tête régional");
+    }
+
+    @Test
+    @DisplayName("Document régional : signataire « Le Chef de la Commission Régionale des Marchés »")
+    void document_genere_signataire_regional_ok() throws Exception {
+        assertTrue(signerEtLireDocumentRegional(732).contains("Le Chef de la Commission Régionale des Marchés"),
+                "libellé signataire régional présent");
+    }
+
+    /** Crée une lettre régionale (TMS), la fait signer (CC) puis renvoie le contenu du PDF. */
+    private String signerEtLireDocumentRegional(int idDossier) throws Exception {
+        int id = seedLettreSoumiseLoc(idDossier, "TMS");
+        mvc.perform(post("/api/lettre-renvois/" + id + "/signer").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        byte[] pdf = mvc.perform(get("/api/lettre-renvois/" + id + "/document").header("Authorization", tokenCc))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        return new String(pdf, StandardCharsets.ISO_8859_1);
+    }
+
     /** Crée une lettre ANT, la fait signer puis renvoie le contenu du PDF (ISO-8859-1, non compressé). */
     private String signerEtLireDocument(int idDossier, String token) throws Exception {
         int id = seedLettreSoumiseLoc(idDossier, "ANT");
@@ -4399,6 +4437,7 @@ class CnmWorkflowIntegrationTest {
         LettreRenvoi l = new LettreRenvoi();
         l.setIdExamen(1);
         l.setIdDossier(idDossier);
+        l.setRefLettre("00007/PPM/CRM-" + localite + "/LR/2026");   // contient des '/' (à nettoyer dans le nom de fichier)
         l.setObjetLettre("Renvoi");
         l.setCorpsLettre("Corps de la lettre de renvoi.");
         l.setDateLettre(LocalDate.of(2026, 6, 20));
