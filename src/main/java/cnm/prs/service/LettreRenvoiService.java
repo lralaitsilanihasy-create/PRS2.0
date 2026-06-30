@@ -186,7 +186,6 @@ public class LettreRenvoiService {
         LettreRenvoi lettre = new LettreRenvoi();
         lettre.setIdExamen(idExamen);
         lettre.setIdDossier(idDossier);
-        lettre.setObjetLettre(dto.getObjetLettre());
         lettre.setCorpsLettre(dto.getCorpsLettre());
         lettre.setRefLettre(genererRefLettre(idExamen));
         lettre.setDateExamen(examen.getDateExamen());
@@ -206,13 +205,12 @@ public class LettreRenvoiService {
         return refe == null ? null : refe.replaceFirst("/(\\d{4})$", "/LR/$1");
     }
 
-    /** Édition du brouillon (objet + corps) par le Membre. */
+    /** Édition du brouillon (corps) par le Membre. L'objet est fixe (« lettre de renvoi »). */
     public LettreRenvoiDto update(Integer id, LettreRenvoiDto dto) {
         LettreRenvoi lettre = exigerExistante(id);
         if (!StatutLettreRenvoi.BROUILLON.name().equals(lettre.getStatut())) {
             throw new BusinessRuleException("Lettre non éditable : statut « " + lettre.getStatut() + " » (attendu BROUILLON).");
         }
-        lettre.setObjetLettre(dto.getObjetLettre());
         lettre.setCorpsLettre(dto.getCorpsLettre());
         return LettreRenvoiMapper.toDto(repository.save(lettre));
     }

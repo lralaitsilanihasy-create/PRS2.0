@@ -4114,8 +4114,9 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Lettre de renvoi — création pendant l'examen (Membre) → 201 BROUILLON")
+    @DisplayName("Lettre de renvoi — création pendant l'examen (Membre, objetLettre ignoré) → 201 BROUILLON")
     void lettre_creation_pendant_examen_ok() throws Exception {
+        // objetLettre encore envoyé par un ancien frontend : ignoré (compat rétroactive), pas d'erreur.
         mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idExamen\":1,\"objetLettre\":\"Renvoi du dossier\"}"))
@@ -4123,7 +4124,29 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$.idExamen").value(1))
                 .andExpect(jsonPath("$.idDossier").value(1))
                 .andExpect(jsonPath("$.statut").value("BROUILLON"))
-                .andExpect(jsonPath("$.objetLettre").value("Renvoi du dossier"));
+                .andExpect(jsonPath("$.objetLettre").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Lettre de renvoi — création sans objetLettre → 201 (objet désormais fixe)")
+    void lettre_creation_sans_objet_ok() throws Exception {
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idExamen\":1}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.idExamen").value(1))
+                .andExpect(jsonPath("$.statut").value("BROUILLON"))
+                .andExpect(jsonPath("$.objetLettre").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Lettre de renvoi — le DTO ne contient plus objetLettre")
+    void lettre_dto_sans_objet() throws Exception {
+        int id = seedLettreSoumise();
+        mvc.perform(get("/api/lettre-renvois/" + id).header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.idLettre").value(id))
+                .andExpect(jsonPath("$.objetLettre").doesNotExist());
     }
 
     @Test

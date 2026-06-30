@@ -20,7 +20,6 @@ public final class LettreRenvoiMapper {
         dto.setIdExamen(entity.getIdExamen());
         dto.setIdDossier(entity.getIdDossier());
         dto.setRefLettre(entity.getRefLettre());
-        dto.setObjetLettre(entity.getObjetLettre());
         dto.setCorpsLettre(entity.getCorpsLettre());
         dto.setDateExamen(entity.getDateExamen());
         dto.setDateLettre(entity.getDateLettre());
