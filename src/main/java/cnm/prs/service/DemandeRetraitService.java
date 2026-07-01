@@ -13,6 +13,7 @@ import cnm.prs.entity.Controleur;
 import cnm.prs.entity.DemandeRetrait;
 import cnm.prs.entity.DemandeRetraitVue;
 import cnm.prs.entity.Dossier;
+import cnm.prs.entity.Ppm;
 import cnm.prs.entity.Prmp;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
@@ -24,6 +25,7 @@ import cnm.prs.mapper.DemandeRetraitMapper;
 import cnm.prs.repository.DemandeRetraitRepository;
 import cnm.prs.repository.DemandeRetraitVueRepository;
 import cnm.prs.repository.DossierRepository;
+import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
 import cnm.prs.security.CurrentUser;
 import cnm.prs.security.Visibilite;
@@ -38,16 +40,18 @@ public class DemandeRetraitService {
     private final DemandeRetraitRepository repository;
     private final DossierRepository dossierRepository;
     private final PrmpRepository prmpRepository;
+    private final PpmRepository ppmRepository;
     private final NotificationService notificationService;
     private final ControleurDirectory controleurDirectory;
     private final DemandeRetraitVueRepository vueRepository;
 
     public DemandeRetraitService(DemandeRetraitRepository repository, DossierRepository dossierRepository,
-            PrmpRepository prmpRepository, NotificationService notificationService,
+            PrmpRepository prmpRepository, PpmRepository ppmRepository, NotificationService notificationService,
             ControleurDirectory controleurDirectory, DemandeRetraitVueRepository vueRepository) {
         this.repository = repository;
         this.dossierRepository = dossierRepository;
         this.prmpRepository = prmpRepository;
+        this.ppmRepository = ppmRepository;
         this.notificationService = notificationService;
         this.controleurDirectory = controleurDirectory;
         this.vueRepository = vueRepository;
@@ -171,6 +175,13 @@ public class DemandeRetraitService {
         if (demande.getIdDossier() != null) {
             dossierRepository.findById(demande.getIdDossier()).ifPresent(d -> {
                 d.setStatut(StatutDossier.BROUILLON.name());
+                // ⚠️ Règle ajoutée — restaure la référence INITIALE du dossier (celle générée à la création,
+                // stockée dans t_ppm.REFERENCE, ex. « 00003/DGB/PPM/2026 ») dans refeDossier, invalidant ainsi
+                // la référence de réception (ex. « 00002/PPM/CRM-ANT/2026 »). Le dossier redevient un brouillon
+                // entièrement modifiable affichant sa référence d'origine. (Pas de PPM → refeDossier remis à null.)
+                String refInitiale = ppmRepository.findByIdDossier(d.getIdDossier()).stream()
+                        .findFirst().map(Ppm::getReference).orElse(null);
+                d.setRefeDossier(refInitiale);
                 dossierRepository.save(d);
             });
         }

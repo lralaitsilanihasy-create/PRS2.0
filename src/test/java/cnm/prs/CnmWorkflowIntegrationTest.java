@@ -2191,18 +2191,50 @@ class CnmWorkflowIntegrationTest {
     @DisplayName("Décision retrait — CC de la localité accepte → ACCEPTEE, dossier BROUILLON, notif RETRAIT_ACCEPTE")
     void decision_accepter_parCc_dossierBrouillon() throws Exception {
         Dossier d = dossier(130, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        d.setRefeDossier("00002/PPM/CRM-ANT/2026");   // réf. posée à la réception, à invalider au retrait
         dossierRepository.save(d);
+        Ppm p = ppm(130, 130, "PRMP001"); p.setReference("00003/DGB/PPM/2026"); ppmRepository.save(p);  // réf initiale
         int drId = demandeRetraitRepository.save(demandeRetrait(0, 130, "PRMP001")).getIdDemandeRetrait();
 
         mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenCc))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statut").value("ACCEPTEE"))
                 .andExpect(jsonPath("$.imCtrlCc").value("CTRCC1"));
-        // Le dossier repasse en BROUILLON (vérifié via le repository : BROUILLON est masqué de l'API).
-        org.junit.jupiter.api.Assertions.assertEquals("BROUILLON",
-                dossierRepository.findById(130).orElseThrow().getStatut());
+        // Le dossier repasse en BROUILLON avec sa RÉFÉRENCE INITIALE restaurée (celle du PPM), la réf de
+        // réception étant invalidée.
+        Dossier apres = dossierRepository.findById(130).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals("BROUILLON", apres.getStatut());
+        org.junit.jupiter.api.Assertions.assertEquals("00003/DGB/PPM/2026", apres.getRefeDossier());
         mvc.perform(get("/api/notifications").header("Authorization", tokenAdmin))
                 .andExpect(jsonPath("$[?(@.typeNotif=='RETRAIT_ACCEPTE')]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Retrait accepté — le dossier BROUILLON reste entièrement modifiable (édition PPM acceptée)")
+    void retrait_accepte_dossier_modifiable() throws Exception {
+        natureRepository.save(new Nature(1, "Travaux", null));
+        situationRepository.save(new Situation(1, "Situation normale", null));
+        Dossier d = dossier(135, "SOUMIS");
+        d.setIdTypeDossier("PPM");
+        d.setIdPrmp("PRMP001");
+        d.setIdLocalite("ANT");
+        d.setRefeDossier("00006/PPM/CRM-ANT/2026");   // réf de réception (à invalider)
+        dossierRepository.save(d);
+        Ppm p135 = ppm(135, 135, "PRMP001"); p135.setReference("00005/DGB/PPM/2026"); ppmRepository.save(p135);
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 135, "PRMP001")).getIdDemandeRetrait();
+        mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        // Réf. initiale (PPM) restaurée dès le retrait.
+        org.junit.jupiter.api.Assertions.assertEquals("00005/DGB/PPM/2026",
+                dossierRepository.findById(135).orElseThrow().getRefeDossier());
+        // Dossier BROUILLON issu du retrait → édition PPM (en-tête + ligne de marché) acceptée (200).
+        String edition = "{\"exercice\":2027,\"signataire\":\"Maj retrait\",\"dateSignature\":\"2026-02-01\","
+                + "\"reference\":\"PPM-135-v2\",\"marches\":[{\"montEstim\":500000000,\"idNature\":1,"
+                + "\"idSituation\":1,\"statut\":\"PREVU\"}]}";
+        mvc.perform(put("/api/saisies/ppm/135").header("Authorization", tokenPrmp)
+                .contentType(MediaType.APPLICATION_JSON).content(edition))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("BROUILLON"));
     }
 
     @Test
