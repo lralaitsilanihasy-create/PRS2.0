@@ -62,6 +62,7 @@ public class LettreRenvoiService {
     private final EntiteContractRepository entiteContractRepository;
     private final LocaliteRepository localiteRepository;
     private final LettreRenvoiDocumentGenerator documentGenerator;
+    private final ReferenceService referenceService;
 
     @Value("${storage.lettre-renvoi.path:${java.io.tmpdir}/prs-fsx/LR}")
     private String cheminStockageLr;
@@ -71,7 +72,7 @@ public class LettreRenvoiService {
             ControleurDirectory controleurDirectory, ControleurRepository controleurRepository,
             NotificationService notificationService, LettreRenvoiLueRepository lueRepository,
             EntiteContractRepository entiteContractRepository, LocaliteRepository localiteRepository,
-            LettreRenvoiDocumentGenerator documentGenerator) {
+            LettreRenvoiDocumentGenerator documentGenerator, ReferenceService referenceService) {
         this.documentGenerator = documentGenerator;
         this.localiteRepository = localiteRepository;
         this.entiteContractRepository = entiteContractRepository;
@@ -84,6 +85,7 @@ public class LettreRenvoiService {
         this.controleurRepository = controleurRepository;
         this.notificationService = notificationService;
         this.lueRepository = lueRepository;
+        this.referenceService = referenceService;
     }
 
     /**
@@ -195,14 +197,21 @@ public class LettreRenvoiService {
     }
 
     /**
-     * Référence de la lettre dérivée de {@code refeDossier} (même séquence/format que le dossier et le PV) :
-     * insère {@code /LR/} avant l'année ({@code .../YYYY} → {@code .../LR/YYYY}, ex. {@code 00007/PPM/CRM-ANT/LR/2026}).
-     * {@code null} si refeDossier absent ou non structuré (comportement identique à {@code refePv}).
+     * Référence de la lettre : reprend le <strong>type</strong>, la <strong>localité</strong> et l'<strong>année</strong>
+     * du dossier ({@code refeDossier} = {@code <seqDossier>/<type>/<codeLocalite>/<année>}), mais avec un
+     * <strong>numéro de séquence dédié et GLOBAL aux lettres de renvoi</strong> (par année, indépendant du dossier,
+     * de l'entité ou de la localité) → {@code <seqLettre>/<type>/<codeLocalite>/LR/<année>}
+     * (ex. {@code 00001/PPM/CRM-ANT/LR/2026}). {@code null} si refeDossier absent ou non structuré.
      */
     private String genererRefLettre(Integer idExamen) {
         String refe = examenRepository.findRefeDossierByExamen(idExamen)
-                .filter(s -> s != null && s.matches(".*/\\d{4}$")).orElse(null);
-        return refe == null ? null : refe.replaceFirst("/(\\d{4})$", "/LR/$1");
+                .filter(s -> s != null && s.matches("\\d+/[^/]+/[^/]+/\\d{4}")).orElse(null);
+        if (refe == null) {
+            return null;
+        }
+        String[] p = refe.split("/");          // [seqDossier, type, codeLocalite, année]
+        int annee = Integer.parseInt(p[3]);
+        return String.format("%05d/%s/%s/LR/%d", referenceService.sequenceLettreRenvoi(annee), p[1], p[2], annee);
     }
 
     /** Édition du brouillon (corps) par le Membre. L'objet est fixe (« lettre de renvoi »). */

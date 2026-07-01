@@ -17,7 +17,19 @@ public interface DispatchRepository extends JpaRepository<Dispatch, Integer> {
     @Query("select d.imCtrlMembre from Dispatch d where d.idDispatch = :id")
     Optional<String> findImCtrlMembreById(@Param("id") Integer id);
 
-    @Query("select d from Dispatch d where d.reception.ctrlRecept.idLocalite = :loc")
+    /**
+     * Dispatchs visibles à l'écran « Dispatch des dossiers » : on <strong>exclut</strong> les dossiers
+     * redevenus <strong>BROUILLON</strong> (ex. après acceptation d'une demande de retrait, qui laisse un
+     * dispatch orphelin) ou <strong>RETIRE</strong> — ils ne doivent jamais y apparaître. Les états
+     * d'avancement normaux (PRET_DISPATCH → DISPATCHE → EXAMINE → … → CLOTURE) restent visibles.
+     */
+    @Query("select d from Dispatch d, Dossier dos "
+            + "where dos.idDossier = d.reception.idDossier and dos.statut not in ('BROUILLON', 'RETIRE')")
+    List<Dispatch> findVisibles();
+
+    @Query("select d from Dispatch d, Dossier dos "
+            + "where dos.idDossier = d.reception.idDossier and d.reception.ctrlRecept.idLocalite = :loc "
+            + "and dos.statut not in ('BROUILLON', 'RETIRE')")
     List<Dispatch> findVisiblesParLocalite(@Param("loc") String loc);
 
     @Query("select (count(d) > 0) from Dispatch d where d.idDispatch = :id and d.reception.ctrlRecept.idLocalite = :loc")

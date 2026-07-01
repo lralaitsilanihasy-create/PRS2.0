@@ -148,6 +148,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private SituationRepository situationRepository;
     @Autowired private ModePassationRepository modePassationRepository;
     @Autowired private cnm.prs.service.PvDocumentGenerator pvDocumentGenerator;
+    @Autowired private cnm.prs.service.ReferenceService referenceService;
     @Autowired private SeuilRepository seuilRepository;
     @Autowired private ReglePassationRepository reglePassationRepository;
     @Autowired private TypeDossierRepository typeDossierRepository;
@@ -1460,6 +1461,87 @@ class CnmWorkflowIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalDate.of(2026, 6, 30), dSimple.toLocalDate());
         org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalDateTime.of(2026, 6, 30, 14, 30),
                 cnm.prs.mapper.DispatchMapper.toLocalDateTime("2026-06-30 14:30"));
+    }
+
+    @Test
+    @DisplayName("Dispatch — la liste exclut les dossiers BROUILLON (dispatch orphelin après retrait accepté)")
+    void dispatch_liste_exclut_brouillon() throws Exception {
+        // Dossier redevenu BROUILLON mais qui conserve un dispatch (cas du retrait accepté).
+        dossierRepository.save(dossier(320, "BROUILLON"));
+        receptionRepository.save(reception(420, 320, "CTRSEC", true));   // CTRSEC = ANT
+        dispatchRepository.save(dispatch(320, 420, "CTRCC1", "CTRMEM"));
+        mvc.perform(get("/api/dispatchs").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                // Le dispatch du dossier BROUILLON est exclu ; aucun dossier BROUILLON dans la liste.
+                .andExpect(jsonPath("$[?(@.idDispatch==320)]", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Référence dossier — séquence globale unique (2 localités, même année → numéros distincts/consécutifs)")
+    void reference_sequence_unique_globale() {
+        String rAnt = referenceService.generer("PPM", "ANT", false, 2099);
+        String rTms = referenceService.generer("PPM", "TMS", false, 2099);
+        // Numéros distincts ET consécutifs malgré des localités différentes (plus de « 00001 » partagé).
+        org.junit.jupiter.api.Assertions.assertEquals("00001/PPM/CRM-ANT/2099", rAnt);
+        org.junit.jupiter.api.Assertions.assertEquals("00002/PPM/CRM-TMS/2099", rTms);
+    }
+
+    @Test
+    @DisplayName("Référence dossier — incrément strictement croissant sans saut ni doublon (5 dossiers)")
+    void reference_sequence_increment_correct() {
+        for (int i = 1; i <= 5; i++) {
+            org.junit.jupiter.api.Assertions.assertEquals(String.format("%05d/PPM/CRM-ANT/2098", i),
+                    referenceService.generer("PPM", "ANT", false, 2098));
+        }
+    }
+
+    /** Examen ANT (circuit via réception CTRSEC) sur un dossier à {@code refeDossier} structuré donné. */
+    private int seedExamenAvecRefe(int base, String refeDossier) {
+        Dossier d = dossier(base, "EXAMINE");
+        d.setIdLocalite("ANT");
+        d.setRefeDossier(refeDossier);
+        dossierRepository.save(d);
+        receptionRepository.save(reception(base, base, "CTRSEC", true));    // circuit ANT
+        dispatchRepository.save(dispatch(base, base, "CTRCC1", "CTRMEM"));
+        examenRepository.save(examen(base, base, "CTRMEM"));
+        return base;   // idExamen
+    }
+
+    @Test
+    @DisplayName("Réf. lettre — 2 lettres du MÊME dossier → numéros distincts (plus de répétition)")
+    void lettre_reference_sequence_meme_dossier() throws Exception {
+        seedExamenAvecRefe(340, "00007/PPM/CRM-ANT/2096");
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idExamen\":340}"))
+                .andExpect(jsonPath("$.refLettre").value("00001/PPM/CRM-ANT/LR/2096"));
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idExamen\":340}"))
+                .andExpect(jsonPath("$.refLettre").value("00002/PPM/CRM-ANT/LR/2096"));
+    }
+
+    @Test
+    @DisplayName("Réf. lettre — séquence globale (2 dossiers/localités différents → numéros distincts/consécutifs)")
+    void lettre_reference_sequence_unique_globale() throws Exception {
+        seedExamenAvecRefe(341, "00001/PPM/CRM-ANT/2097");
+        seedExamenAvecRefe(342, "00009/PPM/CRM-TMS/2097");   // dossier différent, localité TMS dans la réf
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idExamen\":341}"))
+                .andExpect(jsonPath("$.refLettre").value("00001/PPM/CRM-ANT/LR/2097"));
+        // Numéro de séquence GLOBAL (00002) malgré une localité différente — pas un « 00001 » partagé.
+        mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"idExamen\":342}"))
+                .andExpect(jsonPath("$.refLettre").value("00002/PPM/CRM-TMS/LR/2097"));
+    }
+
+    @Test
+    @DisplayName("Réf. lettre — incrément continu sans saut ni doublon (5 lettres)")
+    void lettre_reference_increment_continu() throws Exception {
+        seedExamenAvecRefe(343, "00001/PPM/CRM-ANT/2098");
+        for (int i = 1; i <= 5; i++) {
+            mvc.perform(post("/api/lettre-renvois").header("Authorization", tokenMembre)
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"idExamen\":343}"))
+                    .andExpect(jsonPath("$.refLettre").value(String.format("%05d/PPM/CRM-ANT/LR/2098", i)));
+        }
     }
 
     @Test
@@ -3541,7 +3623,7 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Référence réception : compteurs isolés par contexte (CRM-ANT, CRM-TMS, CNM redémarrent à 00001)")
+    @DisplayName("Référence réception : compteur GLOBAL par année (CRM-ANT, CRM-TMS, CNM → 00001, 00002, 00003)")
     void reference_isolee_par_contexte() throws Exception {
         String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
         String tokenSecTms = bearer("CTRCC2", ProfilUtilisateur.CHEF_COMMISSION, TypeActeur.CONTROLEUR, "CTRCC2", "TMS");
@@ -3561,12 +3643,12 @@ class CnmWorkflowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idDossier\":305,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRCC2\",\"complet\":true}"))
-                .andExpect(jsonPath("$.reference").value("00001/PPM/CRM-TMS/2026"));
+                .andExpect(jsonPath("$.reference").value("00002/PPM/CRM-TMS/2026"));
         mvc.perform(post("/api/receptions").header("Authorization", tokenPresident)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idDossier\":306,\"numPassage\":1,\"typePassage\":\"INITIAL\","
                         + "\"imCtrlRecept\":\"CTRPRE\",\"complet\":true}"))
-                .andExpect(jsonPath("$.reference").value("00001/PPM/CNM/2026"));
+                .andExpect(jsonPath("$.reference").value("00003/PPM/CNM/2026"));
     }
 
     @Test
@@ -4468,9 +4550,10 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
-    @DisplayName("Lettre de renvoi — refLettre au format {seq}/{type}/{code_localite}/LR/{annee}")
+    @DisplayName("Lettre de renvoi — refLettre au format {seqLettreGlobal}/{type}/{code_localite}/LR/{annee}")
     void lettre_ref_format_ok() throws Exception {
-        // refeDossier structuré du dossier → refLettre = même réf avec /LR/ avant l'année.
+        // refeDossier structuré → refLettre reprend type/localité/année mais avec le compteur GLOBAL des
+        // lettres (00001 pour la 1ère), pas le numéro du dossier (00007).
         Dossier d = dossierRepository.findById(1).orElseThrow();
         d.setRefeDossier("00007/PPM/CRM-ANT/2026");
         dossierRepository.save(d);
@@ -4478,7 +4561,7 @@ class CnmWorkflowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idExamen\":1,\"objetLettre\":\"Renvoi\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.refLettre").value("00007/PPM/CRM-ANT/LR/2026"));
+                .andExpect(jsonPath("$.refLettre").value("00001/PPM/CRM-ANT/LR/2026"));
     }
 
     @Test

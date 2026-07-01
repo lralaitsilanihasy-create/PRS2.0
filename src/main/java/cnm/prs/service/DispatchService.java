@@ -48,7 +48,8 @@ public class DispatchService {
 
     @Transactional(readOnly = true)
     public List<DispatchDto> findAll() {
-        return Visibilite.filtrer(repository::findAll, repository::findVisiblesParLocalite)
+        // ⚠️ Règle ajoutée — exclut les dossiers BROUILLON/RETIRE (jamais visibles à l'écran « Dispatch »).
+        return Visibilite.filtrer(repository::findVisibles, repository::findVisiblesParLocalite)
                 .stream().map(this::toDtoComplet).toList();
     }
 
