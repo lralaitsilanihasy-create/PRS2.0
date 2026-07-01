@@ -341,6 +341,50 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("POST /api/marches : PK idDetail générée serveur (seq_marche) — id client ignoré, deux PRMP → PK distinctes, aucune collision")
+    void marche_pkServeur_ignoreClient_pasDeCollisionEntreDeuxPrmp() throws Exception {
+        // Référentiels + règle : montEstim 500M / Travaux / ANT → mode 2 (AOR), pour garantir un 201.
+        natureRepository.save(new Nature(1, "Travaux", null));
+        situationRepository.save(new Situation(1, "Normale", null));
+        modePassationRepository.save(new ModePassation(2, "AOR", null, null, null, null));
+        seuilRepository.save(seuil(902, "ANT", 1, "200000001", "1000000000"));
+        reglePassationRepository.save(regle(902, 1, 902, 2));
+
+        // Deux brouillons PPM, un par PRMP (même localité ANT).
+        Dossier d1 = dossier(60, "BROUILLON");
+        d1.setIdTypeDossier("PPM"); d1.setIdPrmp("PRMP001"); d1.setIdLocalite("ANT");
+        dossierRepository.save(d1);
+        ppmRepository.save(ppm(60, 60, "PRMP001"));
+
+        prmpRepository.save(prmp("PRMP002", "ANT"));
+        String tokenPrmp2 = bearer("PRMP002", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMP002", "ANT");
+        Dossier d2 = dossier(61, "BROUILLON");
+        d2.setIdTypeDossier("PPM"); d2.setIdPrmp("PRMP002"); d2.setIdLocalite("ANT");
+        dossierRepository.save(d2);
+        ppmRepository.save(ppm(61, 61, "PRMP002"));
+
+        // Les deux PRMP envoient le MÊME idDetail client (99001) — il doit être ignoré des deux côtés.
+        String r1 = mvc.perform(post("/api/marches").header("Authorization", tokenPrmp).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDetail\":99001,\"idDossier\":60,\"idPpm\":60,\"montEstim\":500000000,"
+                        + "\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String r2 = mvc.perform(post("/api/marches").header("Authorization", tokenPrmp2).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDetail\":99001,\"idDossier\":61,\"idPpm\":61,\"montEstim\":500000000,"
+                        + "\"idNature\":1,\"idSituation\":1,\"statut\":\"PREVU\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        int id1 = com.jayway.jsonpath.JsonPath.read(r1, "$.idDetail");
+        int id2 = com.jayway.jsonpath.JsonPath.read(r2, "$.idDetail");
+        // Réponse : idDetail généré présent, id client (99001) ignoré des deux côtés, PK distinctes (aucune collision).
+        org.junit.jupiter.api.Assertions.assertNotEquals(99001, id1);
+        org.junit.jupiter.api.Assertions.assertNotEquals(99001, id2);
+        org.junit.jupiter.api.Assertions.assertTrue(id1 >= 300001 && id2 >= 300001);
+        org.junit.jupiter.api.Assertions.assertNotEquals(id1, id2);
+    }
+
+    @Test
     @DisplayName("Mode de passation : suggestion-mode renvoie l'ensemble autorisé + recommandé + indicateur ; choix dans l'ensemble accepté")
     void mode_ensembleAutoriseEtSuggestion() throws Exception {
         natureRepository.save(new Nature(1, "Travaux", null));
