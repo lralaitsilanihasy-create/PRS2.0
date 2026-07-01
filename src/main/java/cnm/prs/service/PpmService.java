@@ -80,6 +80,21 @@ public class PpmService {
         return PpmMapper.toDto(entity);
     }
 
+    /**
+     * Résout le PPM rattaché à un dossier (mapping {@code idDossier → PPM}) pour ouvrir un brouillon
+     * depuis « Mes brouillons » : lecture par le propriétaire <strong>quel que soit le statut</strong>
+     * (même critère de visibilité que {@link #findById} — non filtré par BROUILLON). Couvre le cas d'un
+     * brouillon PPM <strong>sans aucun marché</strong> (aucune autre source d'{@code idPpm} côté front).
+     * Aucun PPM rattaché → {@code 404} ; hors périmètre → {@code 403}.
+     */
+    @Transactional(readOnly = true)
+    public PpmDto findByDossier(Integer idDossier) {
+        Ppm entity = repository.findByIdDossier(idDossier).stream().findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Aucun PPM rattaché au dossier : " + idDossier));
+        controlerVisibilite(entity);
+        return PpmMapper.toDto(entity);
+    }
+
     /** Vérifie que le PPM est dans le périmètre de l'appelant (§1, §3.1) — sinon 403. */
     private void controlerVisibilite(Ppm ppm) {
         if (Visibilite.voitTout()) {

@@ -22,7 +22,9 @@ import jakarta.validation.Valid;
 import cnm.prs.dto.DossierDto;
 import cnm.prs.dto.DossierResoumissionRequest;
 import cnm.prs.dto.EchangeDto;
+import cnm.prs.dto.PpmDto;
 import cnm.prs.service.DossierService;
+import cnm.prs.service.PpmService;
 
 /**
  * Contrôleur REST pour la ressource {@code dossiers} (table {@code t_dossier}).
@@ -32,9 +34,11 @@ import cnm.prs.service.DossierService;
 public class DossierController {
 
     private final DossierService service;
+    private final PpmService ppmService;
 
-    public DossierController(DossierService service) {
+    public DossierController(DossierService service, PpmService ppmService) {
         this.service = service;
+        this.ppmService = ppmService;
     }
 
     /**
@@ -99,6 +103,16 @@ public class DossierController {
     @GetMapping("/{id}")
     public DossierDto findById(@PathVariable Integer id) {
         return service.findById(id);
+    }
+
+    /**
+     * Résout le PPM rattaché au dossier (mapping {@code idDossier → PPM}), y compris pour un dossier
+     * <strong>BROUILLON</strong> lu par son propriétaire — permet d'ouvrir un brouillon depuis
+     * « Mes brouillons » même sans aucun marché. Aucun PPM rattaché → 404 ; hors périmètre → 403.
+     */
+    @GetMapping("/{id}/ppm")
+    public PpmDto ppmDuDossier(@PathVariable Integer id) {
+        return ppmService.findByDossier(id);
     }
 
     // Création/édition brutes verrouillées : la saisie passe par la façade /api/saisies (PRMP) ; ici réservé Admin.

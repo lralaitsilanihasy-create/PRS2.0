@@ -2145,6 +2145,32 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET /api/dossiers/{id}/ppm : résout l'idPpm d'un brouillon (même sans marché) pour le propriétaire ; 403 hors périmètre ; 404 sans PPM")
+    void dossierPpm_resolution_ok() throws Exception {
+        // Brouillon PPM de PRMP001, SANS aucun marché → GET /api/marches ne peut pas fournir l'idPpm.
+        dossierRepository.save(dossierLoc(220, "BROUILLON", "ANT", "PRMP001"));
+        ppmRepository.save(ppm(220, 220, "PRMP001"));
+        // Dossier BROUILLON de PRMP001 SANS PPM rattaché (cas 404).
+        dossierRepository.save(dossierLoc(221, "BROUILLON", "ANT", "PRMP001"));
+
+        // Propriétaire → 200 + PpmDto complet (idPpm résolu) même sans marché.
+        mvc.perform(get("/api/dossiers/220/ppm").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.idPpm").value(220))
+                .andExpect(jsonPath("$.idDossier").value(220));
+
+        // Autre PRMP → hors périmètre → 403.
+        String tokenPrmp2 = bearer("PRMP002", ProfilUtilisateur.PRMP, TypeActeur.PRMP, "PRMP002", "ANT");
+        prmpRepository.save(prmp("PRMP002", "ANT"));
+        mvc.perform(get("/api/dossiers/220/ppm").header("Authorization", tokenPrmp2))
+                .andExpect(status().isForbidden());
+
+        // Dossier sans PPM rattaché → 404.
+        mvc.perform(get("/api/dossiers/221/ppm").header("Authorization", tokenPrmp))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     @DisplayName("Filtre serveur ?statut sur /api/dossiers : scoping conservé, statut inconnu → 400")
     void dossiers_filtreStatut() throws Exception {
         dossierRepository.save(dossierLoc(210, "SOUMIS", "ANT", "PRMP001"));
