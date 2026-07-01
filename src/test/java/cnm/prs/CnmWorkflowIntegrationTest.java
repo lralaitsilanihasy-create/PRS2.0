@@ -2238,6 +2238,22 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Retrait accepté — l'API renvoie la référence initiale (PPM) du dossier BROUILLON")
+    void brouillon_retrait_api_retourne_ref_initiale() throws Exception {
+        Dossier d = dossier(140, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        d.setRefeDossier("00002/PPM/CRM-ANT/2026");   // réf de réception (à remplacer)
+        dossierRepository.save(d);
+        Ppm p = ppm(140, 140, "PRMP001"); p.setReference("00004/DGB/PPM/2026"); ppmRepository.save(p);
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 140, "PRMP001")).getIdDemandeRetrait();
+        mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        // GET du dossier (« Mes brouillons ») → refeDossier = référence initiale (PPM), pas la réf de réception.
+        mvc.perform(get("/api/dossiers/140").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refeDossier").value("00004/DGB/PPM/2026"));
+    }
+
+    @Test
     @DisplayName("Décision retrait — le Président accepte (toutes localités) → ACCEPTEE, dossier BROUILLON")
     void decision_accepter_parPresident_ok() throws Exception {
         Dossier d = dossier(131, "PRET_DISPATCH"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
