@@ -149,6 +149,7 @@ class CnmWorkflowIntegrationTest {
     @Autowired private ModePassationRepository modePassationRepository;
     @Autowired private cnm.prs.service.PvDocumentGenerator pvDocumentGenerator;
     @Autowired private cnm.prs.service.ReferenceService referenceService;
+    @Autowired private jakarta.persistence.EntityManager entityManager;
     @Autowired private SeuilRepository seuilRepository;
     @Autowired private ReglePassationRepository reglePassationRepository;
     @Autowired private TypeDossierRepository typeDossierRepository;
@@ -1542,6 +1543,26 @@ class CnmWorkflowIntegrationTest {
                     .contentType(MediaType.APPLICATION_JSON).content("{\"idExamen\":343}"))
                     .andExpect(jsonPath("$.refLettre").value(String.format("%05d/PPM/CRM-ANT/LR/2098", i)));
         }
+    }
+
+    @Test
+    @DisplayName("Règles de passation — GET renvoie les libellés (situation/mode/seuil), pas les ids seuls")
+    void regles_passation_libelles_ok() throws Exception {
+        natureRepository.save(new Nature(1, "Travaux", null));
+        situationRepository.save(new Situation(1, "Situation normale", null));
+        modePassationRepository.save(new ModePassation(1, "Appel d'offres ouvert", null, null, null, null));
+        seuilRepository.save(seuil(950, "ANT", 1, "200000001", "1000000000"));
+        seuilRepository.save(seuil(951, "ANT", 1, "1000000001", null));   // max nul → « ≥ … »
+        reglePassationRepository.save(regle(950, 1, 950, 1));
+        reglePassationRepository.save(regle(951, 1, 951, 1));
+        entityManager.flush();
+        entityManager.clear();   // recharge des entités fraîches → relations lazy résolues (comme en prod)
+        mvc.perform(get("/api/regle-passations").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idRegle==950)].libelleSituation", hasItem("Situation normale")))
+                .andExpect(jsonPath("$[?(@.idRegle==950)].libelleMode", hasItem("Appel d'offres ouvert")))
+                .andExpect(jsonPath("$[?(@.idRegle==950)].libelleSeuil", hasItem("200000001 à 1000000000")))
+                .andExpect(jsonPath("$[?(@.idRegle==951)].libelleSeuil", hasItem("≥ 1000000001")));
     }
 
     @Test

@@ -25,4 +25,13 @@ public class ReglePassationDto {
     private Integer idMode;
 
     private Integer priorite;
+
+    /** Libellé de la situation (lecture seule, peuplé serveur) — ex. « Situation normale ». */
+    private String libelleSituation;
+
+    /** Libellé lisible du seuil (lecture seule) — « montantMin à montantMax », ou « ≥ montantMin » si max nul. */
+    private String libelleSeuil;
+
+    /** Libellé du mode de passation (lecture seule, peuplé serveur) — ex. « Appel d'offres ouvert ». */
+    private String libelleMode;
 }
