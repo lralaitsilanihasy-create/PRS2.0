@@ -56,6 +56,7 @@ public final class ReceptionMapper {
         dto.setObservation(entity.getObservation());
         dto.setComplet(entity.getComplet());
         dto.setIdReceptionPrec(entity.getIdReceptionPrec());
+        dto.setReference(entity.getReference());   // snapshot immuable persisté (lecture seule)
         return dto;
     }
 

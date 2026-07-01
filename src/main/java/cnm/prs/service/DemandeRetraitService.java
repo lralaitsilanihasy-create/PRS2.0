@@ -27,6 +27,7 @@ import cnm.prs.repository.DemandeRetraitVueRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.PrmpRepository;
+import cnm.prs.repository.ReceptionRepository;
 import cnm.prs.security.CurrentUser;
 import cnm.prs.security.Visibilite;
 
@@ -41,17 +42,20 @@ public class DemandeRetraitService {
     private final DossierRepository dossierRepository;
     private final PrmpRepository prmpRepository;
     private final PpmRepository ppmRepository;
+    private final ReceptionRepository receptionRepository;
     private final NotificationService notificationService;
     private final ControleurDirectory controleurDirectory;
     private final DemandeRetraitVueRepository vueRepository;
 
     public DemandeRetraitService(DemandeRetraitRepository repository, DossierRepository dossierRepository,
-            PrmpRepository prmpRepository, PpmRepository ppmRepository, NotificationService notificationService,
+            PrmpRepository prmpRepository, PpmRepository ppmRepository, ReceptionRepository receptionRepository,
+            NotificationService notificationService,
             ControleurDirectory controleurDirectory, DemandeRetraitVueRepository vueRepository) {
         this.repository = repository;
         this.dossierRepository = dossierRepository;
         this.prmpRepository = prmpRepository;
         this.ppmRepository = ppmRepository;
+        this.receptionRepository = receptionRepository;
         this.notificationService = notificationService;
         this.controleurDirectory = controleurDirectory;
         this.vueRepository = vueRepository;
@@ -183,6 +187,11 @@ public class DemandeRetraitService {
                         .findFirst().map(Ppm::getReference).orElse(null);
                 d.setRefeDossier(refInitiale);
                 dossierRepository.save(d);
+                // ⚠️ Règle ajoutée — la référence de réception étant invalidée, on supprime la/les réception(s)
+                // résiduelle(s) du dossier : après resoumission il redevient « SOUMIS sans réception » et réapparaît
+                // dans a-receptionner (re-réception INITIAL, passage 1). Un dossier retirable (SOUMIS/PRET_DISPATCH)
+                // n'est jamais dispatché → aucune dépendance (dispatch/examen) sur ces réceptions.
+                receptionRepository.deleteByIdDossier(d.getIdDossier());
             });
         }
         notifierDecision(saved, StatutRetrait.ACCEPTEE);

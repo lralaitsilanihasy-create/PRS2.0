@@ -135,10 +135,10 @@ public class ReceptionService {
         entity.setIdReception(repository.nextIdReception().intValue());   // PK serveur (sequence), id client ignore (Voie B)
         Reception saved = repository.save(entity);
         String reference = genererReference(saved);   // (regle ajoutee) reference officielle a la reception
+        saved.setReference(reference);                 // snapshot immuable persiste sur t_reception (survit aux mutations de refeDossier)
+        saved = repository.save(saved);
         declencherPretDispatch(saved);
-        ReceptionDto resultat = toDtoComplet(saved);
-        resultat.setReference(reference);
-        return resultat;
+        return toDtoComplet(saved);                    // le mapper lit desormais reception.reference
     }
 
     /**

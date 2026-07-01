@@ -56,6 +56,14 @@ public class Reception {
     @Column(name = "ID_RECEPTION_PREC")
     private Integer idReceptionPrec;
 
+    /**
+     * (Règle ajoutée) Référence officielle de la réception — <strong>snapshot immuable</strong> de la forme
+     * {@code <seq>/<type>/<code_localite>/<annee>} figé au POST. Reste correct même après une mutation
+     * ultérieure de {@code dossier.refeDossier} (ex. restauration de la référence PPM après un retrait accepté).
+     */
+    @Column(name = "REFERENCE", length = 100)
+    private String reference;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ID_DOSSIER", insertable = false, updatable = false)
     @JsonIgnore

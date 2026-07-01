@@ -1476,6 +1476,43 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Réception — reference persistée (snapshot immuable) : GET la renvoie et elle survit à la mutation de dossier.refeDossier")
+    void reception_reference_persistee_immuable() throws Exception {
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        Dossier d = dossier(330, "SOUMIS");
+        d.setIdLocalite("ANT");
+        d.setIdTypeDossier("PPM");
+        dossierRepository.save(d);
+
+        // POST : la réponse porte la référence structurée <seq>/PPM/CRM-ANT/<annee>.
+        String resp = mvc.perform(post("/api/receptions").header("Authorization", tokenSec)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idDossier\":330,\"numPassage\":1,\"typePassage\":\"INITIAL\",\"complet\":true,"
+                        + "\"dateReception\":\"2026-06-30\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.reference", org.hamcrest.Matchers.matchesPattern("\\d{5}/PPM/CRM-ANT/\\d{4}")))
+                .andReturn().getResponse().getContentAsString();
+        int idRec = com.jayway.jsonpath.JsonPath.read(resp, "$.idReception");
+        String refRecept = com.jayway.jsonpath.JsonPath.read(resp, "$.reference");
+
+        // GET liste : la référence est bien PERSISTÉE sur t_reception (plus null).
+        mvc.perform(get("/api/receptions").header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idReception==" + idRec + ")].reference", hasItem(refRecept)));
+
+        // Mutation de dossier.refeDossier (simule la restauration de la réf PPM après retrait accepté).
+        Dossier maj = dossierRepository.findById(330).orElseThrow();
+        maj.setRefeDossier("00007/DGB/PPM/2026");
+        dossierRepository.save(maj);
+
+        // La référence de la réception ne bouge pas (snapshot immuable, indépendant du dossier).
+        mvc.perform(get("/api/receptions/" + idRec).header("Authorization", tokenPresident))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reference").value(refRecept))
+                .andExpect(jsonPath("$.reference", org.hamcrest.Matchers.not("00007/DGB/PPM/2026")));
+    }
+
+    @Test
     @DisplayName("Réception — parsing : date simple → 30/06/2026 (heure complétée) ; date-heure préservée")
     void reception_date_stockee_correctement() {
         // Date seule « yyyy-MM-dd » : jour correct, heure complétée par le serveur (non nulle).
@@ -2361,6 +2398,35 @@ class CnmWorkflowIntegrationTest {
         mvc.perform(get("/api/dossiers/140").header("Authorization", tokenPrmp))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.refeDossier").value("00004/DGB/PPM/2026"));
+    }
+
+    @Test
+    @DisplayName("Retrait accepté — la réception résiduelle est supprimée → dossier resoumis réapparaît dans a-receptionner")
+    void retrait_accepte_supprime_reception_et_reReceptionnable() throws Exception {
+        Dossier d = dossier(145, "SOUMIS"); d.setIdLocalite("ANT"); d.setIdPrmp("PRMP001");
+        d.setIdTypeDossier("PPM");
+        d.setRefeDossier("00003/PPM/CRM-ANT/2026");   // réf de réception résiduelle
+        dossierRepository.save(d);
+        Ppm p = ppm(145, 145, "PRMP001"); p.setReference("00009/DGB/PPM/2026"); ppmRepository.save(p);
+        marcheRepository.save(marche(1450, 145, 145));                  // un PPM doit comporter un marché pour être soumis
+        receptionRepository.save(reception(1450, 145, "CTRSEC", true)); // réception résiduelle (bloque a-receptionner)
+        int drId = demandeRetraitRepository.save(demandeRetrait(0, 145, "PRMP001")).getIdDemandeRetrait();
+
+        // Acceptation du retrait → dossier BROUILLON + réception supprimée.
+        mvc.perform(post("/api/demande-retraits/" + drId + "/accepter").header("Authorization", tokenCc))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertFalse(receptionRepository.existsByIdDossier(145),
+                "La réception résiduelle doit être supprimée à l'acceptation du retrait");
+
+        // Resoumission par la PRMP → SOUMIS.
+        mvc.perform(post("/api/dossiers/145/soumettre").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk());
+
+        // Le dossier réapparaît dans la worklist du Secrétaire (SOUMIS sans réception) → re-réceptionnable.
+        String tokenSec = bearer("CTRSEC", ProfilUtilisateur.SECRETAIRE, TypeActeur.CONTROLEUR, "CTRSEC", "ANT");
+        mvc.perform(get("/api/dossiers/a-receptionner").header("Authorization", tokenSec))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==145)]", hasSize(1)));
     }
 
     @Test
