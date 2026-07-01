@@ -2064,11 +2064,13 @@ class CnmWorkflowIntegrationTest {
         marcheRepository.save(marche(801, 201, 201));
         marcheRepository.save(marche(802, 202, 202));
 
-        // PRMP001 ne voit QUE ses PPM (200, 202, 203 — y compris son brouillon), pas ceux de PRMP002 (201).
+        // PRMP001 ne voit QUE ses PPM NON-brouillon (200, 202) : son brouillon (203) est exclu de
+        // « Mes PPM & marchés » (écran « Mes brouillons » dédié) ; ceux de PRMP002 (201) restent invisibles.
         mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.idPpm==200)]", hasSize(1)))
-                .andExpect(jsonPath("$[?(@.idPpm==203)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==202)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==203)]", hasSize(0)))
                 .andExpect(jsonPath("$[?(@.idPpm==201)]", hasSize(0)));
         // PRMP002 ne voit que le sien (201).
         mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp2))
@@ -2102,6 +2104,44 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/marches/800").header("Authorization", tokenMembre))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Mes PPM & marchés : GET /api/ppms (PRMP) exclut les BROUILLON ; « Mes brouillons » (GET /api/dossiers?statut=BROUILLON) inchangé")
+    void mesPpm_exclutBrouillons_mesBrouillonsInchange() throws Exception {
+        // PRMP001 : 3 dossiers non-brouillon (SOUMIS) + 2 brouillons, chacun avec son PPM.
+        dossierRepository.save(dossierLoc(210, "SOUMIS", "ANT", "PRMP001"));
+        dossierRepository.save(dossierLoc(211, "SOUMIS", "ANT", "PRMP001"));
+        dossierRepository.save(dossierLoc(212, "EXAMINE", "ANT", "PRMP001"));
+        dossierRepository.save(dossierLoc(213, "BROUILLON", "ANT", "PRMP001"));
+        dossierRepository.save(dossierLoc(214, "BROUILLON", "ANT", "PRMP001"));
+        for (int i = 210; i <= 214; i++) {
+            ppmRepository.save(ppm(i, i, "PRMP001"));
+        }
+
+        // « Mes PPM & marchés » : les 3 non-brouillon présents, les 2 brouillons (213, 214) absents.
+        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idPpm==210)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==211)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==212)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idPpm==213)]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.idPpm==214)]", hasSize(0)));
+
+        // « Mes brouillons » : GET /api/dossiers?statut=BROUILLON renvoie toujours les 2 brouillons (non régressé).
+        mvc.perform(get("/api/dossiers?statut=BROUILLON").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.idDossier==213)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==214)]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.idDossier==210)]", hasSize(0)));
+
+        // Badge du menu (KpiService.ppmMarches) : aligné sur la liste — même critère hors BROUILLON.
+        String ppms = mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
+                .andReturn().getResponse().getContentAsString();
+        int tailleListe = ((List<?>) com.jayway.jsonpath.JsonPath.read(ppms, "$")).size();
+        mvc.perform(get("/api/kpis/mes-compteurs").header("Authorization", tokenPrmp))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ppmMarches").value(tailleListe));
     }
 
     @Test
@@ -3514,10 +3554,11 @@ class CnmWorkflowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content(edition))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statut").value("BROUILLON"));
-        // En-tête mis à jour.
-        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
-                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].reference", hasItem("PPM-120-v2")))
-                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].exercice", hasItem(2027)));
+        // En-tête mis à jour (brouillon lu par son id — hors liste « Mes PPM & marchés »).
+        int idPpm120 = ppmRepository.findByIdDossier(idDoss).get(0).getIdPpm();
+        mvc.perform(get("/api/ppms/" + idPpm120).header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.reference").value("PPM-120-v2"))
+                .andExpect(jsonPath("$.exercice").value(2027));
         // idM150 recalculé → 1 ; idM500 supprimé → 404 ; la nouvelle ligne 500M (PK ≠ idM500) a le mode 2.
         mvc.perform(get("/api/marches/" + idM150).header("Authorization", tokenPrmp)).andExpect(jsonPath("$.idMode").value(1));
         mvc.perform(get("/api/marches/" + idM500).header("Authorization", tokenPrmp)).andExpect(status().isNotFound());
@@ -3544,10 +3585,7 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idEntiteContract\":1,\"exercice\":2026,\"signataire\":\"X\",\"dateSignature\":\"2026-01-10\",\"reference\":\"R122\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         int idDoss122 = com.jayway.jsonpath.JsonPath.read(r122, "$.idDossier");
-        String ppmsJson = mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
-                .andReturn().getResponse().getContentAsString();
-        int idPpm122 = ((List<Integer>) com.jayway.jsonpath.JsonPath.read(ppmsJson,
-                "$[?(@.idDossier==" + idDoss122 + ")].idPpm")).get(0);
+        int idPpm122 = ppmRepository.findByIdDossier(idDoss122).get(0).getIdPpm();
         marcheRepository.save(marche(1220, idDoss122, idPpm122)); // un PPM doit comporter au moins un marché avant soumission
         mvc.perform(post("/api/dossiers/" + idDoss122 + "/soumettre").header("Authorization", tokenPrmp)).andExpect(status().isOk());
         // Dossier soumis → non éditable.
@@ -4070,8 +4108,10 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idEntiteContract\":700,\"exercice\":2026,\"dateSignature\":\"2026-01-10\",\"marches\":[]}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
-        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
-                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].reference", hasItem("00001/DGB/PPM/2026")));
+        // Le brouillon n'apparaît plus dans la liste « Mes PPM & marchés » : on le lit par son id (propriétaire).
+        int idPpm = ppmRepository.findByIdDossier(idDoss).get(0).getIdPpm();
+        mvc.perform(get("/api/ppms/" + idPpm).header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.reference").value("00001/DGB/PPM/2026"));
     }
 
     @Test
@@ -4085,9 +4125,12 @@ class CnmWorkflowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getContentAsString(), "$.idDossier");
         int d2 = com.jayway.jsonpath.JsonPath.read(mvc.perform(post("/api/saisies/ppm").header("Authorization", tokenPrmp)
                 .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getContentAsString(), "$.idDossier");
-        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
-                .andExpect(jsonPath("$[?(@.idDossier==" + d1 + ")].reference", hasItem("00001/DGB/PPM/2026")))
-                .andExpect(jsonPath("$[?(@.idDossier==" + d2 + ")].reference", hasItem("00002/DGB/PPM/2026")));
+        int p1 = ppmRepository.findByIdDossier(d1).get(0).getIdPpm();
+        int p2 = ppmRepository.findByIdDossier(d2).get(0).getIdPpm();
+        mvc.perform(get("/api/ppms/" + p1).header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.reference").value("00001/DGB/PPM/2026"));
+        mvc.perform(get("/api/ppms/" + p2).header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.reference").value("00002/DGB/PPM/2026"));
     }
 
     @Test
@@ -4101,8 +4144,9 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idEntiteContract\":702,\"exercice\":2026,\"dateSignature\":\"2026-01-10\",\"marches\":[]}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
-        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
-                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].reference", hasItem("00001/DRT/PPM/2026")));
+        int idPpm = ppmRepository.findByIdDossier(idDoss).get(0).getIdPpm();
+        mvc.perform(get("/api/ppms/" + idPpm).header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.reference").value("00001/DRT/PPM/2026"));
     }
 
     @Test
@@ -4116,8 +4160,9 @@ class CnmWorkflowIntegrationTest {
                 .content("{\"idEntiteContract\":703,\"exercice\":2026,\"dateSignature\":\"2026-01-10\",\"marches\":[]}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         int idDoss = com.jayway.jsonpath.JsonPath.read(resp, "$.idDossier");
-        mvc.perform(get("/api/ppms").header("Authorization", tokenPrmp))
-                .andExpect(jsonPath("$[?(@.idDossier==" + idDoss + ")].signataire", hasItem("Prenoms Nom")));
+        int idPpm = ppmRepository.findByIdDossier(idDoss).get(0).getIdPpm();
+        mvc.perform(get("/api/ppms/" + idPpm).header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.signataire").value("Prenoms Nom"));
     }
 
     @Test

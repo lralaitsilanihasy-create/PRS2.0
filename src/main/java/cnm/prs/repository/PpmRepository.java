@@ -43,6 +43,31 @@ public interface PpmRepository extends JpaRepository<Ppm, Integer> {
             """)
     List<Ppm> findVisiblesParLocalite(@Param("localite") String localite);
 
+    /**
+     * PPM de la PRMP pour l'écran « Mes PPM &amp; marchés » : ceux dont elle est propriétaire et
+     * dont le dossier <strong>n'est pas un brouillon</strong> (les brouillons ont leur propre écran
+     * « Mes brouillons »). Filtrage serveur — ne pas se reposer sur un masquage front.
+     */
+    @Query("""
+            select p from Ppm p, Dossier d
+            where d.idDossier = p.idDossier
+              and p.idPrmp = :idPrmp
+              and (d.statut is null or d.statut <> 'BROUILLON')
+            """)
+    List<Ppm> findVisiblesParPrmp(@Param("idPrmp") String idPrmp);
+
+    /**
+     * Compteur du badge « Mes PPM &amp; marchés » — même critère que {@link #findVisiblesParPrmp}
+     * (PPM de la PRMP, dossier non brouillon) : le badge colle à la taille de la liste.
+     */
+    @Query("""
+            select count(p) from Ppm p, Dossier d
+            where d.idDossier = p.idDossier
+              and p.idPrmp = :idPrmp
+              and (d.statut is null or d.statut <> 'BROUILLON')
+            """)
+    long countVisiblesParPrmp(@Param("idPrmp") String idPrmp);
+
     /** Vrai si le PPM est visible dans la localité (dossier non brouillon, même localité). */
     @Query("""
             select (count(p) > 0) from Ppm p, Dossier d

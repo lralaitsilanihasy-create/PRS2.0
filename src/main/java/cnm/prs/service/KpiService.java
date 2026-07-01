@@ -114,7 +114,7 @@ public class KpiService {
                 .orElse(java.time.LocalDateTime.of(1970, 1, 1, 0, 0));
         return new CompteursPrmpDto(
                 dossierRepository.countByStatutAndIdPrmp(StatutDossier.BROUILLON.name(), idPrmp),
-                ppmRepository.countByIdPrmp(idPrmp),
+                ppmRepository.countVisiblesParPrmp(idPrmp),   // « Mes PPM & marchés » — hors BROUILLON (colle à la liste)
                 dossierRepository.countByStatutAndIdPrmp(StatutDossier.EN_ATTENTE_DECISION_PRMP.name(), idPrmp),
                 dossierRepository.countByStatutInAndIdPrmp(
                         List.of(StatutDossier.PV_SIGNE.name(), StatutDossier.CLOTURE.name()), idPrmp),

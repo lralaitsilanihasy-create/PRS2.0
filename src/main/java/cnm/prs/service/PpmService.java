@@ -65,7 +65,7 @@ public class PpmService {
         if (Visibilite.estPrmp()) {
             String idPrmp = CurrentUser.ref().filter(s -> !s.isBlank()).orElse(null);
             return idPrmp == null ? List.of()
-                    : repository.findByIdPrmp(idPrmp).stream().map(PpmMapper::toDto).toList();
+                    : repository.findVisiblesParPrmp(idPrmp).stream().map(PpmMapper::toDto).toList();
         }
         return Visibilite.localite()
                 .map(loc -> repository.findVisiblesParLocalite(loc).stream().map(PpmMapper::toDto).toList())
