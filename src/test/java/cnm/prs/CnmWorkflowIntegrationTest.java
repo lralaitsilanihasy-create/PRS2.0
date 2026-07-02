@@ -4763,6 +4763,29 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(jsonPath("$.documentDisponible").value(false));
     }
 
+    @Test
+    @DisplayName("Garde-fou dossier↔PV : suppression du PV signé d'un dossier EN_VERIFICATION → dossier remis à EXAMINE")
+    void suppressionPvSigne_realigneDossierEnVerification() throws Exception {
+        // Chaîne complète + PV signé FAVR → dossier EN_VERIFICATION (comme après une signature FAVR).
+        dossierRepository.save(dossierLoc(700, "EN_VERIFICATION", "ANT", "PRMP001"));
+        receptionRepository.save(reception(700, 700, "CTRCC1", true));
+        dispatchRepository.save(dispatch(700, 700, "CTRCC1", "CTRMEM"));
+        examenRepository.save(examen(700, 700, "CTRMEM"));
+        cnm.prs.entity.PvExamen pv = new cnm.prs.entity.PvExamen();
+        pv.setIdPv(700); pv.setIdExamen(700); pv.setIdAvis("FAVR"); pv.setImCtrlMembre("CTRMEM");
+        pv.setStatutPv("SIGNE"); pv.setNbNavettes(0);
+        pvExamenRepository.save(pv);
+
+        // Suppression du PV signé (Administrateur).
+        mvc.perform(delete("/api/pv-examens/700").header("Authorization", tokenAdmin))
+                .andExpect(status().isNoContent());
+
+        // Le dossier ne reste pas bloqué EN_VERIFICATION (« PV signé introuvable ») : il redevient EXAMINE.
+        mvc.perform(get("/api/dossiers/700").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("EXAMINE"));
+    }
+
     /** Rend l'examen 1 (dossier 1, ppm 1) éligible (1 ligne de marché en AOO) puis crée + signe un PV FAVR. */
     private void signerPvEligible(int idPv) throws Exception {
         modePassationRepository.save(new ModePassation(1, "AOO", null, null, null, null));

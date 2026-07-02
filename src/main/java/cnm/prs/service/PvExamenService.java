@@ -230,7 +230,28 @@ public class PvExamenService {
         if (!repository.existsById(id)) {
             throw new ResourceNotFoundException("PvExamen introuvable : " + id);
         }
+        Integer idDossier = repository.findIdDossierByPv(id).orElse(null);
         repository.deleteById(id);
+        realignerDossierSansPvSigne(idDossier);
+    }
+
+    /**
+     * ⚠️ Garde-fou de cohérence dossier↔PV (règle ajoutée) : un dossier ne doit pas rester
+     * {@link StatutDossier#EN_VERIFICATION} si son PV signé n'existe plus (supprimé / redescendu en projet).
+     * Si, après retrait d'un PV, le dossier n'a <strong>plus aucun PV {@code SIGNE}</strong> et se trouve encore
+     * {@code EN_VERIFICATION}, on le ramène à {@link StatutDossier#EXAMINE} (état « examiné, en attente de PV »),
+     * ce qui débloque l'écran de vérification et permet de reproduire un PV. Les autres statuts sont laissés tels quels.
+     */
+    private void realignerDossierSansPvSigne(Integer idDossier) {
+        if (idDossier == null || repository.countSignesParDossier(idDossier) > 0) {
+            return;
+        }
+        dossierRepository.findById(idDossier).ifPresent(d -> {
+            if (StatutDossier.EN_VERIFICATION.name().equals(d.getStatut())) {
+                d.setStatut(StatutDossier.EXAMINE.name());
+                dossierRepository.save(d);
+            }
+        });
     }
 
     /** Matricule du Membre attributaire de l'examen (dispatch) ; refuse si l'examen n'a pas d'attributaire. */
