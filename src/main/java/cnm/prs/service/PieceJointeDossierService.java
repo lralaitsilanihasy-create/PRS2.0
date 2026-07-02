@@ -10,14 +10,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import cnm.prs.dto.PieceJointeDossierDto;
+import cnm.prs.entity.Controleur;
 import cnm.prs.entity.Dossier;
 import cnm.prs.entity.PieceJointeDossier;
 import cnm.prs.enums.ProfilUtilisateur;
 import cnm.prs.enums.StatutDossier;
+import cnm.prs.enums.TypeNotification;
+import cnm.prs.enums.TypeObjet;
 import cnm.prs.exception.BadRequestException;
 import cnm.prs.exception.BusinessRuleException;
 import cnm.prs.exception.ResourceNotFoundException;
 import cnm.prs.mapper.PieceJointeDossierMapper;
+import cnm.prs.repository.ControleurRepository;
+import cnm.prs.repository.DispatchRepository;
 import cnm.prs.repository.DossierRepository;
 import cnm.prs.repository.PieceJointeDossierRepository;
 import cnm.prs.repository.TypePieceJointeRepository;
@@ -35,12 +40,20 @@ public class PieceJointeDossierService {
     private final PieceJointeDossierRepository repository;
     private final TypePieceJointeRepository typePieceRepository;
     private final DossierRepository dossierRepository;
+    private final DispatchRepository dispatchRepository;
+    private final ControleurRepository controleurRepository;
+    private final NotificationService notificationService;
 
     public PieceJointeDossierService(PieceJointeDossierRepository repository,
-            TypePieceJointeRepository typePieceRepository, DossierRepository dossierRepository) {
+            TypePieceJointeRepository typePieceRepository, DossierRepository dossierRepository,
+            DispatchRepository dispatchRepository, ControleurRepository controleurRepository,
+            NotificationService notificationService) {
         this.repository = repository;
         this.typePieceRepository = typePieceRepository;
         this.dossierRepository = dossierRepository;
+        this.dispatchRepository = dispatchRepository;
+        this.controleurRepository = controleurRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -75,7 +88,38 @@ public class PieceJointeDossierService {
             apres = true;
             idLettre = meta.getIdLettre();
         }
-        return toDtoAvecLibelle(enregistrer(meta.getIdDossier(), meta.getIdTypePiece(), fichier, apres, idLettre));
+        PieceJointeDossier saved = enregistrer(meta.getIdDossier(), meta.getIdTypePiece(), fichier, apres, idLettre);
+        if (apres) {
+            rouvrirExamenApresRenvoi(meta.getIdDossier());
+        }
+        return toDtoAvecLibelle(saved);
+    }
+
+    /**
+     * (Règle ajoutée) Complétion d'un dossier après lettre de renvoi. Au <strong>premier</strong> dépôt
+     * {@code apresLettreRenvoi} (dossier {@code PRET_DISPATCH}), on <strong>réutilise le dispatch existant</strong>
+     * (le Membre y est déjà désigné) : simple avance {@code PRET_DISPATCH → DISPATCHE} — pas de nouveau dispatch,
+     * donc aucun doublon — et le dossier réapparaît dans l'écran « à examiner » du Membre. Une <strong>unique</strong>
+     * notification (regroupée) est émise vers ce Membre. Les dépôts suivants trouvent le dossier déjà {@code DISPATCHE}
+     * (donc {@code apres=false}) : ni ré-avance ni notification en double.
+     */
+    private void rouvrirExamenApresRenvoi(Integer idDossier) {
+        Dossier d = dossierRepository.findById(idDossier).orElse(null);
+        if (d == null || !StatutDossier.PRET_DISPATCH.name().equals(d.getStatut())) {
+            return;
+        }
+        String imMembre = dispatchRepository.findImCtrlMembreByDossier(idDossier).orElse(null);
+        d.setStatut(StatutDossier.DISPATCHE.name());
+        dossierRepository.save(d);
+        if (imMembre != null && !imMembre.isBlank()) {
+            String email = controleurRepository.findById(imMembre).map(Controleur::getEmailCont).orElse(null);
+            String ref = d.getRefeDossier() != null && !d.getRefeDossier().isBlank()
+                    ? d.getRefeDossier() : ("n° " + idDossier);
+            notificationService.emettreControleur(TypeNotification.PIECE_AJOUTEE_APRES_RENVOI, imMembre, email,
+                    idDossier, TypeObjet.DOSSIER, idDossier,
+                    "Dossier complété après renvoi",
+                    "Le dossier " + ref + " a été complété par la PRMP après lettre de renvoi ; il est à ré-examiner.");
+        }
     }
 
     /** Enregistrement d'une pièce initiale (à la saisie) : {@code apresLettreRenvoi=false}. */

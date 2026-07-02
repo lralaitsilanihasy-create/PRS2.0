@@ -2208,6 +2208,53 @@ class CnmWorkflowIntegrationTest {
     }
 
     @Test
+    @DisplayName("Complétion après lettre de renvoi : dépôt PRMP (idLettre) → dossier DISPATCHE + notif unique au Membre + réapparaît dans a-examiner")
+    void completionApresRenvoi_notifieMembreEtRouvreExamen() throws Exception {
+        // Dossier déjà examiné puis remis PRET_DISPATCH par la signature de la lettre (signer() testé ailleurs — dépend de Word).
+        Dossier d = dossierLoc(400, "PRET_DISPATCH", "ANT", "PRMP001");
+        d.setIdTypeDossier("PPM");
+        d.setRefeDossier("00004/PPM/CRM-ANT/2026");
+        dossierRepository.save(d);
+        receptionRepository.save(reception(400, 400, "CTRCC1", true));
+        dispatchRepository.save(dispatch(400, 400, "CTRCC1", "CTRMEM"));   // Membre attributaire = CTRMEM
+        examenRepository.save(examen(400, 400, "CTRMEM"));
+        LettreRenvoi l = new LettreRenvoi();
+        l.setIdExamen(400); l.setIdDossier(400); l.setObjetLettre("Renvoi"); l.setStatut("SIGNE");
+        int idLettre = lettreRenvoiRepository.save(l).getIdLettre();
+        int idType = seedTypePiece("Pièce complémentaire", false, "PPM", 1);
+
+        byte[] pdf = "%PDF-1.4 piece complementaire".getBytes(StandardCharsets.US_ASCII);
+        MockMultipartFile data = new MockMultipartFile("data", "", "application/json",
+                ("{\"idDossier\":400,\"idTypePiece\":" + idType + ",\"idLettre\":" + idLettre + "}").getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile fichier = new MockMultipartFile("fichier", "piece.pdf", "application/pdf", pdf);
+
+        // 1er dépôt après renvoi (PRMP propriétaire) → 201.
+        mvc.perform(multipart("/api/piece-jointe-dossiers").file(data).file(fichier)
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isCreated());
+
+        // Le dossier est rouvert à l'examen (PRET_DISPATCH → DISPATCHE, dispatch existant réutilisé).
+        mvc.perform(get("/api/dossiers/400").header("Authorization", tokenPrmp))
+                .andExpect(jsonPath("$.statut").value("DISPATCHE"));
+        // Il réapparaît dans la file « à examiner » du Membre attributaire.
+        mvc.perform(get("/api/dossiers/a-examiner").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$[?(@.idDossier==400)]", hasSize(1)));
+        // Le Membre reçoit UNE notification PIECE_AJOUTEE_APRES_RENVOI.
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PIECE_AJOUTEE_APRES_RENVOI' && @.idObjet==400)]", hasSize(1)));
+
+        // 2e dépôt : le dossier est déjà DISPATCHE → pas de ré-avance ni de 2e notification (regroupée).
+        MockMultipartFile data2 = new MockMultipartFile("data", "", "application/json",
+                ("{\"idDossier\":400,\"idTypePiece\":" + idType + ",\"idLettre\":" + idLettre + "}").getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile fichier2 = new MockMultipartFile("fichier", "piece2.pdf", "application/pdf", pdf);
+        mvc.perform(multipart("/api/piece-jointe-dossiers").file(data2).file(fichier2)
+                .header("Authorization", tokenPrmp))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/notifications/mes").header("Authorization", tokenMembre))
+                .andExpect(jsonPath("$[?(@.typeNotif=='PIECE_AJOUTEE_APRES_RENVOI' && @.idObjet==400)]", hasSize(1)));
+    }
+
+    @Test
     @DisplayName("Filtre serveur ?statut sur /api/dossiers : scoping conservé, statut inconnu → 400")
     void dossiers_filtreStatut() throws Exception {
         dossierRepository.save(dossierLoc(210, "SOUMIS", "ANT", "PRMP001"));

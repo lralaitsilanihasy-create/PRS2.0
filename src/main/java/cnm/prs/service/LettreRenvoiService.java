@@ -23,6 +23,7 @@ import cnm.prs.entity.LettreRenvoiLue;
 import cnm.prs.entity.Ppm;
 import cnm.prs.entity.Prmp;
 import cnm.prs.enums.ProfilUtilisateur;
+import cnm.prs.enums.StatutDossier;
 import cnm.prs.enums.StatutLettreRenvoi;
 import cnm.prs.enums.TypeNotification;
 import cnm.prs.exception.BusinessRuleException;
@@ -268,6 +269,13 @@ public class LettreRenvoiService {
         byte[] pdf = documentGenerator.genererPdf(centrale,
                 construireRemplacements(lettre, dossier, nomComplet(im), centrale, localiteLibelle));
         lettre.setCheminDocument(stockerSurFsx(lettre, pdf));   // PDF écrit sur le FSX (répertoire LR/)
+        // ⚠️ Règle ajoutée — rouvre le circuit : le dossier examiné repasse EXAMINE → PRET_DISPATCH pour que la
+        // PRMP puisse déposer les pièces manquantes (apresLettreRenvoi=true), avant ré-examen. On conserve la
+        // réception/le dispatch/l'examen/la lettre (pas de suppression) ; le dispatch existant désigne déjà le Membre.
+        if (dossier != null && StatutDossier.EXAMINE.name().equals(dossier.getStatut())) {
+            dossier.setStatut(StatutDossier.PRET_DISPATCH.name());
+            dossierRepository.save(dossier);
+        }
         LettreRenvoi saved = repository.save(lettre);
         notifierSignature(saved);
         return peuplerNomSignataire(LettreRenvoiMapper.toDto(saved));

@@ -17,6 +17,10 @@ public interface DispatchRepository extends JpaRepository<Dispatch, Integer> {
     @Query("select d.imCtrlMembre from Dispatch d where d.idDispatch = :id")
     Optional<String> findImCtrlMembreById(@Param("id") Integer id);
 
+    /** Matricule du Membre attributaire d'un dossier (via sa réception), pour le re-notifier à la complétion après renvoi. */
+    @Query("select d.imCtrlMembre from Dispatch d where d.reception.idDossier = :idDossier")
+    Optional<String> findImCtrlMembreByDossier(@Param("idDossier") Integer idDossier);
+
     /**
      * Dispatchs visibles à l'écran « Dispatch des dossiers » : on <strong>exclut</strong> les dossiers
      * redevenus <strong>BROUILLON</strong> (ex. après acceptation d'une demande de retrait, qui laisse un

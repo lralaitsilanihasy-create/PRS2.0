@@ -87,5 +87,8 @@ public enum TypeNotification {
     PV_DEFINITIF_COPIE,
 
     /** Copie d'un PV FAVR après clôture du dossier — vers l'Assistant contrôleur de la localité (⚠️ règle ajoutée). */
-    CLOTURE_COPIE_ASSISTANT
+    CLOTURE_COPIE_ASSISTANT,
+
+    /** Dossier complété par la PRMP après lettre de renvoi, à ré-examiner — vers le Membre attributaire (⚠️ règle ajoutée). */
+    PIECE_AJOUTEE_APRES_RENVOI
 }
