@@ -21,7 +21,6 @@ import cnm.prs.entity.EntiteContract;
 import cnm.prs.entity.Examen;
 import cnm.prs.entity.ExamenDetail;
 import cnm.prs.entity.Localite;
-import cnm.prs.entity.Marche;
 import cnm.prs.entity.ObservationControle;
 import cnm.prs.entity.Ppm;
 import cnm.prs.entity.PvExamen;
@@ -34,7 +33,6 @@ import cnm.prs.repository.ExamenDetailRepository;
 import cnm.prs.repository.ExamenRepository;
 import cnm.prs.repository.LocaliteRepository;
 import cnm.prs.repository.MarcheRepository;
-import cnm.prs.repository.ModePassationRepository;
 import cnm.prs.repository.ObservationControleRepository;
 import cnm.prs.repository.PpmRepository;
 import cnm.prs.repository.ReceptionRepository;
@@ -42,8 +40,9 @@ import cnm.prs.repository.ReceptionRepository;
 /**
  * Génère et stocke le PDF du Projet de PV <strong>uniquement quand il est éligible</strong> :
  * avis favorable sous réserve ({@code FAVR}), dossier de localité centrale ({@code ANT} — seul modèle
- * disponible) et <strong>toutes</strong> les lignes de marché du PPM en appel d'offres ouvert. Hors de
- * ces conditions, aucun document n'est produit (le PV est créé normalement, sans {@code cheminDocument}).
+ * disponible) et {@code PPM} comportant au moins une ligne de marché. <strong>Indépendant du mode de
+ * passation</strong> (le gabarit AFSR/PPM/central est identique quel que soit le mode). Hors de ces
+ * conditions, aucun document n'est produit (le PV est créé normalement, sans {@code cheminDocument}).
  */
 @Component
 @Transactional(readOnly = true)
@@ -57,7 +56,6 @@ public class PvDocumentService {
     private final DossierRepository dossierRepository;
     private final PpmRepository ppmRepository;
     private final MarcheRepository marcheRepository;
-    private final ModePassationRepository modePassationRepository;
     private final ReceptionRepository receptionRepository;
     private final EntiteContractRepository entiteContractRepository;
     private final LocaliteRepository localiteRepository;
@@ -70,7 +68,7 @@ public class PvDocumentService {
 
     public PvDocumentService(PvDocumentGenerator generator, ExamenRepository examenRepository,
             DossierRepository dossierRepository, PpmRepository ppmRepository, MarcheRepository marcheRepository,
-            ModePassationRepository modePassationRepository, ReceptionRepository receptionRepository,
+            ReceptionRepository receptionRepository,
             EntiteContractRepository entiteContractRepository, LocaliteRepository localiteRepository,
             ControleurRepository controleurRepository, ExamenDetailRepository examenDetailRepository,
             ObservationControleRepository observationControleRepository) {
@@ -79,7 +77,6 @@ public class PvDocumentService {
         this.dossierRepository = dossierRepository;
         this.ppmRepository = ppmRepository;
         this.marcheRepository = marcheRepository;
-        this.modePassationRepository = modePassationRepository;
         this.receptionRepository = receptionRepository;
         this.entiteContractRepository = entiteContractRepository;
         this.localiteRepository = localiteRepository;
@@ -109,8 +106,9 @@ public class PvDocumentService {
 
     /**
      * Prédicat <strong>pur</strong> d'éligibilité à la génération du PDF (sans effet de bord) : avis
-     * {@code FAVR} + dossier de localité <strong>centrale ANT</strong> + <strong>toutes</strong> les lignes
-     * de marché du PPM en <strong>appel d'offres ouvert</strong>. Sert au flag {@code documentDisponible}.
+     * {@code FAVR} + dossier de localité <strong>centrale ANT</strong> + <strong>PPM</strong> comportant au
+     * moins une ligne de marché. <strong>Indépendant du mode de passation</strong> : le gabarit AFSR/PPM/central
+     * est identique quel que soit le mode. Sert au flag {@code documentDisponible}.
      */
     @Transactional(readOnly = true)
     public boolean estEligible(PvExamen pv) {
@@ -130,8 +128,9 @@ public class PvDocumentService {
         if (ppm == null) {
             return false;
         }
-        List<Marche> marches = marcheRepository.findByIdPpm(ppm.getIdPpm());
-        return !marches.isEmpty() && marches.stream().allMatch(this::estAppelOffresOuvert);
+        // (règle ajustée) l'éligibilité AFSR ne dépend PAS du mode de passation : on exige seulement que le
+        // PPM comporte au moins une ligne de marché (PPM réel), quel que soit le mode (AOO, cotation, etc.).
+        return !marcheRepository.findByIdPpm(ppm.getIdPpm()).isEmpty();
     }
 
     /**
@@ -147,22 +146,6 @@ public class PvDocumentService {
         return estEligible(pv);
     }
 
-    private boolean estAppelOffresOuvert(Marche m) {
-        if (m.getIdMode() == null) {
-            return false;
-        }
-        return modePassationRepository.findById(m.getIdMode())
-                .map(mode -> estLibelleAoo(mode.getLibelle())).orElse(false);
-    }
-
-    /** Tolérant : accepte le code court « AOO » ou un libellé contenant « appel … ouvert ». */
-    private boolean estLibelleAoo(String libelle) {
-        if (libelle == null) {
-            return false;
-        }
-        String n = libelle.toUpperCase(java.util.Locale.FRENCH);
-        return n.equals("AOO") || (n.contains("APPEL") && n.contains("OUVERT"));
-    }
 
     private PvDocumentContexte construireContexte(PvExamen pv, Dossier dossier, Ppm ppm, Integer idExamen,
             String idLocalite) {
