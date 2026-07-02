@@ -94,31 +94,57 @@ public class PvDocumentService {
      * marché hors appel d'offres ouvert).
      */
     public Optional<String> genererSiEligible(PvExamen pv) {
-        if (!AVIS_FAVORABLE_RESERVE.equals(pv.getIdAvis())) {
+        if (!estEligible(pv)) {
             return Optional.empty();
         }
         Integer idExamen = pv.getIdExamen();
         Integer idDossier = examenRepository.findIdDossierByExamen(idExamen).orElse(null);
-        if (idDossier == null) {
-            return Optional.empty();
-        }
         Dossier dossier = dossierRepository.findById(idDossier).orElse(null);
-        // Localité du circuit (réception), comme les lettres de renvoi ; seul le modèle central (ANT) existe.
         String localite = examenRepository.findLocaliteByExamen(idExamen).orElse(null);
-        if (dossier == null || !LOCALITE_CENTRALE.equals(localite)) {
-            return Optional.empty();   // pas de variante régionale inventée
-        }
         Ppm ppm = ppmRepository.findByIdDossier(idDossier).stream().findFirst().orElse(null);
-        if (ppm == null) {
-            return Optional.empty();
-        }
-        List<Marche> marches = marcheRepository.findByIdPpm(ppm.getIdPpm());
-        if (marches.isEmpty() || !marches.stream().allMatch(this::estAppelOffresOuvert)) {
-            return Optional.empty();
-        }
         PvDocumentContexte ctx = construireContexte(pv, dossier, ppm, idExamen, localite);
         byte[] pdf = generator.genererPdf(ctx);
         return Optional.of(stockerSurFsx(pv, pdf));
+    }
+
+    /**
+     * Prédicat <strong>pur</strong> d'éligibilité à la génération du PDF (sans effet de bord) : avis
+     * {@code FAVR} + dossier de localité <strong>centrale ANT</strong> + <strong>toutes</strong> les lignes
+     * de marché du PPM en <strong>appel d'offres ouvert</strong>. Sert au flag {@code documentDisponible}.
+     */
+    @Transactional(readOnly = true)
+    public boolean estEligible(PvExamen pv) {
+        if (pv == null || !AVIS_FAVORABLE_RESERVE.equals(pv.getIdAvis())) {
+            return false;
+        }
+        Integer idExamen = pv.getIdExamen();
+        Integer idDossier = examenRepository.findIdDossierByExamen(idExamen).orElse(null);
+        if (idDossier == null || dossierRepository.findById(idDossier).isEmpty()) {
+            return false;
+        }
+        // Localité du circuit (réception), comme les lettres de renvoi ; seul le modèle central (ANT) existe.
+        if (!LOCALITE_CENTRALE.equals(examenRepository.findLocaliteByExamen(idExamen).orElse(null))) {
+            return false;   // pas de variante régionale inventée
+        }
+        Ppm ppm = ppmRepository.findByIdDossier(idDossier).stream().findFirst().orElse(null);
+        if (ppm == null) {
+            return false;
+        }
+        List<Marche> marches = marcheRepository.findByIdPpm(ppm.getIdPpm());
+        return !marches.isEmpty() && marches.stream().allMatch(this::estAppelOffresOuvert);
+    }
+
+    /**
+     * Vrai si un PDF officiel est <strong>réellement disponible</strong> pour ce PV : fichier déjà stocké
+     * ({@code CHEMIN_DOCUMENT} non nul) <strong>ou</strong> PV {@link #estEligible(PvExamen) éligible} (donc
+     * régénérable à la demande). Reste juste après une (re)génération.
+     */
+    @Transactional(readOnly = true)
+    public boolean documentDisponible(PvExamen pv) {
+        if (pv != null && pv.getCheminDocument() != null && !pv.getCheminDocument().isBlank()) {
+            return true;
+        }
+        return estEligible(pv);
     }
 
     private boolean estAppelOffresOuvert(Marche m) {

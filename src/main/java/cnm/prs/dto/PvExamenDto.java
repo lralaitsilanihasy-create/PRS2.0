@@ -69,4 +69,12 @@ public class PvExamenDto {
 
     /** Nom complet du secrétaire de séance (« prénoms nom ») — lecture seule, peuplé serveur. */
     private String nomSecretaireSeance;
+
+    /**
+     * Vrai si un PDF officiel est réellement disponible (lecture seule, peuplé serveur) : fichier déjà stocké
+     * ({@code CHEMIN_DOCUMENT} non nul) <strong>ou</strong> PV éligible à la génération à la demande (avis FAVR
+     * + localité centrale ANT + toutes lignes de marché en appel d'offres ouvert). {@code false} sinon — le
+     * front masque « Télécharger le PDF » et évite un 404.
+     */
+    private Boolean documentDisponible;
 }

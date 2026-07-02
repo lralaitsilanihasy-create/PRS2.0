@@ -4729,6 +4729,39 @@ class CnmWorkflowIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    @DisplayName("PvExamenDto.documentDisponible : true si PV éligible (FAVR+ANT+AOO), false si une ligne hors AOO (cotation)")
+    void pv_documentDisponible_refleteEligibilite() throws Exception {
+        modePassationRepository.save(new ModePassation(1, "AOO", null, null, null, null));
+        modePassationRepository.save(new ModePassation(5, "Demande de cotation", null, null, null, null));
+
+        // ÉLIGIBLE : examen 1 (dossier 1 ANT, ppm 1) + une ligne de marché AOO ; PV FAVR sans document stocké.
+        cnm.prs.entity.Marche mAoo = marche(9600, 1, 1); mAoo.setIdMode(1); marcheRepository.save(mAoo);
+        cnm.prs.entity.PvExamen pvE = new cnm.prs.entity.PvExamen();
+        pvE.setIdPv(600); pvE.setIdExamen(1); pvE.setIdAvis("FAVR"); pvE.setImCtrlMembre("CTRMEM");
+        pvE.setStatutPv("SIGNE"); pvE.setNbNavettes(0);
+        pvExamenRepository.save(pvE);
+
+        // NON ÉLIGIBLE : nouvelle chaîne (dossier 502 ANT) mais marché en « Demande de cotation » (hors AOO).
+        dossierRepository.save(dossierLoc(502, "EXAMINE", "ANT", "PRMP001"));
+        receptionRepository.save(reception(502, 502, "CTRCC1", true));   // CTRCC1 = localité ANT
+        dispatchRepository.save(dispatch(502, 502, "CTRCC1", "CTRMEM"));
+        examenRepository.save(examen(502, 502, "CTRMEM"));
+        ppmRepository.save(ppm(502, 502, "PRMP001"));
+        cnm.prs.entity.Marche mCot = marche(9601, 502, 502); mCot.setIdMode(5); marcheRepository.save(mCot);
+        cnm.prs.entity.PvExamen pvN = new cnm.prs.entity.PvExamen();
+        pvN.setIdPv(601); pvN.setIdExamen(502); pvN.setIdAvis("FAVR"); pvN.setImCtrlMembre("CTRMEM");
+        pvN.setStatutPv("SIGNE"); pvN.setNbNavettes(0);
+        pvExamenRepository.save(pvN);
+
+        mvc.perform(get("/api/pv-examens/600").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentDisponible").value(true));
+        mvc.perform(get("/api/pv-examens/601").header("Authorization", tokenAdmin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentDisponible").value(false));
+    }
+
     /** Rend l'examen 1 (dossier 1, ppm 1) éligible (1 ligne de marché en AOO) puis crée + signe un PV FAVR. */
     private void signerPvEligible(int idPv) throws Exception {
         modePassationRepository.save(new ModePassation(1, "AOO", null, null, null, null));

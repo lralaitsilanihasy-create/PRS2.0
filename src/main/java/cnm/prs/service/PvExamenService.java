@@ -76,21 +76,28 @@ public class PvExamenService {
     @Transactional(readOnly = true)
     public List<PvExamenDto> projets() {
         return Visibilite.filtrer(repository::findProjets, repository::findProjetsParLocalite)
-                .stream().map(PvExamenMapper::toDto).map(this::peuplerNomSecretaire).toList();
+                .stream().map(this::toDtoLecture).toList();
     }
 
     /** PV définitifs : uniquement les PV signés ({@code statutPv = SIGNE}). */
     @Transactional(readOnly = true)
     public List<PvExamenDto> definitifs() {
         return Visibilite.filtrer(repository::findDefinitifs, repository::findDefinitifsParLocalite)
-                .stream().map(PvExamenMapper::toDto).map(this::peuplerNomSecretaire).toList();
+                .stream().map(this::toDtoLecture).toList();
     }
 
     @Transactional(readOnly = true)
     public PvExamenDto findById(Integer id) {
         PvExamen entity = load(id);
         Visibilite.controler(loc -> repository.existsDansLocalite(id, loc));
-        return peuplerNomSecretaire(PvExamenMapper.toDto(entity));
+        return toDtoLecture(entity);
+    }
+
+    /** Mappe un PV en DTO de lecture : nom du secrétaire + {@code documentDisponible} (chemin stocké ou PV éligible). */
+    private PvExamenDto toDtoLecture(PvExamen entity) {
+        PvExamenDto dto = peuplerNomSecretaire(PvExamenMapper.toDto(entity));
+        dto.setDocumentDisponible(pvDocumentService.documentDisponible(entity));
+        return dto;
     }
 
     /**
